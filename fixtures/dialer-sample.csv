@@ -1,0 +1,4 @@
+agent,date,hour,calls,login_time,ready_time,talk_time,ringing_time,wrap_time,paused_time,idle_time,untracked_time
+Ava Rivera,2026-07-20,9,12,3600,1200,900,100,100,600,500,200
+Noah Chen,2026-07-20,9,9,01:00:00,00:20:00,00:12:00,00:02:00,00:03:00,00:10:00,00:10:00,00:03:00
+Mia Patel,2026-07-20,9,7,3600,1200,900,100,100,600,500,200

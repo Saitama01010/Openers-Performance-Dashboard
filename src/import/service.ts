@@ -6,13 +6,15 @@ import {
   auditLogs,
   dialerAgentHourlyMetrics,
   dialerImportBatches,
-  importErrors,
+  profiles,
   sourceUserMappings,
   teamMemberships,
+  teams,
 } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import {
   getImportConfirmationBlockReason,
+  normalizeAgentName,
   previewDialerCsv,
   sha256,
   type ExistingDialerMetric,
@@ -33,17 +35,7 @@ export type StoredImportPreview = {
 function previewSummary(preview: ImportPreview) {
   return {
     fileName: undefined,
-    totalCsvRows: preview.totalCsvRows,
-    detectedHeaders: preview.headers,
-    missingRequiredHeaders: preview.missingHeaders,
-    mappedAgents: preview.mappedAgents,
-    newRows: preview.summary.new,
-    changedRows: preview.summary.changed,
-    unchangedRows: preview.summary.unchanged,
-    invalidRows: preview.summary.invalid,
-    unknownAgents: preview.summary.unknown,
-    outOfScopeAgents: preview.summary.out_of_scope,
-    duplicateFile: preview.duplicateFile,
+    ...preview.fileSummary,
   };
 }
 
@@ -66,13 +58,17 @@ async function getMappings(source: string) {
     .select({
       sourceAgentName: sourceUserMappings.sourceAgentName,
       profileId: sourceUserMappings.profileId,
+      profileName: profiles.name,
       teamId: teamMemberships.teamId,
+      teamName: teams.name,
     })
     .from(sourceUserMappings)
+    .innerJoin(profiles, eq(profiles.id, sourceUserMappings.profileId))
     .innerJoin(
       teamMemberships,
       eq(teamMemberships.profileId, sourceUserMappings.profileId),
     )
+    .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
     .where(
       and(
         eq(sourceUserMappings.source, source),
@@ -82,13 +78,16 @@ async function getMappings(source: string) {
   const mappingByAgent = new Map<string, SourceMapping>();
 
   for (const mapping of rows) {
-    const key = mapping.sourceAgentName.toLowerCase();
+    const key = `${normalizeAgentName(mapping.sourceAgentName)}:${mapping.profileId}`;
     const current = mappingByAgent.get(key) ?? {
       sourceAgentName: mapping.sourceAgentName,
       profileId: mapping.profileId,
+      profileName: mapping.profileName,
       teamIds: [],
+      teamNames: [],
     };
     current.teamIds.push(mapping.teamId);
+    current.teamNames.push(mapping.teamName);
     mappingByAgent.set(key, current);
   }
 
@@ -241,15 +240,19 @@ export async function confirmDialerImportBatch(input: {
       );
     const mappingRows = await tx
       .select({
-        sourceAgentName: sourceUserMappings.sourceAgentName,
-        profileId: sourceUserMappings.profileId,
-        teamId: teamMemberships.teamId,
-      })
-      .from(sourceUserMappings)
-      .innerJoin(
-        teamMemberships,
-        eq(teamMemberships.profileId, sourceUserMappings.profileId),
-      )
+          sourceAgentName: sourceUserMappings.sourceAgentName,
+          profileId: sourceUserMappings.profileId,
+          profileName: profiles.name,
+          teamId: teamMemberships.teamId,
+          teamName: teams.name,
+        })
+        .from(sourceUserMappings)
+        .innerJoin(profiles, eq(profiles.id, sourceUserMappings.profileId))
+        .innerJoin(
+          teamMemberships,
+          eq(teamMemberships.profileId, sourceUserMappings.profileId),
+        )
+        .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
       .where(
         and(
           eq(sourceUserMappings.source, batch.source),
@@ -268,13 +271,16 @@ export async function confirmDialerImportBatch(input: {
     const mappingByAgent = new Map<string, SourceMapping>();
 
     for (const mapping of mappingRows) {
-      const key = mapping.sourceAgentName.toLowerCase();
+      const key = `${normalizeAgentName(mapping.sourceAgentName)}:${mapping.profileId}`;
       const current = mappingByAgent.get(key) ?? {
         sourceAgentName: mapping.sourceAgentName,
         profileId: mapping.profileId,
+        profileName: mapping.profileName,
         teamIds: [],
+        teamNames: [],
       };
       current.teamIds.push(mapping.teamId);
+      current.teamNames.push(mapping.teamName);
       mappingByAgent.set(key, current);
     }
 
@@ -289,10 +295,6 @@ export async function confirmDialerImportBatch(input: {
       })),
       actor: input.actor,
     });
-    if (preview.summary.out_of_scope > 0) {
-      throw new Error("Import contains agents outside the uploader's team scope.");
-    }
-
     const blockReason = getImportConfirmationBlockReason(preview);
 
     if (blockReason) {
@@ -313,20 +315,12 @@ export async function confirmDialerImportBatch(input: {
       .where(eq(dialerImportBatches.id, batch.id));
 
     for (const row of preview.rows) {
-      if (row.status === "unchanged") {
+      if (!row.importable) {
         continue;
       }
 
       if (!row.metric || !row.rowHash) {
-        await tx.insert(importErrors).values({
-          id: newId(),
-          batchId: batch.id,
-          rowNumber: row.rowNumber,
-          status: row.status,
-          message: row.message ?? "Import row could not be confirmed.",
-          rawRow: row.rawRow,
-        });
-        continue;
+        throw new Error("Importable preview row is missing metric data.");
       }
 
       await tx

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 import { loginAction } from "@/auth/actions";
 import { getCurrentUser } from "@/auth/session";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; setup?: string; reset?: string }>;
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
@@ -29,6 +30,16 @@ export default async function LoginPage({
             Invalid email or password.
           </p>
         ) : null}
+        {params.setup === "complete" ? (
+          <p className="mt-4 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
+            Account setup complete. Sign in with your new password.
+          </p>
+        ) : null}
+        {params.reset === "complete" ? (
+          <p className="mt-4 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
+            Password changed. Sign in again on all devices.
+          </p>
+        ) : null}
         <form action={loginAction} className="mt-6 space-y-4">
           <label className="block text-sm font-medium">
             Email
@@ -36,7 +47,7 @@ export default async function LoginPage({
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
               name="email"
               type="email"
-              defaultValue="admin@example.com"
+              autoComplete="email"
               required
             />
           </label>
@@ -46,7 +57,7 @@ export default async function LoginPage({
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
               name="password"
               type="password"
-              defaultValue="Password123!"
+              autoComplete="current-password"
               required
             />
           </label>
@@ -54,6 +65,12 @@ export default async function LoginPage({
             Sign in
           </button>
         </form>
+        <Link
+          className="mt-4 block text-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+          href="/forgot-password"
+        >
+          Forgot password?
+        </Link>
       </section>
     </main>
   );

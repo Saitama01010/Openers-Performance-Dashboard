@@ -3,6 +3,7 @@ import {
   boolean,
   date,
   datetime,
+  foreignKey,
   index,
   int,
   json,
@@ -17,6 +18,12 @@ import {
 import { relations, sql } from "drizzle-orm";
 
 export const roleEnum = mysqlEnum("role", ["admin", "manager", "agent"]);
+export const accountStatusEnum = mysqlEnum("account_status", [
+  "invited",
+  "active",
+  "deactivated",
+  "revoked",
+]);
 export const membershipRoleEnum = mysqlEnum("membership_role", [
   "manager",
   "agent",
@@ -42,8 +49,12 @@ export const profiles = mysqlTable(
     email: varchar("email", { length: 255 }).notNull(),
     name: varchar("name", { length: 255 }).notNull(),
     role: roleEnum.notNull(),
-    passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+    passwordHash: varchar("password_hash", { length: 255 }),
     active: boolean("active").notNull().default(true),
+    accountStatus: accountStatusEnum.notNull().default("invited"),
+    mustResetPassword: boolean("must_reset_password").notNull().default(false),
+    lastLoginAt: datetime("last_login_at"),
+    accessRevokedAt: datetime("access_revoked_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
@@ -55,6 +66,7 @@ export const teams = mysqlTable(
   {
     id: varchar("id", { length: 36 }).primaryKey(),
     name: varchar("name", { length: 255 }).notNull(),
+    active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
@@ -64,6 +76,7 @@ export const teams = mysqlTable(
 export const teamMemberships = mysqlTable(
   "team_memberships",
   {
+    id: varchar("id", { length: 36 }).primaryKey(),
     teamId: varchar("team_id", { length: 36 })
       .notNull()
       .references(() => teams.id, { onDelete: "cascade" }),
@@ -71,10 +84,12 @@ export const teamMemberships = mysqlTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     role: membershipRoleEnum.notNull(),
+    startedAt: datetime("started_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    endedAt: datetime("ended_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.teamId, table.profileId] }),
+    index("team_memberships_active_team_idx").on(table.teamId, table.endedAt),
     index("team_memberships_profile_idx").on(table.profileId),
   ],
 );
@@ -85,6 +100,7 @@ export const sourceUserMappings = mysqlTable(
     id: varchar("id", { length: 36 }).primaryKey(),
     source: varchar("source", { length: 64 }).notNull(),
     sourceAgentName: varchar("source_agent_name", { length: 255 }).notNull(),
+    normalizedAgentName: varchar("normalized_agent_name", { length: 255 }).notNull(),
     profileId: varchar("profile_id", { length: 36 })
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
@@ -95,7 +111,7 @@ export const sourceUserMappings = mysqlTable(
   (table) => [
     unique("source_user_mapping_unique").on(
       table.source,
-      table.sourceAgentName,
+      table.normalizedAgentName,
     ),
     index("source_user_mappings_profile_idx").on(table.profileId),
   ],
@@ -151,6 +167,10 @@ export const dialerAgentHourlyMetrics = mysqlTable(
     pausedSeconds: int("paused_seconds").notNull().default(0),
     idleSeconds: int("idle_seconds").notNull().default(0),
     untrackedSeconds: int("untracked_seconds").notNull().default(0),
+    teamIdSnapshot: varchar("team_id_snapshot", { length: 36 }).references(
+      () => teams.id,
+    ),
+    teamNameSnapshot: varchar("team_name_snapshot", { length: 255 }),
     rowHash: varchar("row_hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
@@ -205,9 +225,127 @@ export const sessions = mysqlTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     expiresAt: datetime("expires_at").notNull(),
+    revokedAt: datetime("revoked_at"),
+    lastSeenAt: datetime("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [index("sessions_profile_idx").on(table.profileId)],
+  (table) => [
+    index("sessions_profile_idx").on(table.profileId),
+    index("sessions_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export const accountInvitationTokens = mysqlTable(
+  "account_invitation_tokens",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    profileId: varchar("profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    createdById: varchar("created_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
+    expiresAt: datetime("expires_at").notNull(),
+    usedAt: datetime("used_at"),
+    revokedAt: datetime("revoked_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("account_invitation_token_hash_unique").on(table.tokenHash),
+    index("account_invitation_profile_idx").on(table.profileId),
+    index("account_invitation_expires_idx").on(table.expiresAt),
+  ],
+);
+
+export const passwordResetTokens = mysqlTable(
+  "password_reset_tokens",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    profileId: varchar("profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    expiresAt: datetime("expires_at").notNull(),
+    usedAt: datetime("used_at"),
+    revokedAt: datetime("revoked_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("password_reset_token_hash_unique").on(table.tokenHash),
+    index("password_reset_profile_idx").on(table.profileId),
+    index("password_reset_expires_idx").on(table.expiresAt),
+  ],
+);
+
+export const roles = mysqlTable("roles", {
+  id: varchar("id", { length: 32 }).primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const permissions = mysqlTable("permissions", {
+  key: varchar("permission_key", { length: 120 }).primaryKey(),
+  description: text("description").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const rolePermissions = mysqlTable(
+  "role_permissions",
+  {
+    roleId: varchar("role_id", { length: 32 })
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+    permissionKey: varchar("permission_key", { length: 120 })
+      .notNull()
+      .references(() => permissions.key, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.roleId, table.permissionKey] })],
+);
+
+export const userPermissionOverrides = mysqlTable(
+  "user_permission_overrides",
+  {
+    profileId: varchar("profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    permissionKey: varchar("permission_key", { length: 120 }).notNull(),
+    allowed: boolean("allowed").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.profileId, table.permissionKey] }),
+    foreignKey({
+      columns: [table.permissionKey],
+      foreignColumns: [permissions.key],
+      name: "user_permission_override_permission_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const rateLimitRecords = mysqlTable(
+  "rate_limit_records",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    scope: varchar("scope", { length: 64 }).notNull(),
+    identifierHash: varchar("identifier_hash", { length: 64 }).notNull(),
+    windowStartedAt: datetime("window_started_at").notNull(),
+    requestCount: int("request_count").notNull().default(1),
+    expiresAt: datetime("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    unique("rate_limit_window_unique").on(
+      table.scope,
+      table.identifierHash,
+      table.windowStartedAt,
+    ),
+    index("rate_limit_expires_idx").on(table.expiresAt),
+  ],
 );
 
 export const transfersFixtures = mysqlTable("transfer_fixtures", {
@@ -223,4 +361,6 @@ export const profileRelations = relations(profiles, ({ many }) => ({
   memberships: many(teamMemberships),
   sourceMappings: many(sourceUserMappings),
   sessions: many(sessions),
+  invitationTokens: many(accountInvitationTokens),
+  passwordResetTokens: many(passwordResetTokens),
 }));

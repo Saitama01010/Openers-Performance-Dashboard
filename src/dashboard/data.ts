@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -8,12 +8,38 @@ import {
   profiles,
   teamMemberships,
 } from "@/db/schema";
-import type { Actor } from "@/auth/authorization";
+import { resolveProfileScope, type Actor } from "@/auth/authorization";
 
 export type DashboardMetric = {
   label: string;
   value: string;
 };
+
+const EMPTY_TOTALS = {
+  calls: 0,
+  loginSeconds: 0,
+  readySeconds: 0,
+  talkSeconds: 0,
+  ringingSeconds: 0,
+  wrapSeconds: 0,
+  pausedSeconds: 0,
+  idleSeconds: 0,
+  untrackedSeconds: 0,
+};
+
+function formatTotals(row = EMPTY_TOTALS) {
+  return [
+    { label: "Calls", value: String(row.calls) },
+    { label: "Login time", value: secondsToDuration(row.loginSeconds) },
+    { label: "Ready time", value: secondsToDuration(row.readySeconds) },
+    { label: "Talk time", value: secondsToDuration(row.talkSeconds) },
+    { label: "Ringing time", value: secondsToDuration(row.ringingSeconds) },
+    { label: "Wrap time", value: secondsToDuration(row.wrapSeconds) },
+    { label: "Paused time", value: secondsToDuration(row.pausedSeconds) },
+    { label: "Idle time", value: secondsToDuration(row.idleSeconds) },
+    { label: "Untracked time", value: secondsToDuration(row.untrackedSeconds) },
+  ] satisfies DashboardMetric[];
+}
 
 function secondsToDuration(seconds: number) {
   const hours = Math.floor(seconds / 3600);
@@ -22,17 +48,25 @@ function secondsToDuration(seconds: number) {
 }
 
 export async function getScopedDashboardMetrics(actor: Actor) {
-  const scopedProfileIds =
-    actor.role === "admin"
-      ? undefined
-      : actor.role === "agent"
-        ? [actor.id]
-        : (
-            await getDb()
-              .select({ profileId: teamMemberships.profileId })
-              .from(teamMemberships)
-              .where(inArray(teamMemberships.teamId, actor.teamIds))
-          ).map((row) => row.profileId);
+  const managerProfileIds =
+    actor.role === "manager" && actor.teamIds.length > 0
+      ? (
+          await getDb()
+            .select({ profileId: teamMemberships.profileId })
+            .from(teamMemberships)
+            .where(
+              and(
+                inArray(teamMemberships.teamId, actor.teamIds),
+                isNull(teamMemberships.endedAt),
+              ),
+            )
+        ).map((row) => row.profileId)
+      : [];
+  const scopedProfileIds = resolveProfileScope(actor, managerProfileIds);
+
+  if (scopedProfileIds?.length === 0) {
+    return formatTotals();
+  }
 
   const where =
     scopedProfileIds && scopedProfileIds.length > 0
@@ -55,17 +89,7 @@ export async function getScopedDashboardMetrics(actor: Actor) {
     .where(where);
   const row = rows[0];
 
-  return [
-    { label: "Calls", value: String(row.calls) },
-    { label: "Login time", value: secondsToDuration(row.loginSeconds) },
-    { label: "Ready time", value: secondsToDuration(row.readySeconds) },
-    { label: "Talk time", value: secondsToDuration(row.talkSeconds) },
-    { label: "Ringing time", value: secondsToDuration(row.ringingSeconds) },
-    { label: "Wrap time", value: secondsToDuration(row.wrapSeconds) },
-    { label: "Paused time", value: secondsToDuration(row.pausedSeconds) },
-    { label: "Idle time", value: secondsToDuration(row.idleSeconds) },
-    { label: "Untracked time", value: secondsToDuration(row.untrackedSeconds) },
-  ] satisfies DashboardMetric[];
+  return formatTotals(row);
 }
 
 export async function getScopedAgents(actor: Actor) {
@@ -83,6 +107,10 @@ export async function getScopedAgents(actor: Actor) {
       .where(eq(profiles.id, actor.id));
   }
 
+  if (actor.teamIds.length === 0) {
+    return [];
+  }
+
   return getDb()
     .select({ id: profiles.id, name: profiles.name, email: profiles.email })
     .from(profiles)
@@ -91,6 +119,7 @@ export async function getScopedAgents(actor: Actor) {
       and(
         eq(profiles.role, "agent"),
         inArray(teamMemberships.teamId, actor.teamIds),
+        isNull(teamMemberships.endedAt),
       ),
     );
 }

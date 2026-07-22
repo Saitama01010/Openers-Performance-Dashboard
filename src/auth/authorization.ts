@@ -11,6 +11,19 @@ export type ScopedProfile = {
   teamIds: string[];
 };
 
+export function resolveProfileScope(actor: Actor, managerProfileIds: string[]) {
+  if (actor.role === "admin") return undefined;
+  if (actor.role === "agent") return [actor.id];
+  return actor.teamIds.length === 0 ? [] : managerProfileIds;
+}
+
+export function resolvePermission(
+  rolePermission: boolean,
+  userOverride: boolean | null,
+) {
+  return userOverride ?? rolePermission;
+}
+
 export function canAccessProfile(actor: Actor, target: ScopedProfile) {
   if (actor.role === "admin") {
     return true;

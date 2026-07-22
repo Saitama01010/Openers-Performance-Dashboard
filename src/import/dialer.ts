@@ -188,6 +188,8 @@ export type DialerMetricInput = {
   pausedSeconds: number;
   idleSeconds: number;
   untrackedSeconds: number;
+  teamIdSnapshot: string | null;
+  teamNameSnapshot: string | null;
 };
 
 export type ExistingDialerMetric = Pick<
@@ -543,13 +545,21 @@ function buildMappingLookup(mappings: SourceMapping[]) {
 
 function mergeMappingGroup(group: SourceMapping[]) {
   const first = group[0];
+  const teamPairs = Array.from(
+    new Map(
+      group.flatMap((mapping) =>
+        mapping.teamIds.map((teamId, index) => [
+          teamId,
+          { teamId, teamName: mapping.teamNames[index] ?? teamId },
+        ] as const),
+      ),
+    ).values(),
+  ).sort((left, right) => left.teamName.localeCompare(right.teamName));
 
   return {
     ...first,
-    teamIds: Array.from(new Set(group.flatMap((mapping) => mapping.teamIds))),
-    teamNames: Array.from(
-      new Set(group.flatMap((mapping) => mapping.teamNames)),
-    ).sort(),
+    teamIds: teamPairs.map((team) => team.teamId),
+    teamNames: teamPairs.map((team) => team.teamName),
   } satisfies SourceMapping;
 }
 
@@ -974,6 +984,12 @@ export function previewDialerCsv(input: {
         rawRow,
       };
     } else {
+      const snapshotIndex = Math.max(
+        0,
+        mappingLookupResult.mapping.teamIds.findIndex((teamId) =>
+          input.actor.teamIds.includes(teamId),
+        ),
+      );
       const metric = {
         source: input.source,
         sourceAgentName: parsed.metric.sourceAgentName,
@@ -981,6 +997,10 @@ export function previewDialerCsv(input: {
         metricDate: parsed.metric.metricDate,
         metricHour: parsed.metric.metricHour,
         calls: parsed.metric.calls,
+        teamIdSnapshot:
+          mappingLookupResult.mapping.teamIds[snapshotIndex] ?? null,
+        teamNameSnapshot:
+          mappingLookupResult.mapping.teamNames[snapshotIndex] ?? null,
         ...parsed.metric.durations,
       } satisfies DialerMetricInput;
       const rowHash = metricRowHash(metric);

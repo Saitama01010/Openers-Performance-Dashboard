@@ -1,16 +1,17 @@
 import "server-only";
 
-import { createHash, randomBytes, timingSafeEqual } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { getDb } from "@/db";
-import { profiles, sessions, teamMemberships } from "@/db/schema";
+import { profiles, sessions, teamMemberships, teams } from "@/db/schema";
+import { hashOpaqueToken } from "@/auth/security";
 
 export const SESSION_COOKIE_NAME = "op_session";
 
 function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
+  return hashOpaqueToken(token);
 }
 
 export function createSessionToken() {
@@ -59,6 +60,13 @@ export async function destroySession() {
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
+export async function revokeAllSessions(profileId: string) {
+  await getDb()
+    .update(sessions)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(sessions.profileId, profileId), isNull(sessions.revokedAt)));
+}
+
 export async function getCurrentUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -70,7 +78,12 @@ export async function getCurrentUser() {
   const sessionRows = await getDb()
     .select()
     .from(sessions)
-    .where(eq(sessions.id, sessionIdFromToken(token)))
+    .where(
+      and(
+        eq(sessions.id, sessionIdFromToken(token)),
+        isNull(sessions.revokedAt),
+      ),
+    )
     .limit(1);
   const session = sessionRows[0];
 
@@ -85,14 +98,21 @@ export async function getCurrentUser() {
     .limit(1);
   const user = userRows[0];
 
-  if (!user || !user.active) {
+  if (!user || !user.active || user.accountStatus !== "active") {
     return null;
   }
 
   const memberships = await getDb()
     .select({ teamId: teamMemberships.teamId })
     .from(teamMemberships)
-    .where(eq(teamMemberships.profileId, user.id));
+    .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
+    .where(
+      and(
+        eq(teamMemberships.profileId, user.id),
+        isNull(teamMemberships.endedAt),
+        eq(teams.active, true),
+      ),
+    );
 
   return {
     id: user.id,

@@ -1,6 +1,6 @@
 # Openers Performance Dashboard
 
-Local-first Next.js dashboard for importing dialer CSV performance data and reviewing opener metrics by role scope.
+Self-hosted Next.js dashboard for secure dialer imports and role-scoped opener performance reporting.
 
 ## Stack
 
@@ -11,6 +11,8 @@ Local-first Next.js dashboard for importing dialer CSV performance data and revi
 - Drizzle ORM
 - Docker Compose for local MySQL
 - Server-side session authentication
+- Invitation and password-reset account setup
+- Versioned GitHub Actions verification with MySQL 8
 
 ## Local Setup
 
@@ -45,3 +47,5 @@ npm run db:seed
 ```
 
 `fixtures/dialer-sample.csv` is an anonymized dialer fixture that uses the exact production CSV headers.
+
+Architecture, permissions, authentication, import, testing, and Hostinger deployment notes are maintained in `docs/`. Google Sheets, leaderboards, commissions, and metric flags are planned phases and are not yet production-ready.

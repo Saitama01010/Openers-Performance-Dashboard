@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
 import { getDb } from "@/db";
@@ -6,6 +6,7 @@ import {
   auditLogs,
   dialerAgentHourlyMetrics,
   dialerImportBatches,
+  importErrors,
   profiles,
   sourceUserMappings,
   teamMemberships,
@@ -73,6 +74,9 @@ async function getMappings(source: string) {
       and(
         eq(sourceUserMappings.source, source),
         eq(sourceUserMappings.active, true),
+        eq(profiles.accountStatus, "active"),
+        isNull(teamMemberships.endedAt),
+        eq(teams.active, true),
       ),
     );
   const mappingByAgent = new Map<string, SourceMapping>();
@@ -131,9 +135,8 @@ export async function createDialerPreviewBatch(input: {
   const batchId = newId();
   const expiresAt = new Date(Date.now() + PREVIEW_EXPIRATION_MS);
 
-  await getDb()
-    .insert(dialerImportBatches)
-    .values({
+  await getDb().transaction(async (tx) => {
+    await tx.insert(dialerImportBatches).values({
       id: batchId,
       source: input.source,
       fileName: input.fileName,
@@ -150,6 +153,37 @@ export async function createDialerPreviewBatch(input: {
       rawFileContent: input.fileContent,
       expiresAt,
     });
+
+    const errorRows = preview.rows
+      .filter((row) => row.validationMessage)
+      .map((row) => ({
+        id: newId(),
+        batchId,
+        rowNumber: row.rowNumber,
+        status: row.status,
+        message: row.validationMessage ?? "Row is not importable.",
+        rawRow: row.rawRow,
+      }));
+
+    if (errorRows.length > 0) {
+      await tx.insert(importErrors).values(errorRows);
+    }
+
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: input.actor.id,
+      action: preview.duplicateFile
+        ? "dialer_import.duplicate_blocked"
+        : "dialer_import.preview_created",
+      entityType: "dialer_import_batch",
+      entityId: batchId,
+      metadata: {
+        ...previewSummary(preview),
+        fileName: input.fileName,
+        fileHash: preview.fileHash,
+      },
+    });
+  });
 
   return { batchId, preview };
 }
@@ -257,6 +291,9 @@ export async function confirmDialerImportBatch(input: {
         and(
           eq(sourceUserMappings.source, batch.source),
           eq(sourceUserMappings.active, true),
+          eq(profiles.accountStatus, "active"),
+          isNull(teamMemberships.endedAt),
+          eq(teams.active, true),
         ),
       );
     const metricRows = await tx
@@ -342,6 +379,8 @@ export async function confirmDialerImportBatch(input: {
           pausedSeconds: row.metric.pausedSeconds,
           idleSeconds: row.metric.idleSeconds,
           untrackedSeconds: row.metric.untrackedSeconds,
+          teamIdSnapshot: row.metric.teamIdSnapshot,
+          teamNameSnapshot: row.metric.teamNameSnapshot,
           rowHash: row.rowHash,
         })
         .onDuplicateKeyUpdate({
@@ -371,6 +410,7 @@ export async function confirmDialerImportBatch(input: {
       metadata: {
         ...previewSummary(preview),
         fileName: batch.fileName,
+        fileHash: preview.fileHash,
       },
     });
 

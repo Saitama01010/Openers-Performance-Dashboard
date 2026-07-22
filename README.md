@@ -44,4 +44,4 @@ npm run db:migrate
 npm run db:seed
 ```
 
-`fixtures/dialer-sample.csv` is a representative fixture because the supplied production CSV was not present in the repository at scaffold time.
+`fixtures/dialer-sample.csv` is an anonymized dialer fixture that uses the exact production CSV headers.

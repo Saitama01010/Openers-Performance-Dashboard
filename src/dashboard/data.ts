@@ -42,14 +42,14 @@ export async function getScopedDashboardMetrics(actor: Actor) {
   const rows = await getDb()
     .select({
       calls: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.calls}), 0)`,
-      loginSeconds: sql<number>`coalesce(sum(time_to_sec(${dialerAgentHourlyMetrics.loginTime})), 0)`,
-      readySeconds: sql<number>`coalesce(sum(time_to_sec(${dialerAgentHourlyMetrics.readyTime})), 0)`,
-      talkSeconds: sql<number>`coalesce(sum(time_to_sec(${dialerAgentHourlyMetrics.talkTime})), 0)`,
-      ringingSeconds: sql<number>`coalesce(sum(time_to_sec(${dialerAgentHourlyMetrics.ringingTime})), 0)`,
-      wrapSeconds: sql<number>`coalesce(sum(time_to_sec(${dialerAgentHourlyMetrics.wrapTime})), 0)`,
-      pausedSeconds: sql<number>`coalesce(sum(time_to_sec(${dialerAgentHourlyMetrics.pausedTime})), 0)`,
-      idleSeconds: sql<number>`coalesce(sum(time_to_sec(${dialerAgentHourlyMetrics.idleTime})), 0)`,
-      untrackedSeconds: sql<number>`coalesce(sum(time_to_sec(${dialerAgentHourlyMetrics.untrackedTime})), 0)`,
+      loginSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.loggedInSeconds}), 0)`,
+      readySeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.readySeconds}), 0)`,
+      talkSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.talkSeconds}), 0)`,
+      ringingSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.ringingSeconds}), 0)`,
+      wrapSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.wrapSeconds}), 0)`,
+      pausedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.pausedSeconds}), 0)`,
+      idleSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.idleSeconds}), 0)`,
+      untrackedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.untrackedSeconds}), 0)`,
     })
     .from(dialerAgentHourlyMetrics)
     .where(where);

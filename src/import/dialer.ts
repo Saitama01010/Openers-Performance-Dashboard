@@ -8,17 +8,47 @@ export const REQUIRED_DIALER_HEADERS = [
   "date",
   "hour",
   "calls",
-  "login_time",
-  "ready_time",
-  "talk_time",
-  "ringing_time",
-  "wrap_time",
-  "paused_time",
-  "idle_time",
-  "untracked_time",
+  "logged_in_seconds",
+  "ready_seconds",
+  "talk_seconds",
+  "ringing_seconds",
+  "wrap_seconds",
+  "paused_seconds",
+  "idle_seconds",
+  "untracked_seconds",
 ] as const;
 
 export type DialerHeader = (typeof REQUIRED_DIALER_HEADERS)[number];
+
+export const DIALER_HEADER_ALIASES: Record<string, DialerHeader> = {
+  agent: "agent",
+  date: "date",
+  hour: "hour",
+  calls: "calls",
+  "logged in (sec)": "logged_in_seconds",
+  logged_in_seconds: "logged_in_seconds",
+  ready: "ready_seconds",
+  "ready (sec)": "ready_seconds",
+  ready_seconds: "ready_seconds",
+  talk: "talk_seconds",
+  "talk (sec)": "talk_seconds",
+  talk_seconds: "talk_seconds",
+  ringing: "ringing_seconds",
+  "ringing (sec)": "ringing_seconds",
+  ringing_seconds: "ringing_seconds",
+  wrap: "wrap_seconds",
+  "wrap (sec)": "wrap_seconds",
+  wrap_seconds: "wrap_seconds",
+  paused: "paused_seconds",
+  "paused (sec)": "paused_seconds",
+  paused_seconds: "paused_seconds",
+  idle: "idle_seconds",
+  "idle (sec)": "idle_seconds",
+  idle_seconds: "idle_seconds",
+  untracked: "untracked_seconds",
+  "untracked (sec)": "untracked_seconds",
+  untracked_seconds: "untracked_seconds",
+};
 
 export type DialerMetricInput = {
   source: string;
@@ -27,14 +57,14 @@ export type DialerMetricInput = {
   metricDate: string;
   metricHour: number;
   calls: number;
-  loginTime: string;
-  readyTime: string;
-  talkTime: string;
-  ringingTime: string;
-  wrapTime: string;
-  pausedTime: string;
-  idleTime: string;
-  untrackedTime: string;
+  loggedInSeconds: number;
+  readySeconds: number;
+  talkSeconds: number;
+  ringingSeconds: number;
+  wrapSeconds: number;
+  pausedSeconds: number;
+  idleSeconds: number;
+  untrackedSeconds: number;
 };
 
 export type ExistingDialerMetric = Pick<
@@ -70,6 +100,8 @@ export type ImportPreview = {
   duplicateFile: boolean;
   headers: string[];
   missingHeaders: string[];
+  totalCsvRows: number;
+  mappedAgents: string[];
   rows: ImportPreviewRow[];
   summary: Record<ImportPreviewRow["status"], number>;
 };
@@ -78,8 +110,30 @@ export function sha256(content: string | Buffer) {
   return createHash("sha256").update(content).digest("hex");
 }
 
+export function normalizeDialerHeader(header: string) {
+  const normalized = header.replace(/^\uFEFF/, "").trim().toLowerCase();
+
+  return DIALER_HEADER_ALIASES[normalized] ?? normalized;
+}
+
 export function validateDialerHeaders(headers: string[]) {
   return REQUIRED_DIALER_HEADERS.filter((header) => !headers.includes(header));
+}
+
+export function getImportConfirmationBlockReason(preview: ImportPreview) {
+  if (preview.missingHeaders.length > 0) {
+    return `Missing required CSV headers: ${preview.missingHeaders.join(", ")}`;
+  }
+
+  if (preview.duplicateFile) {
+    return "Duplicate file blocked.";
+  }
+
+  if (preview.summary.new + preview.summary.changed === 0) {
+    return "No valid new or changed rows exist.";
+  }
+
+  return null;
 }
 
 export function hourlyKey(metric: Pick<DialerMetricInput, "source" | "agentProfileId" | "metricDate" | "metricHour">) {
@@ -90,32 +144,32 @@ export function metricRowHash(metric: DialerMetricInput) {
   return sha256(
     JSON.stringify({
       calls: metric.calls,
-      loginTime: metric.loginTime,
-      readyTime: metric.readyTime,
-      talkTime: metric.talkTime,
-      ringingTime: metric.ringingTime,
-      wrapTime: metric.wrapTime,
-      pausedTime: metric.pausedTime,
-      idleTime: metric.idleTime,
-      untrackedTime: metric.untrackedTime,
+      loggedInSeconds: metric.loggedInSeconds,
+      readySeconds: metric.readySeconds,
+      talkSeconds: metric.talkSeconds,
+      ringingSeconds: metric.ringingSeconds,
+      wrapSeconds: metric.wrapSeconds,
+      pausedSeconds: metric.pausedSeconds,
+      idleSeconds: metric.idleSeconds,
+      untrackedSeconds: metric.untrackedSeconds,
     }),
   );
 }
 
-function normalizeTime(value: string) {
+function normalizeSeconds(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
   const trimmed = value.trim();
 
   if (/^\d{1,2}:\d{2}:\d{2}$/.test(trimmed)) {
     const [hours, minutes, seconds] = trimmed.split(":").map(Number);
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    return hours * 3600 + minutes * 60 + seconds;
   }
 
   if (/^\d+(\.\d+)?$/.test(trimmed)) {
-    const totalSeconds = Math.round(Number(trimmed));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    return Math.round(Number(trimmed));
   }
 
   return null;
@@ -142,24 +196,26 @@ function parseMetric(
     return { error: "Invalid calls. Expected a non-negative integer." };
   }
 
-  const times = {
-    loginTime: normalizeTime(row.login_time),
-    readyTime: normalizeTime(row.ready_time),
-    talkTime: normalizeTime(row.talk_time),
-    ringingTime: normalizeTime(row.ringing_time),
-    wrapTime: normalizeTime(row.wrap_time),
-    pausedTime: normalizeTime(row.paused_time),
-    idleTime: normalizeTime(row.idle_time),
-    untrackedTime: normalizeTime(row.untracked_time),
+  const durations = {
+    loggedInSeconds: normalizeSeconds(row.logged_in_seconds),
+    readySeconds: normalizeSeconds(row.ready_seconds),
+    talkSeconds: normalizeSeconds(row.talk_seconds),
+    ringingSeconds: normalizeSeconds(row.ringing_seconds),
+    wrapSeconds: normalizeSeconds(row.wrap_seconds),
+    pausedSeconds: normalizeSeconds(row.paused_seconds),
+    idleSeconds: normalizeSeconds(row.idle_seconds),
+    untrackedSeconds: normalizeSeconds(row.untracked_seconds),
   };
 
-  const invalidTime = Object.entries(times).find(([, value]) => !value);
+  const invalidDuration = Object.entries(durations).find(
+    ([, value]) => value === null || value < 0,
+  );
 
-  if (invalidTime) {
-    return { error: `Invalid ${invalidTime[0]} duration.` };
+  if (invalidDuration) {
+    return { error: `Invalid ${invalidDuration[0]} duration.` };
   }
 
-  const validTimes = times as Record<keyof typeof times, string>;
+  const validDurations = durations as Record<keyof typeof durations, number>;
 
   return {
     metric: {
@@ -169,14 +225,14 @@ function parseMetric(
       metricDate,
       metricHour,
       calls,
-      loginTime: validTimes.loginTime,
-      readyTime: validTimes.readyTime,
-      talkTime: validTimes.talkTime,
-      ringingTime: validTimes.ringingTime,
-      wrapTime: validTimes.wrapTime,
-      pausedTime: validTimes.pausedTime,
-      idleTime: validTimes.idleTime,
-      untrackedTime: validTimes.untrackedTime,
+      loggedInSeconds: validDurations.loggedInSeconds,
+      readySeconds: validDurations.readySeconds,
+      talkSeconds: validDurations.talkSeconds,
+      ringingSeconds: validDurations.ringingSeconds,
+      wrapSeconds: validDurations.wrapSeconds,
+      pausedSeconds: validDurations.pausedSeconds,
+      idleSeconds: validDurations.idleSeconds,
+      untrackedSeconds: validDurations.untrackedSeconds,
     } satisfies DialerMetricInput,
   };
 }
@@ -202,13 +258,22 @@ export function previewDialerCsv(input: {
 }) {
   const fileHash = sha256(input.fileContent);
   const duplicateFile = input.existingFileHashes.has(fileHash);
+  let detectedHeaders: string[] = [];
   const records = parse(input.fileContent, {
-    columns: true,
+    bom: true,
+    columns: (headers: string[]) => {
+      detectedHeaders = headers.map((header) =>
+        header.replace(/^\uFEFF/, "").trim(),
+      );
+      return headers.map(normalizeDialerHeader);
+    },
+    relax_column_count: true,
     skip_empty_lines: true,
     trim: true,
   }) as Record<string, string>[];
-  const headers = records.length > 0 ? Object.keys(records[0]) : [];
-  const missingHeaders = validateDialerHeaders(headers);
+  const headers = detectedHeaders;
+  const normalizedHeaders = detectedHeaders.map(normalizeDialerHeader);
+  const missingHeaders = validateDialerHeaders(normalizedHeaders);
   const mappingByName = new Map(
     input.mappings.map((mapping) => [
       mapping.sourceAgentName.toLowerCase(),
@@ -226,10 +291,13 @@ export function previewDialerCsv(input: {
       duplicateFile,
       headers,
       missingHeaders,
+      totalCsvRows: records.length,
+      mappedAgents: [],
       rows: [],
       summary,
     } satisfies ImportPreview;
   }
+  const mappedAgents = new Set<string>();
 
   const rows = records.map((rawRow, index) => {
     const rowNumber = index + 2;
@@ -260,6 +328,7 @@ export function previewDialerCsv(input: {
       } satisfies ImportPreviewRow;
     }
 
+    mappedAgents.add(mapping.sourceAgentName);
     const parsed = parseMetric(input.source, rawRow, mapping);
 
     if ("error" in parsed) {
@@ -296,6 +365,8 @@ export function previewDialerCsv(input: {
     duplicateFile,
     headers,
     missingHeaders,
+    totalCsvRows: records.length,
+    mappedAgents: Array.from(mappedAgents).sort(),
     rows,
     summary,
   } satisfies ImportPreview;

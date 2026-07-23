@@ -29,7 +29,11 @@ jobs:
       SESSION_SECRET: ci-only-session-secret-at-least-32-characters
       APP_URL: http://localhost:3000
       EMAIL_PROVIDER: console
-      EMAIL_FROM: no-reply@example.test
+      EMAIL_FROM_NAME: DialExpert
+      EMAIL_FROM_ADDRESS: no-reply@updates.dialexpert.com
+      EMAIL_REPLY_TO: ""
+      INVITATION_TTL_HOURS: "48"
+      PASSWORD_RESET_TTL_MINUTES: "30"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,10 +42,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm run test
-      - run: npm run build
       - run: npm run db:generate
       - run: git diff --exit-code -- drizzle
       - run: npm run db:migrate
       - run: npm run db:seed
       - run: npm run db:health
+      - run: npm run test
+      - run: npm run build

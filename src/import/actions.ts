@@ -7,6 +7,7 @@ import { assertPermission } from "@/auth/permissions";
 import {
   confirmDialerImportBatch,
   createDialerPreviewBatch,
+  ImportConfirmationError,
 } from "@/import/service";
 
 const MAX_CSV_BYTES = 10 * 1024 * 1024;
@@ -74,11 +75,24 @@ export async function confirmImportAction(formData: FormData) {
     redirect("/import?error=preview");
   }
 
+  const allowPartialImport = formData.get("allowPartialImport") === "true";
+
   try {
-    await confirmDialerImportBatch({ actor: user, batchId });
+    await confirmDialerImportBatch({ actor: user, batchId, allowPartialImport });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Import failed.";
-    redirect(`/import?preview=${batchId}&confirmError=${encodeURIComponent(message)}`);
+    const confirmError =
+      error instanceof ImportConfirmationError
+        ? error.code
+        : "confirm_failed";
+
+    console.error("[dialer import confirmation failed]", {
+      actorId: user.id,
+      batchId,
+      code: confirmError,
+      message: error instanceof Error ? error.message : "Unknown import error.",
+    });
+
+    redirect(`/import?preview=${batchId}&confirmError=${confirmError}`);
   }
 
   redirect(`/import?confirmed=${batchId}`);

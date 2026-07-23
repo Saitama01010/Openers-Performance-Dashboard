@@ -1506,6 +1506,7 @@ export async function getUnmappedDialerNames(actor: Actor) {
     .select({
       batchId: dialerImportBatches.id,
       fileName: dialerImportBatches.fileName,
+      batchStatus: dialerImportBatches.status,
       uploadedAt: dialerImportBatches.createdAt,
       uploadedBy: profiles.name,
       rawRow: importErrors.rawRow,
@@ -1516,7 +1517,10 @@ export async function getUnmappedDialerNames(actor: Actor) {
     .where(
       and(
         eq(importErrors.status, "unknown"),
-        eq(dialerImportBatches.status, "previewed"),
+        inArray(dialerImportBatches.status, [
+          "previewed",
+          "partially_confirmed",
+        ]),
       ),
     )
     .orderBy(desc(dialerImportBatches.createdAt));
@@ -1525,7 +1529,13 @@ export async function getUnmappedDialerNames(actor: Actor) {
     dialerName: string;
     normalizedName: string;
     affectedRowCount: number;
-    files: { batchId: string; fileName: string; uploadedAt: Date; uploadedBy: string }[];
+    files: {
+      batchId: string;
+      fileName: string;
+      batchStatus: string;
+      uploadedAt: Date;
+      uploadedBy: string;
+    }[];
   }>();
 
   for (const row of rows) {
@@ -1546,6 +1556,7 @@ export async function getUnmappedDialerNames(actor: Actor) {
       current.files.push({
         batchId: row.batchId,
         fileName: row.fileName,
+        batchStatus: row.batchStatus,
         uploadedAt: row.uploadedAt,
         uploadedBy: row.uploadedBy,
       });

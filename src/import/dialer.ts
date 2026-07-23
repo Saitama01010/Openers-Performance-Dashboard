@@ -163,7 +163,14 @@ export type FilePreviewSummary = {
   changedRows: number;
   unchangedRows: number;
   invalidRows: number;
+  invalidMappedRows: number;
   outOfScopeRows: number;
+  eligibleMappedRows: number;
+  mappedRowsToImport: number;
+  unmappedRowsToSkip: number;
+  outOfScopeRowsToSkip: number;
+  unchangedRowsToSkip: number;
+  skippedRows: number;
   includedValidRows: number;
   excludedInvalidRows: number;
   mappedValidRows: number;
@@ -308,6 +315,7 @@ export function validateDialerHeaders(headers: string[]) {
 
 export function getImportConfirmationBlockReasons(preview: ImportPreview) {
   const reasons: string[] = [];
+  const mappedRowsToImport = preview.fileSummary.mappedRowsToImport;
 
   if (preview.missingHeaders.length > 0) {
     reasons.push(
@@ -315,20 +323,8 @@ export function getImportConfirmationBlockReasons(preview: ImportPreview) {
     );
   }
 
-  if (preview.duplicateFile) {
+  if (preview.duplicateFile && mappedRowsToImport === 0) {
     reasons.push("Duplicate file blocked.");
-  }
-
-  if (preview.fileSummary.uniqueUnmappedAgents > 0) {
-    reasons.push(
-      `${preview.fileSummary.uniqueUnmappedAgents} unmapped dialer agent(s) must be mapped before import.`,
-    );
-  }
-
-  if (preview.fileSummary.uniqueOutOfScopeAgents > 0) {
-    reasons.push(
-      `${preview.fileSummary.uniqueOutOfScopeAgents} out-of-scope dialer agent(s) cannot be imported by this user.`,
-    );
   }
 
   if (preview.fileSummary.uniqueInvalidMappingAgents > 0) {
@@ -337,14 +333,14 @@ export function getImportConfirmationBlockReasons(preview: ImportPreview) {
     );
   }
 
-  if (preview.fileSummary.invalidRows > 0) {
+  if (preview.fileSummary.invalidMappedRows > 0) {
     reasons.push(
-      `${preview.fileSummary.invalidRows} invalid row(s) must be resolved before import.`,
+      `${preview.fileSummary.invalidMappedRows} invalid mapped row(s) must be resolved before import.`,
     );
   }
 
-  if (preview.summary.new + preview.summary.changed === 0) {
-    reasons.push("No valid new or changed rows exist.");
+  if (mappedRowsToImport === 0) {
+    reasons.push("No mapped new or changed rows exist.");
   }
 
   return reasons;
@@ -822,6 +818,15 @@ function buildFileSummary(input: {
     totalCalls += agent.calls;
     addDurations(durationTotals, agent.durations);
   }
+  const eligibleMappedRows =
+    input.summary.new + input.summary.changed + input.summary.unchanged;
+  const mappedRowsToImport = input.summary.new + input.summary.changed;
+  const unmappedRowsToSkip = input.summary.unknown;
+  const outOfScopeRowsToSkip = input.summary.out_of_scope;
+  const unchangedRowsToSkip = input.summary.unchanged;
+  const invalidMappedRows = input.agents
+    .filter((agent) => agent.mappingStatus === "mapped")
+    .reduce((total, agent) => total + agent.rowCounts.invalid, 0);
 
   return {
     totalCsvRows: input.totalCsvRows,
@@ -843,7 +848,18 @@ function buildFileSummary(input: {
     changedRows: input.summary.changed,
     unchangedRows: input.summary.unchanged,
     invalidRows: input.summary.invalid,
+    invalidMappedRows,
     outOfScopeRows: input.summary.out_of_scope,
+    eligibleMappedRows,
+    mappedRowsToImport,
+    unmappedRowsToSkip,
+    outOfScopeRowsToSkip,
+    unchangedRowsToSkip,
+    skippedRows:
+      unmappedRowsToSkip +
+      outOfScopeRowsToSkip +
+      unchangedRowsToSkip +
+      input.summary.invalid,
     includedValidRows:
       input.summary.new +
       input.summary.changed +
@@ -959,7 +975,15 @@ export function previewDialerCsv(input: {
       builder.rowCounts.invalid += 1;
 
       if (mappingLookupResult?.status === "mapped") {
-        updateAgentMapping(builder, "mapped", mappingLookupResult.mapping);
+        const mapping = mappingLookupResult.mapping;
+        const mappingStatus = canImportForProfile(input.actor, {
+          id: mapping.profileId,
+          teamIds: mapping.teamIds,
+        })
+          ? "mapped"
+          : "out_of_scope";
+
+        updateAgentMapping(builder, mappingStatus, mapping);
       } else if (mappingLookupResult?.status === "invalid_mapping") {
         updateAgentMapping(builder, "invalid_mapping");
       }

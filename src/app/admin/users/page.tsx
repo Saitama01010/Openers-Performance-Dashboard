@@ -255,7 +255,7 @@ export default async function AdminUsersPage({
           <h2 className="font-semibold">Unmapped Dialer Names</h2>
         </div>
         {unmappedNames.length === 0 ? (
-          <p className="p-5 text-sm text-muted">No unmapped names are present in pending previews.</p>
+          <p className="p-5 text-sm text-muted">No unmapped names are present in open import previews.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -265,6 +265,7 @@ export default async function AdminUsersPage({
                   <th className="px-4 py-3">Normalized</th>
                   <th className="px-4 py-3">Affected rows</th>
                   <th className="px-4 py-3">File</th>
+                  <th className="px-4 py-3">Batch status</th>
                   <th className="px-4 py-3">Uploaded</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
@@ -276,6 +277,9 @@ export default async function AdminUsersPage({
                     <td className="px-4 py-3">{name.normalizedName}</td>
                     <td className="px-4 py-3">{name.affectedRowCount}</td>
                     <td className="px-4 py-3">{name.files[0]?.fileName ?? "-"}</td>
+                    <td className="px-4 py-3">
+                      {name.files[0]?.batchStatus.replaceAll("_", " ") ?? "-"}
+                    </td>
                     <td className="px-4 py-3">
                       {name.files[0] ? fmt(name.files[0].uploadedAt) : "-"}
                     </td>

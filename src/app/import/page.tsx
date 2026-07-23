@@ -9,6 +9,15 @@ import { getStoredImportPreview } from "@/import/service";
 
 export const dynamic = "force-dynamic";
 
+const confirmErrorMessages: Record<string, string> = {
+  confirm_failed: "Import could not be completed. Please refresh the preview and try again.",
+  partial_ack_required:
+    "Confirm the skipped-row acknowledgement before importing mapped rows.",
+  preview_blocked:
+    "Import could not be completed because the preview has blocking issues.",
+  preview_expired: "Preview expired. Upload the file again.",
+};
+
 export default async function ImportPage({
   searchParams,
 }: {
@@ -78,7 +87,8 @@ export default async function ImportPage({
 
         {params.confirmError ? (
           <p className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-            {decodeURIComponent(params.confirmError)}
+            {confirmErrorMessages[params.confirmError] ??
+              confirmErrorMessages.confirm_failed}
           </p>
         ) : null}
 

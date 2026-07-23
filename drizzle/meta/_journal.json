@@ -43,6 +43,13 @@
       "when": 1784778983517,
       "tag": "0005_glorious_blindfold",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1784787824019,
+      "tag": "0006_fuzzy_phil_sheldon",
+      "breakpoints": true
     }
   ]
 }

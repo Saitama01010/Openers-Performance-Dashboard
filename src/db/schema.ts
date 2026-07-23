@@ -41,7 +41,9 @@ export const membershipRoleEnum = mysqlEnum("membership_role", [
 ]);
 export const importStatusEnum = mysqlEnum("import_status", [
   "previewed",
+  "partially_confirmed",
   "confirmed",
+  "failed",
   "rejected",
 ]);
 export const importRowStatusEnum = mysqlEnum("import_row_status", [
@@ -172,6 +174,9 @@ export const dialerImportBatches = mysqlTable(
     uploadedById: varchar("uploaded_by_id", { length: 36 })
       .notNull()
       .references(() => profiles.id),
+    confirmedById: varchar("confirmed_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
     rowCount: int("row_count").notNull().default(0),
     previewSummary: json("preview_summary").$type<Record<string, unknown>>(),
     detectedHeaders: json("detected_headers").$type<string[]>(),
@@ -184,6 +189,7 @@ export const dialerImportBatches = mysqlTable(
   (table) => [
     index("dialer_import_file_hash_idx").on(table.source, table.fileHash),
     index("dialer_import_uploaded_by_idx").on(table.uploadedById),
+    index("dialer_import_confirmed_by_idx").on(table.confirmedById),
     index("dialer_import_expires_at_idx").on(table.expiresAt),
   ],
 );

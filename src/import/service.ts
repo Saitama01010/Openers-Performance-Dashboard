@@ -33,6 +33,16 @@ export type StoredImportPreview = {
   preview: ImportPreview;
 };
 
+export class ImportConfirmationError extends Error {
+  constructor(
+    message: string,
+    public readonly code = "confirm_failed",
+  ) {
+    super(message);
+    this.name = "ImportConfirmationError";
+  }
+}
+
 function previewSummary(preview: ImportPreview) {
   return {
     fileName: undefined,
@@ -63,6 +73,7 @@ async function replacePreviewPersistence(
     batchId: string;
     fileName: string;
     preview: ImportPreview;
+    confirmationSummary?: Record<string, unknown>;
   },
 ) {
   await tx
@@ -72,6 +83,7 @@ async function replacePreviewPersistence(
       previewSummary: {
         ...previewSummary(input.preview),
         fileName: input.fileName,
+        ...input.confirmationSummary,
       },
       detectedHeaders: input.preview.headers,
       missingRequiredHeaders: input.preview.missingHeaders,
@@ -240,7 +252,7 @@ export async function getStoredImportPreview(input: {
 
   if (
     !batch ||
-    batch.status !== "previewed" ||
+    !["previewed", "partially_confirmed"].includes(batch.status) ||
     (input.actor.role !== "admin" && batch.uploadedById !== input.actor.id) ||
     batch.expiresAt.getTime() <= Date.now()
   ) {
@@ -277,7 +289,7 @@ export async function getStoredImportPreview(input: {
 
     if (
       !lockedBatch ||
-      lockedBatch.status !== "previewed" ||
+      !["previewed", "partially_confirmed"].includes(lockedBatch.status) ||
       (input.actor.role !== "admin" && lockedBatch.uploadedById !== input.actor.id) ||
       lockedBatch.expiresAt.getTime() <= Date.now()
     ) {
@@ -303,6 +315,7 @@ export async function getStoredImportPreview(input: {
 export async function confirmDialerImportBatch(input: {
   actor: Actor;
   batchId: string;
+  allowPartialImport?: boolean;
 }) {
   const db = getDb();
 
@@ -311,25 +324,36 @@ export async function confirmDialerImportBatch(input: {
       .select()
       .from(dialerImportBatches)
       .where(eq(dialerImportBatches.id, input.batchId))
-      .limit(1);
+      .limit(1)
+      .for("update");
     const batch = batchRows[0];
 
-    if (!batch || batch.status !== "previewed") {
-      throw new Error("Preview import batch was not found.");
+    if (
+      !batch ||
+      !["previewed", "partially_confirmed"].includes(batch.status)
+    ) {
+      throw new ImportConfirmationError("Preview import batch was not found.");
     }
 
     if (input.actor.role !== "admin" && batch.uploadedById !== input.actor.id) {
-      throw new Error("Preview import batch does not belong to this uploader.");
+      throw new ImportConfirmationError(
+        "Preview import batch does not belong to this uploader.",
+      );
     }
 
     if (batch.expiresAt.getTime() <= Date.now()) {
-      throw new Error("Preview import batch expired. Upload the file again.");
+      throw new ImportConfirmationError(
+        "Preview import batch expired. Upload the file again.",
+        "preview_expired",
+      );
     }
 
     const fileHash = sha256(batch.rawFileContent);
 
     if (fileHash !== batch.fileHash) {
-      throw new Error("Preview import file hash verification failed.");
+      throw new ImportConfirmationError(
+        "Preview import file hash verification failed.",
+      );
     }
 
     const hashRows = await tx
@@ -405,13 +429,47 @@ export async function confirmDialerImportBatch(input: {
     const blockReason = getImportConfirmationBlockReason(preview);
 
     if (blockReason) {
-      throw new Error(blockReason);
+      throw new ImportConfirmationError(blockReason, "preview_blocked");
     }
+
+    const partialAcknowledgementRequired =
+      preview.fileSummary.unmappedRowsToSkip +
+        preview.fileSummary.outOfScopeRowsToSkip +
+        preview.fileSummary.invalidRows >
+      0;
+
+    if (partialAcknowledgementRequired && !input.allowPartialImport) {
+      throw new ImportConfirmationError(
+        "Skipped rows acknowledgement is required before import.",
+        "partial_ack_required",
+      );
+    }
+
+    const confirmedAt = new Date();
+    const unresolvedAgentCount = preview.agents.filter(
+      (agent) =>
+        agent.mappingStatus === "unmapped" ||
+        agent.mappingStatus === "out_of_scope" ||
+        agent.mappingStatus === "invalid_mapping" ||
+        agent.invalidRowCount > 0,
+    ).length;
+    const confirmationSummary = {
+      importedNewRows: preview.summary.new,
+      updatedRows: preview.summary.changed,
+      unchangedRows: preview.summary.unchanged,
+      skippedUnmappedRows: preview.summary.unknown,
+      skippedOutOfScopeRows: preview.summary.out_of_scope,
+      invalidRows: preview.summary.invalid,
+      unresolvedAgentCount,
+      confirmedById: input.actor.id,
+      confirmedAt: confirmedAt.toISOString(),
+    };
 
     await replacePreviewPersistence(tx, {
       batchId: batch.id,
       fileName: batch.fileName,
       preview,
+      confirmationSummary,
     });
 
     for (const row of preview.rows) {
@@ -420,7 +478,9 @@ export async function confirmDialerImportBatch(input: {
       }
 
       if (!row.metric || !row.rowHash) {
-        throw new Error("Importable preview row is missing metric data.");
+        throw new ImportConfirmationError(
+          "Importable preview row is missing metric data.",
+        );
       }
 
       await tx
@@ -464,14 +524,27 @@ export async function confirmDialerImportBatch(input: {
         });
     }
 
+    const nextStatus =
+      preview.fileSummary.unmappedRowsToSkip +
+        preview.fileSummary.outOfScopeRowsToSkip +
+        preview.fileSummary.invalidRows >
+      0
+        ? "partially_confirmed"
+        : "confirmed";
+
     await tx.insert(auditLogs).values({
       id: newId(),
       actorProfileId: input.actor.id,
-      action: "dialer_import.confirmed",
+      action:
+        nextStatus === "partially_confirmed"
+          ? "dialer_import.partially_confirmed"
+          : "dialer_import.confirmed",
       entityType: "dialer_import_batch",
       entityId: batch.id,
       metadata: {
         ...previewSummary(preview),
+        ...confirmationSummary,
+        status: nextStatus,
         fileName: batch.fileName,
         fileHash: preview.fileHash,
       },
@@ -479,7 +552,11 @@ export async function confirmDialerImportBatch(input: {
 
     await tx
       .update(dialerImportBatches)
-      .set({ status: "confirmed", confirmedAt: new Date() })
+      .set({
+        status: nextStatus,
+        confirmedById: input.actor.id,
+        confirmedAt,
+      })
       .where(eq(dialerImportBatches.id, batch.id));
 
     return { batchId: batch.id, preview };

@@ -64,15 +64,15 @@ const durationLabels: { key: keyof DurationTotals; label: string }[] = [
 
 const summaryCards = [
   ["totalCsvRows", "Total CSV Rows"],
-  ["uniqueAgentsDetected", "Unique Agents Detected"],
+  ["eligibleMappedRows", "Eligible Mapped Rows"],
+  ["mappedRowsToImport", "Mapped Rows To Import"],
+  ["unmappedRowsToSkip", "Unmapped Rows To Skip"],
+  ["outOfScopeRowsToSkip", "Out-of-Scope Rows To Skip"],
+  ["unchangedRowsToSkip", "Unchanged Rows To Skip"],
+  ["invalidRows", "Invalid Rows"],
   ["uniqueMappedAgents", "Unique Mapped Agents"],
   ["uniqueUnmappedAgents", "Unique Unmapped Agents"],
-  ["unknownRows", "Unknown Rows"],
-  ["newRows", "New Rows"],
-  ["changedRows", "Changed Rows"],
-  ["unchangedRows", "Unchanged Rows"],
-  ["invalidRows", "Invalid Rows"],
-  ["outOfScopeRows", "Out-of-Scope Rows"],
+  ["uniqueOutOfScopeAgents", "Unique Out-of-Scope Agents"],
 ] as const;
 
 function mappingStatusClass(status: AgentMappingStatus) {
@@ -301,6 +301,17 @@ export function ImportPreviewSummary({
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("agent");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
+  const mappedRowsToImport = preview.fileSummary.mappedRowsToImport;
+  const unresolvedRowsToSkip =
+    preview.fileSummary.unmappedRowsToSkip +
+    preview.fileSummary.outOfScopeRowsToSkip;
+  const skippedRows =
+    unresolvedRowsToSkip +
+    preview.fileSummary.unchangedRowsToSkip +
+    preview.fileSummary.invalidRows;
+  const partialAcknowledgementRequired =
+    mappedRowsToImport > 0 &&
+    (unresolvedRowsToSkip + preview.fileSummary.invalidRows > 0);
   const filteredAgents = useMemo(() => {
     const agents = preview.agents.filter((agent) => {
       if (filter === "all") {
@@ -355,6 +366,20 @@ export function ImportPreviewSummary({
           Missing required headers: {preview.missingHeaders.join(", ")}
         </div>
       ) : null}
+
+      <div className="mt-4 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+        This import will save {formatNumber(mappedRowsToImport)} mapped rows and
+        skip {formatNumber(unresolvedRowsToSkip)} unresolved or unauthorized
+        rows.
+        {preview.fileSummary.unchangedRowsToSkip > 0 ||
+        preview.fileSummary.invalidRows > 0 ? (
+          <span className="ml-1">
+            It will also skip {formatNumber(preview.fileSummary.unchangedRowsToSkip)}
+            {" "}unchanged rows and {formatNumber(preview.fileSummary.invalidRows)}
+            {" "}invalid rows.
+          </span>
+        ) : null}
+      </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {summaryCards.map(([key, label]) => (
@@ -577,11 +602,36 @@ export function ImportPreviewSummary({
 
       <form action={confirmImportAction} className="mt-5">
         <input name="batchId" type="hidden" value={batchId} />
+        {partialAcknowledgementRequired ? (
+          <div className="mb-4 rounded-md border border-primary/30 bg-primary/10 p-3 text-sm">
+            <label className="flex items-start gap-2 font-medium">
+              <input
+                className="mt-1"
+                name="allowPartialImport"
+                required
+                type="checkbox"
+                value="true"
+              />
+              <span>
+                I understand that unmapped and out-of-scope rows will not be
+                imported.
+              </span>
+            </label>
+            <p className="mt-2 text-muted">
+              Skipped rows: {formatNumber(skippedRows)} total, including{" "}
+              {formatNumber(preview.fileSummary.unmappedRowsToSkip)} unmapped,{" "}
+              {formatNumber(preview.fileSummary.outOfScopeRowsToSkip)}{" "}
+              out-of-scope, {formatNumber(preview.fileSummary.unchangedRowsToSkip)}
+              {" "}unchanged, and {formatNumber(preview.fileSummary.invalidRows)}
+              {" "}invalid.
+            </p>
+          </div>
+        ) : null}
         <button
           className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabledReasons.length > 0}
         >
-          Confirm import
+          Import {formatNumber(mappedRowsToImport)} mapped rows
         </button>
       </form>
     </section>

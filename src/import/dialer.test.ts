@@ -424,16 +424,97 @@ describe("dialer import preview", () => {
     expect(miaRow?.importable).toBe(false);
   });
 
-  it("keeps confirm import disabled when agents are unmapped", () => {
-    const result = preview();
+  it("allows partial confirmation when mapped rows can be imported", () => {
+    const partialCsv = `${header}\nAva Rivera,2026-07-20,0,3600,600,1200,60,60,300,300,0,5\nJordan Smith,2026-07-20,0,3600,600,1200,60,60,300,300,0,5\n`;
+    const result = preview(partialCsv);
     const reasons = getImportConfirmationBlockReasons(result);
 
-    expect(reasons.some((reason) => reason.includes("unmapped"))).toBe(true);
+    expect(reasons).toEqual([]);
+    expect(result.fileSummary.eligibleMappedRows).toBe(1);
+    expect(result.fileSummary.mappedRowsToImport).toBe(1);
+    expect(result.fileSummary.unmappedRowsToSkip).toBe(1);
+    expect(result.fileSummary.uniqueUnmappedAgents).toBe(1);
   });
 
-  it("blocks exact duplicate files even when renamed", () => {
+  it("blocks invalid mapped rows without blocking invalid unmapped rows", () => {
+    const invalidMapped = preview(
+      `${header}\nAva Rivera,2026-07-20,25,3600,600,1200,60,60,300,300,0,5\nJordan Smith,2026-07-20,0,3600,600,1200,60,60,300,300,0,5\n`,
+    );
+
+    expect(invalidMapped.fileSummary.invalidMappedRows).toBe(1);
+    expect(getImportConfirmationBlockReason(invalidMapped)).toContain(
+      "invalid mapped row",
+    );
+
+    const invalidUnmapped = preview(
+      `${header}\nAva Rivera,2026-07-20,0,3600,600,1200,60,60,300,300,0,5\nJordan Smith,2026-07-20,25,3600,600,1200,60,60,300,300,0,5\n`,
+    );
+
+    expect(invalidUnmapped.fileSummary.invalidRows).toBe(1);
+    expect(invalidUnmapped.fileSummary.invalidMappedRows).toBe(0);
+    expect(getImportConfirmationBlockReasons(invalidUnmapped)).toEqual([]);
+  });
+
+  it("blocks ambiguous mappings", () => {
+    const result = previewDialerCsv({
+      source: "dialer",
+      fileContent: `${header}\nAva Rivera,2026-07-20,0,3600,600,1200,60,60,300,300,0,5\n`,
+      existingFileHashes: new Set(),
+      mappings: [
+        ...mappings,
+        {
+          sourceAgentName: "Ava Rivera",
+          profileId: "agent-duplicate",
+          profileName: "Duplicate Agent",
+          teamIds: ["east"],
+          teamNames: ["East Openers"],
+        },
+      ],
+      existingMetrics: [],
+      actor: manager,
+    });
+
+    expect(result.fileSummary.uniqueInvalidMappingAgents).toBe(1);
+    expect(getImportConfirmationBlockReason(result)).toContain(
+      "invalid mappings",
+    );
+  });
+
+  it("blocks fully confirmed exact duplicate files with no new or changed rows", () => {
     const hash = sha256(oneAgentCsv);
+    const basePreview = preview(oneAgentCsv);
+    const existingMetrics = basePreview.rows
+      .map((row) =>
+        row.metric && row.rowHash
+          ? {
+              source: row.metric.source,
+              agentProfileId: row.metric.agentProfileId,
+              metricDate: row.metric.metricDate,
+              metricHour: row.metric.metricHour,
+              rowHash: row.rowHash,
+            }
+          : null,
+      )
+      .filter((row): row is ExistingDialerMetric => Boolean(row));
     const duplicate = previewDialerCsv({
+      source: "dialer",
+      fileContent: oneAgentCsv,
+      existingFileHashes: new Set([hash]),
+      mappings,
+      existingMetrics,
+      actor: manager,
+    });
+
+    expect(duplicate.duplicateFile).toBe(true);
+    expect(duplicate.fileSummary.mappedRowsToImport).toBe(0);
+    expect(getImportConfirmationBlockReason(duplicate)).toContain(
+      "Duplicate file blocked.",
+    );
+  });
+
+  it("does not block a duplicate hash when mapped rows are still importable", () => {
+    const hash = sha256(oneAgentCsv);
+    const duplicateWithNewRows = previewDialerCsv({
       source: "dialer",
       fileContent: oneAgentCsv,
       existingFileHashes: new Set([hash]),
@@ -442,10 +523,9 @@ describe("dialer import preview", () => {
       actor: manager,
     });
 
-    expect(duplicate.duplicateFile).toBe(true);
-    expect(getImportConfirmationBlockReason(duplicate)).toContain(
-      "Duplicate file blocked.",
-    );
+    expect(duplicateWithNewRows.duplicateFile).toBe(true);
+    expect(duplicateWithNewRows.fileSummary.mappedRowsToImport).toBe(10);
+    expect(getImportConfirmationBlockReasons(duplicateWithNewRows)).toEqual([]);
   });
 
   it("detects corrected rows as changed by source, agent, date, and hour", () => {

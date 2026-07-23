@@ -436,25 +436,67 @@ function parseNonNegativeInteger(value: string | undefined) {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
-function parseHour(value: string | undefined) {
-  const parsed = Number((value ?? "").trim());
-
-  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 23
-    ? parsed
-    : null;
+function isLeapYear(year: number) {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 }
 
-function parseDate(value: string | undefined) {
-  const trimmed = (value ?? "").trim();
+function daysInMonth(year: number, month: number) {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  if ([4, 6, 9, 11].includes(month)) return 30;
+  return 31;
+}
 
-  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+function normalizeDateParts(year: number, month: number, day: number) {
+  if (year < 1) return null;
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+
+  return [
+    String(year).padStart(4, "0"),
+    String(month).padStart(2, "0"),
+    String(day).padStart(2, "0"),
+  ].join("-");
+}
+
+export function parseDialerHour(value: string | undefined) {
+  const trimmed = (value ?? "").trim();
+  const integerMatch = /^(\d{1,2})$/.exec(trimmed);
+  const wholeHourMatch = /^(\d{1,2}):00$/.exec(trimmed);
+  const hour = Number(integerMatch?.[1] ?? wholeHourMatch?.[1]);
+
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null;
+}
+
+export function parseDialerDate(value: string | undefined) {
+  const trimmed = (value ?? "").trim();
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+
+  if (isoMatch) {
+    return normalizeDateParts(
+      Number(isoMatch[1]),
+      Number(isoMatch[2]),
+      Number(isoMatch[3]),
+    );
+  }
+
+  const slashMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+
+  if (slashMatch) {
+    return normalizeDateParts(
+      Number(slashMatch[3]),
+      Number(slashMatch[1]),
+      Number(slashMatch[2]),
+    );
+  }
+
+  return null;
 }
 
 function parseCsvMetric(row: Record<string, string>): ParseCsvMetricResult {
   const sourceAgentName = displayAgentName(row.agent);
   const agentKey = normalizeAgentName(row.agent);
-  const metricDate = parseDate(row.date);
-  const metricHour = parseHour(row.hour);
+  const metricDate = parseDialerDate(row.date);
+  const metricHour = parseDialerHour(row.hour);
   const calls = parseNonNegativeInteger(row.calls);
 
   if (agentKey.length === 0) {
@@ -467,7 +509,7 @@ function parseCsvMetric(row: Record<string, string>): ParseCsvMetricResult {
 
   if (!metricDate) {
     return {
-      error: "Invalid date. Expected YYYY-MM-DD.",
+      error: "Invalid date. Expected YYYY-MM-DD or M/D/YYYY.",
       sourceAgentName,
       agentKey,
     };
@@ -475,7 +517,7 @@ function parseCsvMetric(row: Record<string, string>): ParseCsvMetricResult {
 
   if (metricHour === null) {
     return {
-      error: "Invalid hour. Expected 0 through 23.",
+      error: "Invalid hour. Expected 0-23 or H:00/HH:00 on the hour.",
       sourceAgentName,
       agentKey,
     };
@@ -730,8 +772,8 @@ function buildAgentSummary(builder: AgentBuilder): AgentPreviewSummary {
     validRowCount: builder.validRowCount,
     invalidRowCount: builder.invalidRowCount,
     dateRange: {
-      earliest: builder.earliest,
-      latest: builder.latest,
+      earliest: builder.earliest?.slice(0, 10) ?? null,
+      latest: builder.latest?.slice(0, 10) ?? null,
     },
     calls: builder.calls,
     durations: builder.durations,

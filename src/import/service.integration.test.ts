@@ -35,6 +35,15 @@ function csvFor(agentName: string) {
   return `${header}\n${agentName},2026-07-20,0,3600,600,1200,60,60,300,300,0,5\n`;
 }
 
+async function importErrorCount(batchId: string) {
+  const rows = await getDb()
+    .select({ id: importErrors.id })
+    .from(importErrors)
+    .where(eq(importErrors.batchId, batchId));
+
+  return rows.length;
+}
+
 async function createTeam(name: string) {
   const id = newId();
   teamIds.push(id);
@@ -218,5 +227,70 @@ describe("dialer import service integration", () => {
     expect(preview.fileSummary.uniqueMappedAgents).toBe(1);
     expect(preview.fileSummary.unknownRows).toBe(0);
     expect(preview.rows[0]?.warningMessage).toContain("deactivated");
+  });
+
+  it("replaces stale preview errors when mappings are resolved", async () => {
+    const actor = await createAdminActor();
+    const { batchId, preview } = await createDialerPreviewBatch({
+      actor,
+      source: "dialer",
+      fileName: "mapped-later.csv",
+      fileContent: csvFor("Mapped Later"),
+    });
+    batchIds.push(batchId);
+
+    expect(preview.fileSummary.unknownRows).toBe(1);
+    expect(await importErrorCount(batchId)).toBe(1);
+
+    await getStoredImportPreview({ actor, batchId });
+    await getStoredImportPreview({ actor, batchId });
+    expect(await importErrorCount(batchId)).toBe(1);
+
+    const teamId = await createTeam("Mapped Later Team");
+    await createMappedAgent({
+      teamId,
+      accountStatus: "invited",
+      dialerName: "Mapped Later",
+    });
+
+    const refreshed = await getStoredImportPreview({ actor, batchId });
+
+    expect(refreshed?.preview.fileSummary.uniqueMappedAgents).toBe(1);
+    expect(refreshed?.preview.fileSummary.unknownRows).toBe(0);
+    expect(refreshed?.preview.fileSummary.newRows).toBe(1);
+    expect(await importErrorCount(batchId)).toBe(0);
+  });
+
+  it("removes stale invalid preview errors after a successful re-preview", async () => {
+    const actor = await createAdminActor();
+    const teamId = await createTeam("Stale Invalid Team");
+    await createMappedAgent({
+      teamId,
+      accountStatus: "active",
+      dialerName: "Stale Invalid",
+    });
+    const { batchId, preview } = await createDialerPreviewBatch({
+      actor,
+      source: "dialer",
+      fileName: "stale-invalid.csv",
+      fileContent: csvFor("Stale Invalid"),
+    });
+    batchIds.push(batchId);
+
+    expect(preview.fileSummary.invalidRows).toBe(0);
+    await getDb().insert(importErrors).values({
+      id: newId(),
+      batchId,
+      rowNumber: 2,
+      status: "invalid",
+      message: "Stale parser error.",
+      rawRow: { agent: "Stale Invalid" },
+    });
+    expect(await importErrorCount(batchId)).toBe(1);
+
+    const refreshed = await getStoredImportPreview({ actor, batchId });
+
+    expect(refreshed?.preview.fileSummary.invalidRows).toBe(0);
+    expect(await importErrorCount(batchId)).toBe(0);
   });
 });

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   getImportConfirmationBlockReason,
   getImportConfirmationBlockReasons,
   hourlyKey,
   metricRowHash,
+  parseDialerDate,
+  parseDialerHour,
   previewDialerCsv,
   sha256,
   type DurationTotals,
@@ -41,6 +44,10 @@ const mixedRows = [
 ];
 const csv = `${header}\n${mixedRows.join("\n")}\n`;
 const oneAgentCsv = `${header}\n${avaRows.join("\n")}\n`;
+const realFormatFixture = readFileSync(
+  "src/import/fixtures/agent-hours-real-format-anonymized.csv",
+  "utf8",
+);
 
 const mappings = [
   {
@@ -102,6 +109,155 @@ function sumAgentHourlyDurations(durations: DurationTotals[]) {
 }
 
 describe("dialer import preview", () => {
+  it("parses canonical and slash-formatted dates explicitly", () => {
+    expect(parseDialerDate("7/21/2026")).toBe("2026-07-21");
+    expect(parseDialerDate("07/21/2026")).toBe("2026-07-21");
+    expect(parseDialerDate("2026-07-21")).toBe("2026-07-21");
+    expect(parseDialerDate("2024-02-29")).toBe("2024-02-29");
+    expect(parseDialerDate("2/30/2026")).toBeNull();
+    expect(parseDialerDate("13/1/2026")).toBeNull();
+    expect(parseDialerDate("2026-02-29")).toBeNull();
+    expect(parseDialerDate("July 21, 2026")).toBeNull();
+    expect(parseDialerDate("")).toBeNull();
+  });
+
+  it("parses integer and whole-hour clock values explicitly", () => {
+    expect(parseDialerHour("8")).toBe(8);
+    expect(parseDialerHour("08")).toBe(8);
+    expect(parseDialerHour("8:00")).toBe(8);
+    expect(parseDialerHour("08:00")).toBe(8);
+    expect(parseDialerHour("14:00")).toBe(14);
+    expect(parseDialerHour("22:00")).toBe(22);
+    expect(parseDialerHour("8:30")).toBeNull();
+    expect(parseDialerHour("24:00")).toBeNull();
+    expect(parseDialerHour("-1")).toBeNull();
+    expect(parseDialerHour("")).toBeNull();
+  });
+
+  it("uses canonical date and hour values for hourly identity", () => {
+    const canonicalMetric = {
+      source: "dialer",
+      agentProfileId: "agent-ava",
+      metricDate: parseDialerDate("7/21/2026")!,
+      metricHour: parseDialerHour("8:00")!,
+    };
+    const equivalentMetric = {
+      source: "dialer",
+      agentProfileId: "agent-ava",
+      metricDate: parseDialerDate("2026-07-21")!,
+      metricHour: parseDialerHour("8")!,
+    };
+
+    expect(hourlyKey(canonicalMetric)).toBe(hourlyKey(equivalentMetric));
+  });
+
+  it("parses the anonymized real dialer format as valid hourly rows", () => {
+    const result = previewDialerCsv({
+      source: "dialer",
+      fileContent: realFormatFixture.replaceAll("\n", "\r\n"),
+      existingFileHashes: new Set(),
+      mappings: [
+        {
+          sourceAgentName: "Agent Alpha",
+          profileId: "agent-alpha",
+          profileName: "Agent Alpha",
+          teamIds: ["east"],
+          teamNames: ["East"],
+          accountStatus: "invited",
+        },
+      ],
+      existingMetrics: [],
+      actor: { id: "admin", role: "admin", teamIds: [] },
+    });
+
+    expect(result.missingHeaders).toEqual([]);
+    expect(result.fileSummary.totalCsvRows).toBe(4);
+    expect(result.fileSummary.uniqueAgentsDetected).toBe(2);
+    expect(result.fileSummary.uniqueMappedAgents).toBe(1);
+    expect(result.fileSummary.uniqueUnmappedAgents).toBe(1);
+    expect(result.fileSummary.invalidRows).toBe(0);
+    expect(result.fileSummary.newRows).toBe(2);
+    expect(result.fileSummary.unknownRows).toBe(2);
+    expect(result.fileSummary.totalCalls).toBe(74);
+    expect(result.fileSummary.durationTotals).toEqual({
+      loggedInSeconds: 11100,
+      readySeconds: 1850,
+      talkSeconds: 5300,
+      ringingSeconds: 370,
+      wrapSeconds: 740,
+      pausedSeconds: 2630,
+      idleSeconds: 210,
+      untrackedSeconds: 0,
+    });
+
+    const mapped = result.agents.find((agent) => agent.agentKey === "agent alpha");
+    const unmapped = result.agents.find((agent) => agent.agentKey === "agent beta");
+
+    expect(mapped?.mappingStatus).toBe("mapped");
+    expect(mapped?.dateRange).toEqual({
+      earliest: "2026-07-21",
+      latest: "2026-07-21",
+    });
+    expect(mapped?.calculationDetails.earliestDateHour).toBe(
+      "2026-07-21 08:00",
+    );
+    expect(mapped?.calculationDetails.latestDateHour).toBe(
+      "2026-07-21 09:00",
+    );
+    expect(mapped?.calculationDetails.hourlyRowsIncluded).toBe(2);
+    expect(mapped?.calculationDetails.invalidRowsExcluded).toBe(0);
+    expect(unmapped?.mappingStatus).toBe("unmapped");
+    expect(unmapped?.calls).toBe(38);
+    expect(unmapped?.durations.loggedInSeconds).toBe(5700);
+  });
+
+  it("matches equivalent real-format rows to existing canonical hourly records", () => {
+    const result = previewDialerCsv({
+      source: "dialer",
+      fileContent: `${header}\nAgent Alpha,7/21/2026,8:00,1800,300,900,60,120,390,30,0,12\n`,
+      existingFileHashes: new Set(),
+      mappings: [
+        {
+          sourceAgentName: "Agent Alpha",
+          profileId: "agent-alpha",
+          profileName: "Agent Alpha",
+          teamIds: ["east"],
+          teamNames: ["East"],
+        },
+      ],
+      existingMetrics: [
+        {
+          source: "dialer",
+          agentProfileId: "agent-alpha",
+          metricDate: "2026-07-21",
+          metricHour: 8,
+          rowHash: metricRowHash({
+            source: "dialer",
+            sourceAgentName: "Agent Alpha",
+            agentProfileId: "agent-alpha",
+            metricDate: "2026-07-21",
+            metricHour: 8,
+            calls: 12,
+            loggedInSeconds: 1800,
+            readySeconds: 300,
+            talkSeconds: 900,
+            ringingSeconds: 60,
+            wrapSeconds: 120,
+            pausedSeconds: 390,
+            idleSeconds: 30,
+            untrackedSeconds: 0,
+            teamIdSnapshot: "east",
+            teamNameSnapshot: "East",
+          }),
+        },
+      ],
+      actor: { id: "admin", role: "admin", teamIds: [] },
+    });
+
+    expect(result.summary.unchanged).toBe(1);
+    expect(result.summary.new).toBe(0);
+  });
+
   it("maps the exact real dialer headers", () => {
     const result = preview();
 

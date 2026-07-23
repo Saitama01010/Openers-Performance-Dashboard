@@ -40,6 +40,53 @@ function previewSummary(preview: ImportPreview) {
   };
 }
 
+type DbTransaction = Parameters<
+  Parameters<ReturnType<typeof getDb>["transaction"]>[0]
+>[0];
+
+function previewErrorRows(batchId: string, preview: ImportPreview) {
+  return preview.rows
+    .filter((row) => row.validationMessage)
+    .map((row) => ({
+      id: newId(),
+      batchId,
+      rowNumber: row.rowNumber,
+      status: row.status,
+      message: row.validationMessage ?? "Row is not importable.",
+      rawRow: row.rawRow,
+    }));
+}
+
+async function replacePreviewPersistence(
+  tx: DbTransaction,
+  input: {
+    batchId: string;
+    fileName: string;
+    preview: ImportPreview;
+  },
+) {
+  await tx
+    .update(dialerImportBatches)
+    .set({
+      rowCount: input.preview.totalCsvRows,
+      previewSummary: {
+        ...previewSummary(input.preview),
+        fileName: input.fileName,
+      },
+      detectedHeaders: input.preview.headers,
+      missingRequiredHeaders: input.preview.missingHeaders,
+    })
+    .where(eq(dialerImportBatches.id, input.batchId));
+
+  await tx.delete(importErrors).where(eq(importErrors.batchId, input.batchId));
+
+  const errorRows = previewErrorRows(input.batchId, input.preview);
+
+  if (errorRows.length > 0) {
+    await tx.insert(importErrors).values(errorRows);
+  }
+}
+
 async function getConfirmedFileHashes(source: string) {
   const rows = await getDb()
     .select({ fileHash: dialerImportBatches.fileHash })
@@ -155,20 +202,11 @@ export async function createDialerPreviewBatch(input: {
       expiresAt,
     });
 
-    const errorRows = preview.rows
-      .filter((row) => row.validationMessage)
-      .map((row) => ({
-        id: newId(),
-        batchId,
-        rowNumber: row.rowNumber,
-        status: row.status,
-        message: row.validationMessage ?? "Row is not importable.",
-        rawRow: row.rawRow,
-      }));
-
-    if (errorRows.length > 0) {
-      await tx.insert(importErrors).values(errorRows);
-    }
+    await replacePreviewPersistence(tx, {
+      batchId,
+      fileName: input.fileName,
+      preview,
+    });
 
     await tx.insert(auditLogs).values({
       id: newId(),
@@ -221,6 +259,36 @@ export async function getStoredImportPreview(input: {
     mappings,
     existingMetrics,
     actor: input.actor,
+  });
+
+  await getDb().transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: dialerImportBatches.id,
+        status: dialerImportBatches.status,
+        uploadedById: dialerImportBatches.uploadedById,
+        expiresAt: dialerImportBatches.expiresAt,
+      })
+      .from(dialerImportBatches)
+      .where(eq(dialerImportBatches.id, batch.id))
+      .limit(1)
+      .for("update");
+    const lockedBatch = rows[0];
+
+    if (
+      !lockedBatch ||
+      lockedBatch.status !== "previewed" ||
+      (input.actor.role !== "admin" && lockedBatch.uploadedById !== input.actor.id) ||
+      lockedBatch.expiresAt.getTime() <= Date.now()
+    ) {
+      return;
+    }
+
+    await replacePreviewPersistence(tx, {
+      batchId: batch.id,
+      fileName: batch.fileName,
+      preview,
+    });
   });
 
   return {
@@ -340,18 +408,11 @@ export async function confirmDialerImportBatch(input: {
       throw new Error(blockReason);
     }
 
-    await tx
-      .update(dialerImportBatches)
-      .set({
-        rowCount: preview.totalCsvRows,
-        previewSummary: {
-          ...previewSummary(preview),
-          fileName: batch.fileName,
-        },
-        detectedHeaders: preview.headers,
-        missingRequiredHeaders: preview.missingHeaders,
-      })
-      .where(eq(dialerImportBatches.id, batch.id));
+    await replacePreviewPersistence(tx, {
+      batchId: batch.id,
+      fileName: batch.fileName,
+      preview,
+    });
 
     for (const row of preview.rows) {
       if (!row.importable) {

@@ -60,6 +60,7 @@ async function getMappings(source: string) {
       sourceAgentName: sourceUserMappings.sourceAgentName,
       profileId: sourceUserMappings.profileId,
       profileName: profiles.name,
+      accountStatus: profiles.accountStatus,
       teamId: teamMemberships.teamId,
       teamName: teams.name,
     })
@@ -74,7 +75,6 @@ async function getMappings(source: string) {
       and(
         eq(sourceUserMappings.source, source),
         eq(sourceUserMappings.active, true),
-        eq(profiles.accountStatus, "active"),
         isNull(teamMemberships.endedAt),
         eq(teams.active, true),
       ),
@@ -87,6 +87,7 @@ async function getMappings(source: string) {
       sourceAgentName: mapping.sourceAgentName,
       profileId: mapping.profileId,
       profileName: mapping.profileName,
+      accountStatus: mapping.accountStatus,
       teamIds: [],
       teamNames: [],
     };
@@ -277,6 +278,7 @@ export async function confirmDialerImportBatch(input: {
           sourceAgentName: sourceUserMappings.sourceAgentName,
           profileId: sourceUserMappings.profileId,
           profileName: profiles.name,
+          accountStatus: profiles.accountStatus,
           teamId: teamMemberships.teamId,
           teamName: teams.name,
         })
@@ -291,7 +293,6 @@ export async function confirmDialerImportBatch(input: {
         and(
           eq(sourceUserMappings.source, batch.source),
           eq(sourceUserMappings.active, true),
-          eq(profiles.accountStatus, "active"),
           isNull(teamMemberships.endedAt),
           eq(teams.active, true),
         ),
@@ -313,6 +314,7 @@ export async function confirmDialerImportBatch(input: {
         sourceAgentName: mapping.sourceAgentName,
         profileId: mapping.profileId,
         profileName: mapping.profileName,
+        accountStatus: mapping.accountStatus,
         teamIds: [],
         teamNames: [],
       };

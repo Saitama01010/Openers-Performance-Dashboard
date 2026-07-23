@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import {
   addDialerMappingAction,
   deactivateDialerMappingAction,
+  editDialerMappingAction,
   forcePasswordResetAction,
   invitationAction,
   revokeSessionsAction,
@@ -54,6 +55,7 @@ export default async function AdminUserDetailPage({
   const resetAction = forcePasswordResetAction.bind(null, userId);
   const sessionsAction = revokeSessionsAction.bind(null, userId);
   const addMappingAction = addDialerMappingAction.bind(null, userId);
+  const editMappingAction = editDialerMappingAction.bind(null, userId);
   const deactivateMappingAction = deactivateDialerMappingAction.bind(null, userId);
   const primaryMappingAction = setPrimaryDialerMappingAction.bind(null, userId);
   const overrides = new Map(
@@ -253,13 +255,41 @@ export default async function AdminUserDetailPage({
                   <td className="px-4 py-3">{fmt(mapping.createdAt)}</td>
                   <td className="px-4 py-3">
                     {mapping.active ? (
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {!mapping.isPrimary ? (
                           <form action={primaryMappingAction}>
                             <input name="mappingId" type="hidden" value={mapping.id} />
                             <button className="text-primary hover:underline">Make primary</button>
                           </form>
                         ) : null}
+                        <details>
+                          <summary className="cursor-pointer text-primary hover:underline">
+                            Edit
+                          </summary>
+                          <form action={editMappingAction} className="mt-2 flex min-w-64 flex-col gap-2 rounded-md border border-border bg-background p-3">
+                            <input name="mappingId" type="hidden" value={mapping.id} />
+                            <label className="text-xs font-medium text-muted">
+                              Dialer display name
+                              <input
+                                className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-foreground"
+                                defaultValue={mapping.sourceAgentName}
+                                name="sourceAgentName"
+                                required
+                              />
+                            </label>
+                            <p className="text-xs text-muted">
+                              Normalized currently: {mapping.normalizedAgentName}
+                            </p>
+                            <div className="flex gap-3">
+                              <button className="text-primary hover:underline">
+                                Save
+                              </button>
+                              <Link className="text-muted hover:underline" href={`/admin/users/${userId}`}>
+                                Cancel
+                              </Link>
+                            </div>
+                          </form>
+                        </details>
                         <form action={deactivateMappingAction}>
                           <input name="mappingId" type="hidden" value={mapping.id} />
                           <button className="text-danger hover:underline">Deactivate</button>

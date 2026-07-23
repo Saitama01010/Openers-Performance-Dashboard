@@ -1,9 +1,9 @@
 import "dotenv/config";
 
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { inArray } from "drizzle-orm";
 
-import { getDb, getPool } from "@/db";
+import { getDb } from "@/db";
 import { emailDeliveryAttempts } from "@/db/schema";
 import { newId } from "@/lib/ids";
 
@@ -16,10 +16,6 @@ describe("email delivery attempts integration", () => {
     await getDb()
       .delete(emailDeliveryAttempts)
       .where(inArray(emailDeliveryAttempts.id, insertedIds.splice(0)));
-  });
-
-  afterAll(async () => {
-    await getPool().end();
   });
 
   it("stores accepted and failed delivery metadata", async () => {

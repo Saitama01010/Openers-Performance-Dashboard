@@ -275,7 +275,7 @@ function AgentDetails({ agent }: { agent: AgentPreviewSummary }) {
                     {row.status.replaceAll("_", " ")}
                   </td>
                   <td className="min-w-48 px-2 py-2">
-                    {row.validationMessage ?? ""}
+                    {row.validationMessage ?? row.warningMessage ?? ""}
                   </td>
                 </tr>
               ))}

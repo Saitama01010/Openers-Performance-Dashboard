@@ -517,7 +517,7 @@ export async function getAdminReferenceData(actor: Actor) {
 }
 
 async function validateTeamForAssignment(teamId?: string) {
-  if (!teamId) throw new Error("Team is required for this role.");
+  if (!teamId) throw new Error("Select a team before changing this user to this role.");
 
   const rows = await getDb()
     .select({ id: teams.id, active: teams.active })
@@ -528,6 +528,26 @@ async function validateTeamForAssignment(teamId?: string) {
 
   if (!team) throw new Error("Team was not found.");
   if (!team.active) throw new Error("Inactive teams cannot receive users.");
+}
+
+async function hasActiveDialerMapping(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  userId: string,
+) {
+  const rows = await tx
+    .select({ id: sourceUserMappings.id })
+    .from(sourceUserMappings)
+    .where(
+      and(
+        eq(sourceUserMappings.profileId, userId),
+        eq(sourceUserMappings.source, "dialer"),
+        eq(sourceUserMappings.active, true),
+      ),
+    )
+    .limit(1)
+    .for("update");
+
+  return Boolean(rows[0]);
 }
 
 async function createInvitationRecord(input: {
@@ -624,6 +644,12 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
 
   if (name.length < 2) throw new Error("Full name is required.");
   if (!email.includes("@")) throw new Error("A valid email is required.");
+  if (input.role === "manager" && !input.teamId) {
+    throw new Error("Select a team before changing this user to manager.");
+  }
+  if (input.role === "agent" && !input.teamId) {
+    throw new Error("Select a team before changing this user to agent.");
+  }
   if (roleRequiresTeam(input.role)) await validateTeamForAssignment(input.teamId);
   if (roleRequiresDialerName(input.role) && !input.dialerName?.trim()) {
     throw new Error("Dialer agent name is required for agents.");
@@ -868,6 +894,12 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
 
   if (name.length < 2) throw new Error("Full name is required.");
   if (!email.includes("@")) throw new Error("A valid email is required.");
+  if (input.role === "manager" && !input.teamId) {
+    throw new Error("Select a team before changing this user to manager.");
+  }
+  if (input.role === "agent" && !input.teamId) {
+    throw new Error("Select a team before changing this user to agent.");
+  }
   if (roleRequiresTeam(input.role)) await validateTeamForAssignment(input.teamId);
 
   validatePermissionOverrides(input.permissionOverrides, input.role);
@@ -909,6 +941,10 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
       activeAdminCount,
       nextRole: input.role,
     });
+
+    if (input.role === "agent" && !(await hasActiveDialerMapping(tx, input.userId))) {
+      throw new Error("Assign a dialer name before changing this user to agent.");
+    }
 
     await tx
       .update(profiles)
@@ -1302,6 +1338,86 @@ export async function addDialerMapping(actor: Actor, input: {
       entityType: "source_user_mapping",
       entityId: values.id,
       metadata: { after: values },
+    });
+  });
+}
+
+export async function editDialerMapping(actor: Actor, input: {
+  mappingId: string;
+  sourceAgentName: string;
+}) {
+  assertAdmin(actor);
+
+  await getDb().transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(sourceUserMappings)
+      .where(eq(sourceUserMappings.id, input.mappingId))
+      .limit(1)
+      .for("update");
+    const mapping = rows[0];
+
+    if (!mapping || !mapping.active) {
+      throw new Error("Active mapping was not found.");
+    }
+
+    const values = mappingValues({
+      source: mapping.source,
+      sourceAgentName: input.sourceAgentName,
+      profileId: mapping.profileId,
+      isPrimary: mapping.isPrimary,
+      actorId: actor.id,
+    });
+    const duplicateRows = await tx
+      .select({ id: sourceUserMappings.id })
+      .from(sourceUserMappings)
+      .where(
+        and(
+          eq(sourceUserMappings.activeMappingKey, values.activeMappingKey),
+          ne(sourceUserMappings.id, mapping.id),
+        ),
+      )
+      .limit(1)
+      .for("update");
+
+    if (duplicateRows[0]) {
+      throw new Error("This active dialer identity is already mapped.");
+    }
+
+    const now = new Date();
+
+    await tx
+      .update(sourceUserMappings)
+      .set({
+        active: false,
+        activeMappingKey: null,
+        primaryMappingKey: null,
+        isPrimary: false,
+        deactivatedAt: now,
+        deactivatedById: actor.id,
+      })
+      .where(eq(sourceUserMappings.id, mapping.id));
+    await tx.insert(sourceUserMappings).values(values);
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: actor.id,
+      action: "dialer_mapping.edited",
+      entityType: "source_user_mapping",
+      entityId: values.id,
+      metadata: {
+        before: {
+          id: mapping.id,
+          sourceAgentName: mapping.sourceAgentName,
+          normalizedAgentName: mapping.normalizedAgentName,
+          isPrimary: mapping.isPrimary,
+        },
+        after: {
+          id: values.id,
+          sourceAgentName: values.sourceAgentName,
+          normalizedAgentName: values.normalizedAgentName,
+          isPrimary: values.isPrimary,
+        },
+      },
     });
   });
 }

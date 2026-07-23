@@ -110,6 +110,7 @@ export type HourlyPreviewRow = {
   durations: DurationTotals | null;
   status: ImportRowStatus;
   validationMessage?: string;
+  warningMessage?: string;
   importable: boolean;
   rawRow: Record<string, string>;
 };
@@ -121,6 +122,8 @@ export type AgentPreviewSummary = {
   dashboardUserId: string | null;
   dashboardUserName: string | null;
   teamNames: string[];
+  accountStatus?: "invited" | "active" | "deactivated" | "revoked";
+  warningMessage?: string;
   csvRowCount: number;
   validRowCount: number;
   invalidRowCount: number;
@@ -205,6 +208,7 @@ export type SourceMapping = {
   profileName: string;
   teamIds: string[];
   teamNames: string[];
+  accountStatus?: "invited" | "active" | "deactivated" | "revoked";
 };
 
 export type ImportPreviewRow = HourlyPreviewRow & {
@@ -246,6 +250,8 @@ type AgentBuilder = {
   dashboardUserId: string | null;
   dashboardUserName: string | null;
   teamNames: string[];
+  accountStatus?: "invited" | "active" | "deactivated" | "revoked";
+  warningMessage?: string;
   csvRowCount: number;
   validRowCount: number;
   invalidRowCount: number;
@@ -574,6 +580,8 @@ function createAgentBuilder(
     dashboardUserId: null,
     dashboardUserName: null,
     teamNames: [],
+    accountStatus: undefined,
+    warningMessage: undefined,
     csvRowCount: 0,
     validRowCount: 0,
     invalidRowCount: 0,
@@ -606,6 +614,11 @@ function updateAgentMapping(
     builder.dashboardUserId = mapping.profileId;
     builder.dashboardUserName = mapping.profileName;
     builder.teamNames = mapping.teamNames;
+    builder.accountStatus = mapping.accountStatus;
+    builder.warningMessage =
+      mapping.accountStatus === "deactivated" || mapping.accountStatus === "revoked"
+        ? `Mapped account is ${mapping.accountStatus}. Historical rows may still be imported by authorized users.`
+        : undefined;
   }
 }
 
@@ -711,6 +724,8 @@ function buildAgentSummary(builder: AgentBuilder): AgentPreviewSummary {
     dashboardUserId: builder.dashboardUserId,
     dashboardUserName: builder.dashboardUserName,
     teamNames: builder.teamNames,
+    accountStatus: builder.accountStatus,
+    warningMessage: builder.warningMessage,
     csvRowCount: builder.csvRowCount,
     validRowCount: builder.validRowCount,
     invalidRowCount: builder.invalidRowCount,
@@ -984,6 +999,11 @@ export function previewDialerCsv(input: {
         rawRow,
       };
     } else {
+      const warningMessage =
+        mappingLookupResult.mapping.accountStatus === "deactivated" ||
+        mappingLookupResult.mapping.accountStatus === "revoked"
+          ? `Mapped account is ${mappingLookupResult.mapping.accountStatus}.`
+          : undefined;
       const snapshotIndex = Math.max(
         0,
         mappingLookupResult.mapping.teamIds.findIndex((teamId) =>
@@ -1025,6 +1045,7 @@ export function previewDialerCsv(input: {
         calls: parsed.metric.calls,
         durations: parsed.metric.durations,
         status,
+        warningMessage,
         importable: status === "new" || status === "changed",
         metric,
         rowHash,

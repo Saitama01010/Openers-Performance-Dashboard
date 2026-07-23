@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { acceptInvitationAction } from "@/auth/actions";
+import { inspectInvitationToken } from "@/auth/service";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,14 @@ function errorMessage(error?: string) {
   return error;
 }
 
+function InvalidLinkMessage() {
+  return (
+    <p className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+      This link is no longer valid. Request a new link.
+    </p>
+  );
+}
+
 export default async function AcceptInvitationPage({
   searchParams,
 }: {
@@ -17,6 +26,10 @@ export default async function AcceptInvitationPage({
 }) {
   const params = await searchParams;
   const error = errorMessage(params.error);
+  const inspection = params.token
+    ? await inspectInvitationToken(params.token)
+    : { status: "invalid" as const };
+  const canShowForm = params.token && inspection.status === "valid";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10 text-foreground">
@@ -27,7 +40,7 @@ export default async function AcceptInvitationPage({
             {error}
           </p>
         ) : null}
-        {params.token ? (
+        {canShowForm ? (
           <form action={acceptInvitationAction} className="mt-6 space-y-4">
             <input name="token" type="hidden" value={params.token} />
             <PasswordFields />
@@ -36,7 +49,7 @@ export default async function AcceptInvitationPage({
             </button>
           </form>
         ) : (
-          <p className="mt-4 text-sm text-danger">This invitation link is invalid.</p>
+          <InvalidLinkMessage />
         )}
         <Link className="mt-4 block text-center text-sm text-primary hover:underline" href="/login">
           Return to sign in

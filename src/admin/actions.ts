@@ -9,6 +9,7 @@ import {
   createAdminUser,
   createTeam,
   deactivateDialerMapping,
+  editDialerMapping,
   forcePasswordReset,
   ignoreUnmappedDialerName,
   moveAgentToTeam,
@@ -102,9 +103,29 @@ function logAdminActionError(code: AdminErrorCode, error: unknown) {
   });
 }
 
+function errorCodeFor(error: unknown, fallback: AdminErrorCode): AdminErrorCode {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message === "The final active admin cannot be changed.") return "final-admin";
+  if (message === "Select a team before changing this user to manager.") {
+    return "manager-team-required";
+  }
+  if (message === "Select a team before changing this user to agent.") {
+    return "agent-team-required";
+  }
+  if (message === "Assign a dialer name before changing this user to agent.") {
+    return "agent-dialer-required";
+  }
+  if (message === "You cannot demote your own admin role.") return "self-demotion";
+
+  return fallback;
+}
+
 function fail(path: string, error: unknown, code: AdminErrorCode): never {
-  logAdminActionError(code, error);
-  redirect(`${path}?error=${code}`);
+  const safeCode = errorCodeFor(error, code);
+
+  logAdminActionError(safeCode, error);
+  redirect(`${path}?error=${safeCode}`);
 }
 
 export async function createUserAction(formData: FormData) {
@@ -291,6 +312,22 @@ export async function deactivateDialerMappingAction(userId: string, formData: Fo
   }
 
   redirect(`/admin/users/${userId}?ok=mapping-deactivated`);
+}
+
+export async function editDialerMappingAction(userId: string, formData: FormData) {
+  const actor = await requireAdmin();
+
+  try {
+    await editDialerMapping(actor, {
+      mappingId: formString(formData, "mappingId"),
+      sourceAgentName: formString(formData, "sourceAgentName"),
+    });
+    revalidatePath(`/admin/users/${userId}`);
+  } catch (error) {
+    fail(`/admin/users/${userId}`, error, "mapping-update");
+  }
+
+  redirect(`/admin/users/${userId}?ok=mapping-edited`);
 }
 
 export async function setPrimaryDialerMappingAction(userId: string, formData: FormData) {

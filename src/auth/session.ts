@@ -67,6 +67,13 @@ export async function revokeAllSessions(profileId: string) {
     .where(and(eq(sessions.profileId, profileId), isNull(sessions.revokedAt)));
 }
 
+export async function getCurrentSessionId() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+
+  return token ? sessionIdFromToken(token) : null;
+}
+
 export async function getCurrentUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;

@@ -28,6 +28,22 @@ export default async function DashboardPage() {
             <h1 className="text-2xl font-semibold">Openers Performance</h1>
           </div>
           <div className="flex items-center gap-3">
+            {user.role === "admin" ? (
+              <Link
+                className="rounded-md border border-border px-3 py-2 text-sm font-medium"
+                href="/admin/users"
+              >
+                Users & Access
+              </Link>
+            ) : null}
+            {user.role === "admin" ? (
+              <Link
+                className="rounded-md border border-border px-3 py-2 text-sm font-medium"
+                href="/admin/teams"
+              >
+                Teams
+              </Link>
+            ) : null}
             {user.role !== "agent" ? (
               <Link
                 className="rounded-md border border-border px-3 py-2 text-sm font-medium"

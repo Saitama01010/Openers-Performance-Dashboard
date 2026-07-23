@@ -202,7 +202,7 @@ export async function getStoredImportPreview(input: {
   if (
     !batch ||
     batch.status !== "previewed" ||
-    batch.uploadedById !== input.actor.id ||
+    (input.actor.role !== "admin" && batch.uploadedById !== input.actor.id) ||
     batch.expiresAt.getTime() <= Date.now()
   ) {
     return null;
@@ -249,7 +249,7 @@ export async function confirmDialerImportBatch(input: {
       throw new Error("Preview import batch was not found.");
     }
 
-    if (batch.uploadedById !== input.actor.id) {
+    if (input.actor.role !== "admin" && batch.uploadedById !== input.actor.id) {
       throw new Error("Preview import batch does not belong to this uploader.");
     }
 

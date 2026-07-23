@@ -24,6 +24,17 @@ export const accountStatusEnum = mysqlEnum("account_status", [
   "deactivated",
   "revoked",
 ]);
+export const invitationDeliveryStatusEnum = mysqlEnum(
+  "invitation_delivery_status",
+  ["pending", "accepted", "expired", "revoked", "delivery_failed"],
+);
+export const emailDeliveryStatusEnum = mysqlEnum("email_delivery_status", [
+  "sent",
+  "pending",
+  "accepted",
+  "delivered",
+  "failed",
+]);
 export const membershipRoleEnum = mysqlEnum("membership_role", [
   "manager",
   "agent",
@@ -54,11 +65,18 @@ export const profiles = mysqlTable(
     accountStatus: accountStatusEnum.notNull().default("invited"),
     mustResetPassword: boolean("must_reset_password").notNull().default(false),
     lastLoginAt: datetime("last_login_at"),
+    passwordChangedAt: datetime("password_changed_at"),
     accessRevokedAt: datetime("access_revoked_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
-  (table) => [unique("profiles_email_unique").on(table.email)],
+  (table) => [
+    unique("profiles_email_unique").on(table.email),
+    index("profiles_name_idx").on(table.name),
+    index("profiles_role_idx").on(table.role),
+    index("profiles_account_status_idx").on(table.accountStatus),
+    index("profiles_created_at_idx").on(table.createdAt),
+  ],
 );
 
 export const teams = mysqlTable(
@@ -67,10 +85,14 @@ export const teams = mysqlTable(
     id: varchar("id", { length: 36 }).primaryKey(),
     name: varchar("name", { length: 255 }).notNull(),
     active: boolean("active").notNull().default(true),
+    deactivatedAt: datetime("deactivated_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
-  (table) => [unique("teams_name_unique").on(table.name)],
+  (table) => [
+    unique("teams_name_unique").on(table.name),
+    index("teams_active_idx").on(table.active),
+  ],
 );
 
 export const teamMemberships = mysqlTable(
@@ -84,13 +106,22 @@ export const teamMemberships = mysqlTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     role: membershipRoleEnum.notNull(),
+    active: boolean("active").notNull().default(true),
     startedAt: datetime("started_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     endedAt: datetime("ended_at"),
+    createdById: varchar("created_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
     index("team_memberships_active_team_idx").on(table.teamId, table.endedAt),
     index("team_memberships_profile_idx").on(table.profileId),
+    index("team_memberships_active_profile_idx").on(
+      table.profileId,
+      table.active,
+      table.endedAt,
+    ),
   ],
 );
 
@@ -101,19 +132,32 @@ export const sourceUserMappings = mysqlTable(
     source: varchar("source", { length: 64 }).notNull(),
     sourceAgentName: varchar("source_agent_name", { length: 255 }).notNull(),
     normalizedAgentName: varchar("normalized_agent_name", { length: 255 }).notNull(),
+    activeMappingKey: varchar("active_mapping_key", { length: 384 }),
+    primaryMappingKey: varchar("primary_mapping_key", { length: 384 }),
     profileId: varchar("profile_id", { length: 36 })
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     active: boolean("active").notNull().default(true),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    approvedById: varchar("approved_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
+    approvedAt: datetime("approved_at"),
+    deactivatedById: varchar("deactivated_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
+    deactivatedAt: datetime("deactivated_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
   (table) => [
-    unique("source_user_mapping_unique").on(
+    unique("source_active_mapping_unique").on(table.activeMappingKey),
+    unique("source_primary_mapping_unique").on(table.primaryMappingKey),
+    index("source_user_mappings_profile_idx").on(table.profileId),
+    index("source_user_mappings_normalized_idx").on(
       table.source,
       table.normalizedAgentName,
     ),
-    index("source_user_mappings_profile_idx").on(table.profileId),
   ],
 );
 
@@ -246,6 +290,9 @@ export const accountInvitationTokens = mysqlTable(
     createdById: varchar("created_by_id", { length: 36 }).references(
       () => profiles.id,
     ),
+    deliveryStatus: invitationDeliveryStatusEnum
+      .notNull()
+      .default("pending"),
     expiresAt: datetime("expires_at").notNull(),
     usedAt: datetime("used_at"),
     revokedAt: datetime("revoked_at"),
@@ -266,6 +313,9 @@ export const passwordResetTokens = mysqlTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    createdById: varchar("created_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
     expiresAt: datetime("expires_at").notNull(),
     usedAt: datetime("used_at"),
     revokedAt: datetime("revoked_at"),
@@ -275,6 +325,34 @@ export const passwordResetTokens = mysqlTable(
     unique("password_reset_token_hash_unique").on(table.tokenHash),
     index("password_reset_profile_idx").on(table.profileId),
     index("password_reset_expires_idx").on(table.expiresAt),
+  ],
+);
+
+export const emailDeliveryAttempts = mysqlTable(
+  "email_delivery_attempts",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    profileId: varchar("profile_id", { length: 36 }).references(
+      () => profiles.id,
+      { onDelete: "set null" },
+    ),
+    tokenId: varchar("token_id", { length: 36 }),
+    messageType: varchar("message_type", { length: 80 }).notNull(),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    recipientEmail: varchar("recipient_email", { length: 255 }).notNull(),
+    status: emailDeliveryStatusEnum.notNull(),
+    providerMessageId: varchar("provider_message_id", { length: 255 }),
+    acceptedAt: datetime("accepted_at"),
+    deliveredAt: datetime("delivered_at"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("email_delivery_profile_idx").on(table.profileId),
+    index("email_delivery_token_idx").on(table.tokenId),
+    index("email_delivery_status_idx").on(table.status),
+    index("email_delivery_provider_message_idx").on(table.providerMessageId),
+    index("email_delivery_message_idx").on(table.messageType, table.createdAt),
   ],
 );
 

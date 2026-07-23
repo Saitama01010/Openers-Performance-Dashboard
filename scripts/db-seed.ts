@@ -3,6 +3,13 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { getDb, getPool } from "../src/db";
 import {
+  ALL_PERMISSION_KEYS,
+  PERMISSION_DESCRIPTIONS,
+  ROLE_DEFAULT_PERMISSIONS,
+  activeMappingKey,
+  primaryMappingKey,
+} from "../src/admin/policy";
+import {
   permissions,
   profiles,
   rolePermissions,
@@ -40,6 +47,7 @@ async function upsertProfile(
       role,
       passwordHash,
       accountStatus: "active",
+      passwordChangedAt: new Date(),
     })
     .onDuplicateKeyUpdate({
       set: {
@@ -48,6 +56,7 @@ async function upsertProfile(
         passwordHash,
         active: true,
         accountStatus: "active",
+        passwordChangedAt: new Date(),
         accessRevokedAt: null,
       },
     });
@@ -92,16 +101,10 @@ async function main() {
     ])
     .onDuplicateKeyUpdate({ set: { name: sql`values(name)` } });
 
-  const permissionRows = [
-    { key: "users.manage", description: "Manage user accounts and access" },
-    { key: "teams.manage", description: "Manage teams and memberships" },
-    { key: "imports.company", description: "Import company-wide dialer data" },
-    { key: "imports.team", description: "Import dialer data for assigned teams" },
-    { key: "metrics.company", description: "View company private metrics" },
-    { key: "metrics.team", description: "View assigned-team private metrics" },
-    { key: "metrics.self", description: "View personal private metrics" },
-    { key: "leaderboards.view", description: "View authenticated safe leaderboards" },
-  ];
+  const permissionRows = ALL_PERMISSION_KEYS.map((key) => ({
+    key,
+    description: PERMISSION_DESCRIPTIONS[key],
+  }));
   await getDb()
     .insert(permissions)
     .values(permissionRows)
@@ -109,12 +112,18 @@ async function main() {
   await getDb()
     .insert(rolePermissions)
     .values([
-      ...permissionRows.map((permission) => ({ roleId: "admin", permissionKey: permission.key })),
-      { roleId: "manager", permissionKey: "imports.team" },
-      { roleId: "manager", permissionKey: "metrics.team" },
-      { roleId: "manager", permissionKey: "leaderboards.view" },
-      { roleId: "agent", permissionKey: "metrics.self" },
-      { roleId: "agent", permissionKey: "leaderboards.view" },
+      ...ROLE_DEFAULT_PERMISSIONS.admin.map((permissionKey) => ({
+        roleId: "admin",
+        permissionKey,
+      })),
+      ...ROLE_DEFAULT_PERMISSIONS.manager.map((permissionKey) => ({
+        roleId: "manager",
+        permissionKey,
+      })),
+      ...ROLE_DEFAULT_PERMISSIONS.agent.map((permissionKey) => ({
+        roleId: "agent",
+        permissionKey,
+      })),
     ])
     .onDuplicateKeyUpdate({ set: { permissionKey: sql`values(permission_key)` } });
 
@@ -158,24 +167,46 @@ async function main() {
         source: "dialer",
         sourceAgentName: "Ava Rivera",
         normalizedAgentName: "ava rivera",
+        activeMappingKey: activeMappingKey("dialer", "ava rivera"),
+        primaryMappingKey: primaryMappingKey("dialer", ids.agentAva),
         profileId: ids.agentAva,
+        isPrimary: true,
+        approvedById: ids.admin,
+        approvedAt: new Date(),
       },
       {
         id: "20000000-0000-4000-8000-000000000002",
         source: "dialer",
         sourceAgentName: "Noah Chen",
         normalizedAgentName: "noah chen",
+        activeMappingKey: activeMappingKey("dialer", "noah chen"),
+        primaryMappingKey: primaryMappingKey("dialer", ids.agentNoah),
         profileId: ids.agentNoah,
+        isPrimary: true,
+        approvedById: ids.admin,
+        approvedAt: new Date(),
       },
       {
         id: "20000000-0000-4000-8000-000000000003",
         source: "dialer",
         sourceAgentName: "Mia Patel",
         normalizedAgentName: "mia patel",
+        activeMappingKey: activeMappingKey("dialer", "mia patel"),
+        primaryMappingKey: primaryMappingKey("dialer", ids.agentMia),
         profileId: ids.agentMia,
+        isPrimary: true,
+        approvedById: ids.admin,
+        approvedAt: new Date(),
       },
     ])
-    .onDuplicateKeyUpdate({ set: { active: true } });
+    .onDuplicateKeyUpdate({
+      set: {
+        active: true,
+        isPrimary: true,
+        approvedById: ids.admin,
+        approvedAt: new Date(),
+      },
+    });
 
   await getPool().end();
   console.log("Seed complete. Password for all users: Password123!");

@@ -1,0 +1,5 @@
+Agent,Date,Hour,Logged In (sec),Ready (sec),Talk (sec),Ringing (sec),Wrap (sec),Paused (sec),Idle (sec),Untracked (sec),Calls
+Agent Alpha,7/21/2026,8:00,1800,300,900,60,120,390,30,0,12
+Agent Alpha,7/21/2026,9:00,3600,600,1800,120,240,780,60,0,24
+Agent Beta,7/21/2026,13:00,2700,450,1200,90,180,720,60,0,18
+Agent Beta,7/21/2026,14:00,3000,500,1400,100,200,740,60,0,20

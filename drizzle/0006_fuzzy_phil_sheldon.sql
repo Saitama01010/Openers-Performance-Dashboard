@@ -1,0 +1,4 @@
+ALTER TABLE `dialer_import_batches` MODIFY COLUMN `import_status` enum('previewed','partially_confirmed','confirmed','failed','rejected') NOT NULL DEFAULT 'previewed';--> statement-breakpoint
+ALTER TABLE `dialer_import_batches` ADD `confirmed_by_id` varchar(36);--> statement-breakpoint
+ALTER TABLE `dialer_import_batches` ADD CONSTRAINT `dialer_import_batches_confirmed_by_id_profiles_id_fk` FOREIGN KEY (`confirmed_by_id`) REFERENCES `profiles`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX `dialer_import_confirmed_by_idx` ON `dialer_import_batches` (`confirmed_by_id`);

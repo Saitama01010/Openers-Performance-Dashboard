@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1784699180041,
+      "tag": "0000_brainy_sprite",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1784702971400,
+      "tag": "0001_import_preview_batches_seconds",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1784705891097,
+      "tag": "0002_parallel_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1784766156393,
+      "tag": "0003_amazing_mongu",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1784777601054,
+      "tag": "0004_awesome_betty_brant",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1784778983517,
+      "tag": "0005_glorious_blindfold",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1784787824019,
+      "tag": "0006_fuzzy_phil_sheldon",
+      "breakpoints": true
+    }
+  ]
+}

@@ -11,6 +11,17 @@ import {
 import { listTeams } from "@/admin/data";
 import { adminErrorMessage } from "@/admin/messages";
 import { getCurrentUser } from "@/auth/session";
+import {
+  ConfirmSubmitButton,
+  SubmitButton,
+} from "@/components/dashboard/action-controls";
+import {
+  EmptyTableRow,
+  PageHeader,
+  StatusBadge,
+  StatusBanner,
+  TableScroll,
+} from "@/components/dashboard/dashboard-primitives";
 
 export const dynamic = "force-dynamic";
 
@@ -30,43 +41,59 @@ export default async function AdminTeamsPage({
   if (actor.role !== "admin") redirect("/dashboard");
 
   const { teams, managers, agents } = await listTeams(actor);
+  const currentMembers = teams.flatMap((team) =>
+    team.members.map((member) => ({ member, team })),
+  );
 
   return (
-    <section className="mx-auto max-w-7xl space-y-6 px-6 py-6">
+    <div className="dashboard-page">
+      <PageHeader
+        description="Create teams, assign managers, and maintain current memberships while preserving history."
+        eyebrow="Admin only"
+        title="Teams"
+      />
       <StatusMessage error={params.error} ok={params.ok} />
 
-      <section className="rounded-lg border border-border bg-surface p-5">
-        <p className="text-sm text-muted">Admin only</p>
-        <h2 className="text-xl font-semibold">Teams</h2>
+      <section aria-labelledby="create-team-heading" className="ui-card ui-card--padded">
+        <h2 className="ui-card__title" id="create-team-heading">
+          Create team
+        </h2>
         <form action={createTeamAction} className="mt-4 flex flex-wrap gap-3">
-          <label className="min-w-72 flex-1 text-sm font-medium">
-            Team name
+          <label className="ui-label min-w-72 flex-1">
+            Team name <span className="ui-required">(required)</span>
             <input
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+              autoComplete="off"
+              className="ui-input"
               name="name"
               required
             />
           </label>
-          <button className="self-end rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          <SubmitButton
+            className="self-end"
+            pendingLabel="Creating team"
+          >
             Create team
-          </button>
+          </SubmitButton>
         </form>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Team administration</h2>
+      <section aria-labelledby="team-admin-heading" className="ui-card">
+        <div className="ui-card__header">
+          <h2 className="ui-card__title" id="team-admin-heading">
+            Team administration
+          </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted">
+        <TableScroll label="Team administration">
+          <table className="ui-table">
+            <caption>Team managers, status, and administration actions</caption>
+            <thead>
               <tr>
-                <th className="px-4 py-3">Team</th>
-                <th className="px-4 py-3">Manager</th>
-                <th className="px-4 py-3">Agent count</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Actions</th>
+                <th scope="col">Team</th>
+                <th scope="col">Manager</th>
+                <th scope="col">Agent count</th>
+                <th scope="col">Status</th>
+                <th scope="col">Created</th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -76,49 +103,69 @@ export default async function AdminTeamsPage({
                     <form action={renameTeamAction} className="flex min-w-64 gap-2">
                       <input name="teamId" type="hidden" value={team.id} />
                       <input
-                        className="w-full rounded-md border border-border bg-background px-3 py-2"
+                        aria-label={`Rename ${team.name}`}
+                        className="ui-input"
                         defaultValue={team.name}
                         name="name"
                       />
-                      <button className="rounded-md border border-border px-3 py-2 font-medium">
+                      <SubmitButton pendingLabel="Renaming team" variant="secondary">
                         Rename
-                      </button>
+                      </SubmitButton>
                     </form>
                   </td>
                   <td className="px-4 py-3">{team.manager?.profileName ?? "-"}</td>
                   <td className="px-4 py-3">{team.agentCount}</td>
-                  <td className="px-4 py-3">{team.active ? "Active" : "Inactive"}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge tone={team.active ? "success" : "neutral"}>
+                      {team.active ? "Active" : "Inactive"}
+                    </StatusBadge>
+                  </td>
                   <td className="px-4 py-3">{fmt(team.createdAt)}</td>
                   <td className="px-4 py-3">
                     <form action={setTeamStatusAction} className="space-y-2">
                       <input name="teamId" type="hidden" value={team.id} />
                       <input name="active" type="hidden" value={team.active ? "false" : "true"} />
                       {team.active ? (
-                        <label className="flex items-center gap-2 text-xs text-danger">
-                          <input name="confirmTeamStatus" type="checkbox" />
-                          Confirm
-                        </label>
-                      ) : null}
-                      <button className="font-medium text-danger hover:underline">
-                        {team.active ? "Deactivate" : "Activate"}
-                      </button>
+                        <>
+                          <input name="confirmTeamStatus" type="hidden" value="true" />
+                          <ConfirmSubmitButton
+                            confirmLabel="Deactivate team"
+                            description={`${team.name} will no longer be available for new assignments. Existing membership history is preserved.`}
+                            pendingLabel="Deactivating team"
+                            title={`Deactivate ${team.name}?`}
+                          >
+                            Deactivate
+                          </ConfirmSubmitButton>
+                        </>
+                      ) : (
+                        <SubmitButton pendingLabel="Activating team" variant="secondary">
+                          Activate
+                        </SubmitButton>
+                      )}
                     </form>
                   </td>
                 </tr>
               ))}
+              {teams.length === 0 ? (
+                <EmptyTableRow
+                  colSpan={6}
+                  description="Create a team to begin assigning managers and agents."
+                  title="No teams yet"
+                />
+              ) : null}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-lg border border-border bg-surface p-5">
-          <h2 className="font-semibold">Assign manager</h2>
+      <section className="admin-action-grid">
+        <section className="ui-card ui-card--padded">
+          <h2 className="ui-card__title">Assign manager</h2>
           <form action={assignTeamManagerAction} className="mt-4 space-y-3">
             <TeamSelect teams={teams} />
-            <label className="block text-sm font-medium">
+            <label className="ui-label">
               Manager
-              <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" name="managerId" required>
+              <select className="ui-select" name="managerId" required>
                 <option value="">Select manager</option>
                 {managers.map((manager) => (
                   <option key={manager.id} value={manager.id}>
@@ -127,20 +174,22 @@ export default async function AdminTeamsPage({
                 ))}
               </select>
             </label>
-            <p className="text-sm text-danger">Changing managers ends the old manager membership and creates a new historical record.</p>
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <StatusBanner tone="warning">
+              Changing managers ends the old manager membership and creates a new historical record.
+            </StatusBanner>
+            <SubmitButton pendingLabel="Assigning manager">
               Assign manager
-            </button>
+            </SubmitButton>
           </form>
         </section>
 
-        <section className="rounded-lg border border-border bg-surface p-5">
-          <h2 className="font-semibold">Move agent</h2>
+        <section className="ui-card ui-card--padded">
+          <h2 className="ui-card__title">Move agent</h2>
           <form action={moveAgentToTeamAction} className="mt-4 space-y-3">
             <TeamSelect teams={teams} />
-            <label className="block text-sm font-medium">
+            <label className="ui-label">
               Agent
-              <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" name="agentId" required>
+              <select className="ui-select" name="agentId" required>
                 <option value="">Select agent</option>
                 {agents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
@@ -149,69 +198,82 @@ export default async function AdminTeamsPage({
                 ))}
               </select>
             </label>
-            <p className="text-sm text-danger">Moving an agent preserves historical memberships and metric team snapshots.</p>
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <StatusBanner tone="info">
+              Moving an agent preserves historical memberships and metric team snapshots.
+            </StatusBanner>
+            <SubmitButton pendingLabel="Moving agent">
               Move agent
-            </button>
+            </SubmitButton>
           </form>
         </section>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Current members</h2>
+      <section aria-labelledby="current-members-heading" className="ui-card">
+        <div className="ui-card__header">
+          <h2 className="ui-card__title" id="current-members-heading">
+            Current members
+          </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted">
+        <TableScroll label="Current team members">
+          <table className="ui-table">
+            <caption>Current team membership records</caption>
+            <thead>
               <tr>
-                <th className="px-4 py-3">Team</th>
-                <th className="px-4 py-3">Member</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Started</th>
-                <th className="px-4 py-3">Actions</th>
+                <th scope="col">Team</th>
+                <th scope="col">Member</th>
+                <th scope="col">Role</th>
+                <th scope="col">Started</th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {teams.flatMap((team) =>
-                team.members.map((member) => (
-                  <tr className="border-t border-border" key={member.id}>
-                    <td className="px-4 py-3">{team.name}</td>
-                    <td className="px-4 py-3">{member.profileName}</td>
-                    <td className="px-4 py-3">{member.membershipRole}</td>
-                    <td className="px-4 py-3">{fmt(member.startedAt)}</td>
+              {currentMembers.map(({ member, team }) => (
+                  <tr key={member.id}>
+                    <td>{team.name}</td>
+                    <td>{member.profileName}</td>
+                    <td className="capitalize">{member.membershipRole}</td>
+                    <td>{fmt(member.startedAt)}</td>
                     <td className="px-4 py-3">
                       <form action={removeTeamMembershipAction}>
                         <input name="membershipId" type="hidden" value={member.id} />
-                        <button className="font-medium text-danger hover:underline">
+                        <ConfirmSubmitButton
+                          confirmLabel="Remove member"
+                          description={`${member.profileName} will be removed from ${team.name}. Historical membership records remain available.`}
+                          pendingLabel="Removing member"
+                          title={`Remove ${member.profileName}?`}
+                        >
                           Remove
-                        </button>
+                        </ConfirmSubmitButton>
                       </form>
                     </td>
                   </tr>
-                )),
-              )}
+              ))}
+              {currentMembers.length === 0 ? (
+                <EmptyTableRow
+                  colSpan={5}
+                  description="Assigned managers and agents will appear here."
+                  title="No current memberships"
+                />
+              ) : null}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </section>
-    </section>
+    </div>
   );
 }
 
 function StatusMessage({ error, ok }: { error?: string; ok?: string }) {
   if (error) {
     return (
-      <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+      <StatusBanner tone="danger">
         {adminErrorMessage(error)}
-      </p>
+      </StatusBanner>
     );
   }
   if (ok) {
     return (
-      <p className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-        Action completed.
-      </p>
+      <StatusBanner tone="success">Action completed.</StatusBanner>
     );
   }
   return null;
@@ -223,9 +285,9 @@ function TeamSelect({
   teams: { id: string; name: string; active: boolean }[];
 }) {
   return (
-    <label className="block text-sm font-medium">
+    <label className="ui-label">
       Team
-      <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" name="teamId" required>
+      <select className="ui-select" name="teamId" required>
         <option value="">Select team</option>
         {teams.map((team) => (
           <option disabled={!team.active} key={team.id} value={team.id}>

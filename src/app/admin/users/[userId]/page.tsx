@@ -23,6 +23,7 @@ import {
 import { getCurrentUser } from "@/auth/session";
 import { DeleteUserDialog } from "@/components/admin/delete-user-dialog";
 import { TemporaryPasswordControls } from "@/components/admin/temporary-password-controls";
+import { SubmitButton } from "@/components/dashboard/action-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export default async function AdminUserDetailPage({
   const roleDefaults = new Set(ROLE_DEFAULT_PERMISSIONS[details.profile.role]);
 
   return (
-    <section className="mx-auto max-w-7xl space-y-6 px-6 py-6">
+    <section className="dashboard-page space-y-6">
       <Link className="text-sm font-medium text-primary hover:underline" href="/admin/users">
         Back to Users & Access
       </Link>
@@ -202,9 +203,9 @@ export default async function AdminUserDetailPage({
             </div>
           </section>
           <div className="md:col-span-2">
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <SubmitButton pendingLabel="Saving user">
               Save user changes
-            </button>
+            </SubmitButton>
           </div>
         </form>
       </section>
@@ -224,9 +225,9 @@ export default async function AdminUserDetailPage({
               <input name="confirmStatusChange" type="checkbox" />
               I understand this account access change.
             </label>
-            <button className="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white">
+            <SubmitButton pendingLabel="Updating status" variant="danger">
               Apply status change
-            </button>
+            </SubmitButton>
           </form>
         </ActionPanel>
 
@@ -238,15 +239,24 @@ export default async function AdminUserDetailPage({
             </p>
           ) : (
             <form action={inviteAction} className="space-y-3">
-              <button className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground" name="invitationAction" value="send">
+              <SubmitButton
+                name="invitationAction"
+                pendingLabel="Sending invitation"
+                value="send"
+              >
                 {details.invitationStatus === "invitation sent"
                   ? "Resend invitation"
                   : "Send invitation"}
-              </button>
+              </SubmitButton>
               {details.invitationStatus === "invitation sent" ? (
-                <button className="rounded-md border border-danger px-3 py-2 text-sm font-semibold text-danger" name="invitationAction" value="revoke">
+                <SubmitButton
+                  name="invitationAction"
+                  pendingLabel="Revoking invitation"
+                  value="revoke"
+                  variant="danger"
+                >
                   Revoke invitation
-                </button>
+                </SubmitButton>
               ) : null}
             </form>
           )}
@@ -258,18 +268,18 @@ export default async function AdminUserDetailPage({
               <input name="revokeSessions" type="checkbox" defaultChecked />
               Revoke sessions immediately
             </label>
-            <button className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground">
+            <SubmitButton pendingLabel="Resetting password">
               Force password reset
-            </button>
+            </SubmitButton>
           </form>
           <form action={sessionsAction} className="mt-4 space-y-3 border-t border-border pt-4">
             <label className="flex items-center gap-2 text-sm">
               <input name="includeCurrentSession" type="checkbox" />
               Include my current session when this is my account
             </label>
-            <button className="rounded-md border border-danger px-3 py-2 text-sm font-semibold text-danger">
+            <SubmitButton pendingLabel="Revoking sessions" variant="danger">
               Revoke all sessions
-            </button>
+            </SubmitButton>
           </form>
         </ActionPanel>
       </section>
@@ -315,7 +325,9 @@ export default async function AdminUserDetailPage({
                         {!mapping.isPrimary ? (
                           <form action={primaryMappingAction}>
                             <input name="mappingId" type="hidden" value={mapping.id} />
-                            <button className="text-primary hover:underline">Make primary</button>
+                            <SubmitButton pendingLabel="Updating primary mapping" variant="ghost">
+                              Make primary
+                            </SubmitButton>
                           </form>
                         ) : null}
                         <details>
@@ -337,9 +349,9 @@ export default async function AdminUserDetailPage({
                               Normalized currently: {mapping.normalizedAgentName}
                             </p>
                             <div className="flex gap-3">
-                              <button className="text-primary hover:underline">
+                              <SubmitButton pendingLabel="Saving mapping" variant="ghost">
                                 Save
-                              </button>
+                              </SubmitButton>
                               <Link className="text-muted hover:underline" href={`/admin/users/${userId}`}>
                                 Cancel
                               </Link>
@@ -348,7 +360,9 @@ export default async function AdminUserDetailPage({
                         </details>
                         <form action={deactivateMappingAction}>
                           <input name="mappingId" type="hidden" value={mapping.id} />
-                          <button className="text-danger hover:underline">Deactivate</button>
+                          <SubmitButton pendingLabel="Deactivating mapping" variant="danger">
+                            Deactivate
+                          </SubmitButton>
                         </form>
                       </div>
                     ) : (
@@ -366,9 +380,9 @@ export default async function AdminUserDetailPage({
             <input name="makePrimary" type="checkbox" />
             Make primary
           </label>
-          <button className="self-end rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          <SubmitButton className="self-end" pendingLabel="Adding mapping">
             Add mapping
-          </button>
+          </SubmitButton>
         </form>
       </section>
 

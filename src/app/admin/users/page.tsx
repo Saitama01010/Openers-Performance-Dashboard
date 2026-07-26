@@ -21,6 +21,7 @@ import type { Role } from "@/auth/authorization";
 import { getCurrentUser } from "@/auth/session";
 import { AdminUserTable } from "@/components/admin/admin-user-table";
 import { UserImportWizard } from "@/components/admin/user-import-wizard";
+import { SubmitButton } from "@/components/dashboard/action-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -81,7 +82,7 @@ export default async function AdminUsersPage({
   const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));
 
   return (
-    <section className="mx-auto max-w-7xl space-y-6 px-6 py-6">
+    <section className="dashboard-page space-y-6">
       <StatusMessage error={params.error} ok={params.ok} warning={params.warning} />
 
       <section className="rounded-lg border border-border bg-surface p-5" id="create-user">
@@ -214,9 +215,9 @@ export default async function AdminUsersPage({
             <PermissionOverrideControls />
           </details>
           <div className="md:col-span-2">
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <SubmitButton pendingLabel="Creating user">
               Create user with temporary password
-            </button>
+            </SubmitButton>
           </div>
         </form>
       </section>
@@ -271,9 +272,9 @@ export default async function AdminUsersPage({
                             </option>
                           ))}
                         </select>
-                        <button className="rounded-md border border-border px-2 py-1 font-medium">
+                        <SubmitButton pendingLabel="Saving mapping" variant="secondary">
                           Save
-                        </button>
+                        </SubmitButton>
                       </form>
                       <Link
                         className="font-medium text-primary hover:underline"
@@ -297,9 +298,9 @@ export default async function AdminUsersPage({
                           placeholder="Ignore reason"
                           required
                         />
-                        <button className="rounded-md border border-danger px-2 py-1 font-medium text-danger">
+                        <SubmitButton pendingLabel="Ignoring name" variant="danger">
                           Ignore
-                        </button>
+                        </SubmitButton>
                       </form>
                     </td>
                   </tr>

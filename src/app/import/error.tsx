@@ -2,7 +2,7 @@
 
 import { DashboardErrorState } from "@/components/dashboard/dashboard-error-state";
 
-export default function AdminUsersError({
+export default function ImportError({
   reset,
 }: {
   error: Error & { digest?: string };
@@ -10,9 +10,9 @@ export default function AdminUsersError({
 }) {
   return (
     <DashboardErrorState
-      description="Users and access controls could not be loaded. No account changes were made."
+      description="The import workflow could not be loaded. Your source file has not been changed."
       reset={reset}
-      title="Users and access unavailable"
+      title="Import preview unavailable"
     />
   );
 }

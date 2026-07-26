@@ -63,6 +63,31 @@ export const PERMISSION_GROUPS = [
   },
 ] as const;
 
+export const OVERRIDABLE_PERMISSION_GROUPS = [
+  {
+    name: "Team management",
+    permissions: [
+      "teams.view",
+      "teams.create",
+      "teams.update",
+      "teams.deactivate",
+      "teams.assign_manager",
+      "teams.assign_agents",
+    ],
+  },
+  {
+    name: "Imports",
+    permissions: [
+      "imports.preview",
+      "imports.confirm",
+      "imports.view_history",
+      "imports.view_errors",
+      "imports.company",
+      "imports.team",
+    ],
+  },
+] as const;
+
 export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   "users.view": "View users and access state",
   "users.create": "Create invited user accounts",
@@ -102,6 +127,63 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
 };
 
 export const ALL_PERMISSION_KEYS = Object.keys(PERMISSION_DESCRIPTIONS);
+export const OVERRIDABLE_PERMISSION_KEYS = OVERRIDABLE_PERMISSION_GROUPS.flatMap(
+  (group) => [...group.permissions],
+);
+
+export const PERMISSION_PRESENTATION: Record<
+  (typeof OVERRIDABLE_PERMISSION_KEYS)[number],
+  { label: string; description: string }
+> = {
+  "teams.view": {
+    label: "View teams",
+    description: "View team details and current memberships.",
+  },
+  "teams.create": {
+    label: "Create teams",
+    description: "Create a new team.",
+  },
+  "teams.update": {
+    label: "Edit team details",
+    description: "Rename teams and update team details.",
+  },
+  "teams.deactivate": {
+    label: "Deactivate teams",
+    description: "Deactivate or reactivate teams.",
+  },
+  "teams.assign_manager": {
+    label: "Assign team managers",
+    description: "Choose the manager responsible for a team.",
+  },
+  "teams.assign_agents": {
+    label: "Add or remove team members",
+    description: "Move agents into or out of teams.",
+  },
+  "imports.preview": {
+    label: "Preview imported files",
+    description: "Upload and validate an operational import.",
+  },
+  "imports.confirm": {
+    label: "Confirm and save imports",
+    description: "Commit a validated operational import.",
+  },
+  "imports.view_history": {
+    label: "View import history",
+    description: "Review previous operational imports.",
+  },
+  "imports.view_errors": {
+    label: "View import errors",
+    description: "Review validation and confirmation errors.",
+  },
+  "imports.company": {
+    label: "Import company-wide data",
+    description: "Import operational data across the company.",
+  },
+  "imports.team": {
+    label: "Import team data",
+    description: "Import operational data for assigned teams.",
+  },
+};
 
 export const ADMIN_ONLY_PERMISSIONS = new Set([
   "users.manage_permissions",
@@ -174,7 +256,7 @@ export function validatePermissionOverrides(
   overrides: PermissionOverrideInput[],
   targetRole: Role,
 ) {
-  const validKeys = new Set(ALL_PERMISSION_KEYS);
+  const validKeys = new Set<string>(OVERRIDABLE_PERMISSION_KEYS);
   const seen = new Set<string>();
 
   for (const override of overrides) {
@@ -199,10 +281,10 @@ export function validatePermissionOverrides(
 
 export function assertCanRemoveAdmin(input: {
   targetRole: Role;
-  targetStatus: "invited" | "active" | "deactivated" | "revoked";
+  targetStatus: "invited" | "active" | "deactivated" | "revoked" | "deleted";
   activeAdminCount: number;
   nextRole?: Role;
-  nextStatus?: "invited" | "active" | "deactivated" | "revoked";
+  nextStatus?: "invited" | "active" | "deactivated" | "revoked" | "deleted";
 }) {
   const isCurrentlyActiveAdmin =
     input.targetRole === "admin" && input.targetStatus === "active";

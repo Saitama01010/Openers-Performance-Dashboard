@@ -1,0 +1,1 @@
+ALTER TABLE `user_import_batches` MODIFY COLUMN `user_import_status` enum('previewed','processing','confirmed') NOT NULL DEFAULT 'previewed';

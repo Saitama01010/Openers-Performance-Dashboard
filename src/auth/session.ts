@@ -105,7 +105,7 @@ export async function getCurrentUser() {
     .limit(1);
   const user = userRows[0];
 
-  if (!user || !user.active || user.accountStatus !== "active") {
+  if (!user || !user.email || !user.active || user.accountStatus !== "active") {
     return null;
   }
 

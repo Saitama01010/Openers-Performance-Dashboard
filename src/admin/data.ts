@@ -23,12 +23,17 @@ import {
   hashOpaqueToken,
   normalizeEmail,
 } from "@/auth/security";
+import { hashPassword } from "@/auth/password";
+import {
+  decryptTemporaryPassword,
+  encryptTemporaryPassword,
+  generateTemporaryPassword,
+} from "@/auth/temporary-password";
 import {
   activeMappingKey,
   assertCanRemoveAdmin,
   assertValidRole,
   primaryMappingKey,
-  roleRequiresDialerName,
   roleRequiresTeam,
   validatePermissionOverrides,
   type PermissionOverrideInput,
@@ -58,14 +63,19 @@ import {
 import { newId } from "@/lib/ids";
 
 export type InvitationStatus =
-  | "not sent"
-  | "pending"
-  | "accepted"
-  | "expired"
+  | "not invited"
+  | "invitation sent"
+  | "invitation expired"
+  | "password created"
   | "revoked"
   | "delivery failed";
 
-type AccountStatus = "invited" | "active" | "deactivated" | "revoked";
+type AccountStatus =
+  | "invited"
+  | "active"
+  | "deactivated"
+  | "revoked"
+  | "deleted";
 
 export type AdminUserListFilters = {
   query?: string;
@@ -85,7 +95,7 @@ export type CreateUserInput = {
   dialerName?: string;
   dialerAliases: string[];
   permissionOverrides: PermissionOverrideInput[];
-  sendInvitation: boolean;
+  importBatchId?: string;
 };
 
 export type UpdateUserInput = {
@@ -120,9 +130,12 @@ function invitationStatus(token?: {
   usedAt: Date | null;
   revokedAt: Date | null;
   expiresAt: Date;
-}) {
-  if (!token) return "not sent" satisfies InvitationStatus;
-  if (token.usedAt) return "accepted" satisfies InvitationStatus;
+}, passwordState?: "temporary" | "permanent", passwordChangedAt?: Date | null) {
+  if (passwordState === "permanent" && passwordChangedAt) {
+    return "password created" satisfies InvitationStatus;
+  }
+  if (!token) return "not invited" satisfies InvitationStatus;
+  if (token.usedAt) return "password created" satisfies InvitationStatus;
   if (token.revokedAt || token.deliveryStatus === "revoked") {
     return "revoked" satisfies InvitationStatus;
   }
@@ -130,14 +143,14 @@ function invitationStatus(token?: {
     return "delivery failed" satisfies InvitationStatus;
   }
   if (token.expiresAt.getTime() <= Date.now()) {
-    return "expired" satisfies InvitationStatus;
+    return "invitation expired" satisfies InvitationStatus;
   }
-  return "pending" satisfies InvitationStatus;
+  return "invitation sent" satisfies InvitationStatus;
 }
 
 function safeProfileState(profile: {
   id: string;
-  email: string;
+  email: string | null;
   name: string;
   role: Role;
   active: boolean;
@@ -214,6 +227,7 @@ async function recordEmailAttempt(input: {
 }
 
 async function deliverInvitationAfterCommit(input: {
+  actorId: string;
   profileId: string;
   tokenId: string;
   email: string;
@@ -248,6 +262,12 @@ async function deliverInvitationAfterCommit(input: {
       .update(accountInvitationTokens)
       .set({ deliveryStatus: "delivery_failed" })
       .where(eq(accountInvitationTokens.id, input.tokenId));
+    await writeAudit({
+      actorId: input.actorId,
+      action: "user.invitation_email_failed",
+      entityType: "profile",
+      entityId: input.profileId,
+    });
   }
 
   return result;
@@ -308,7 +328,7 @@ async function sendAccessRevokedNotice(input: {
 }
 
 function listWhere(filters: AdminUserListFilters) {
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [ne(profiles.accountStatus, "deleted")];
 
   if (filters.query) {
     const search = `%${filters.query}%`;
@@ -346,12 +366,17 @@ function listWhere(filters: AdminUserListFilters) {
     )`);
   }
 
-  if (filters.invitationStatus === "not sent") {
-    conditions.push(sql`not exists (
-      select 1 from account_invitation_tokens invitations
-      where invitations.profile_id = ${profiles.id}
-    )`);
-  } else if (filters.invitationStatus === "pending") {
+  if (filters.invitationStatus === "not invited") {
+    conditions.push(
+      and(
+        eq(profiles.passwordState, "temporary"),
+        sql`not exists (
+          select 1 from account_invitation_tokens invitations
+          where invitations.profile_id = ${profiles.id}
+        )`,
+      )!,
+    );
+  } else if (filters.invitationStatus === "invitation sent") {
     conditions.push(sql`exists (
       select 1 from account_invitation_tokens invitations
       where invitations.profile_id = ${profiles.id}
@@ -360,13 +385,21 @@ function listWhere(filters: AdminUserListFilters) {
       and invitations.expires_at > now()
       and invitations.invitation_delivery_status = 'pending'
     )`);
-  } else if (filters.invitationStatus === "accepted") {
-    conditions.push(sql`exists (
-      select 1 from account_invitation_tokens invitations
-      where invitations.profile_id = ${profiles.id}
-      and invitations.used_at is not null
-    )`);
-  } else if (filters.invitationStatus === "expired") {
+  } else if (filters.invitationStatus === "password created") {
+    conditions.push(
+      or(
+        and(
+          eq(profiles.passwordState, "permanent"),
+          sql`${profiles.passwordChangedAt} is not null`,
+        ),
+        sql`exists (
+          select 1 from account_invitation_tokens invitations
+          where invitations.profile_id = ${profiles.id}
+          and invitations.used_at is not null
+        )`,
+      )!,
+    );
+  } else if (filters.invitationStatus === "invitation expired") {
     conditions.push(sql`exists (
       select 1 from account_invitation_tokens invitations
       where invitations.profile_id = ${profiles.id}
@@ -405,6 +438,8 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
         name: profiles.name,
         role: profiles.role,
         accountStatus: profiles.accountStatus,
+        passwordState: profiles.passwordState,
+        passwordChangedAt: profiles.passwordChangedAt,
         lastLoginAt: profiles.lastLoginAt,
         createdAt: profiles.createdAt,
       })
@@ -486,7 +521,11 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
       ...row,
       team: membershipByUser.get(row.id) ?? null,
       dialerAgentName: mappingByUser.get(row.id)?.sourceAgentName ?? null,
-      invitationStatus: invitationStatus(invitationByUser.get(row.id)),
+      invitationStatus: invitationStatus(
+        invitationByUser.get(row.id),
+        row.passwordState,
+        row.passwordChangedAt,
+      ),
     })),
     teams: teamRows,
     pagination: { page, pageSize, total: totalRows[0]?.total ?? 0 },
@@ -644,15 +683,16 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
 
   if (name.length < 2) throw new Error("Full name is required.");
   if (!email.includes("@")) throw new Error("A valid email is required.");
+  if (!input.teamId) throw new Error("Select a team before creating this user.");
   if (input.role === "manager" && !input.teamId) {
     throw new Error("Select a team before changing this user to manager.");
   }
   if (input.role === "agent" && !input.teamId) {
     throw new Error("Select a team before changing this user to agent.");
   }
-  if (roleRequiresTeam(input.role)) await validateTeamForAssignment(input.teamId);
-  if (roleRequiresDialerName(input.role) && !input.dialerName?.trim()) {
-    throw new Error("Dialer agent name is required for agents.");
+  await validateTeamForAssignment(input.teamId);
+  if (!input.dialerName?.trim()) {
+    throw new Error("Dialer agent name is required.");
   }
 
   validatePermissionOverrides(input.permissionOverrides, input.role);
@@ -666,6 +706,11 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
   if (duplicate[0]) throw new Error("A user with this email already exists.");
 
   const profileId = newId();
+  const temporaryPassword = generateTemporaryPassword();
+  const [passwordHash, encryptedTemporaryPassword] = await Promise.all([
+    hashPassword(temporaryPassword),
+    Promise.resolve(encryptTemporaryPassword(temporaryPassword)),
+  ]);
   const requestedDialerNames = [
     input.dialerName ?? "",
     ...input.dialerAliases,
@@ -679,24 +724,25 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
     await assertActiveDialerMappingAvailable("dialer", normalizedName);
   }
 
-  const invitation = await getDb().transaction(async (tx) => {
-    let createdInvitation: { token: string; tokenId: string; expiresAt: Date } | null = null;
-
+  await getDb().transaction(async (tx) => {
     await tx.insert(profiles).values({
       id: profileId,
       email,
       name,
       role: input.role,
       active: true,
-      accountStatus: "invited",
+      passwordHash,
+      passwordState: "temporary",
+      encryptedTemporaryPassword,
+      accountStatus: "active",
     });
 
-    if (roleRequiresTeam(input.role) && input.teamId) {
+    if (input.teamId) {
       await tx.insert(teamMemberships).values({
         id: newId(),
         profileId,
         teamId: input.teamId,
-        role: input.role === "manager" ? "manager" : "agent",
+        role: input.role,
         active: true,
         createdById: actor.id,
       });
@@ -729,27 +775,10 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
       });
     }
 
-    if (input.sendInvitation) {
-      const token = createOpaqueToken();
-      const tokenId = newId();
-      const expiresAt = new Date(
-        Date.now() + getEnv().INVITATION_TTL_HOURS * 60 * 60 * 1000,
-      );
-      await tx.insert(accountInvitationTokens).values({
-        id: tokenId,
-        profileId,
-        tokenHash: hashOpaqueToken(token),
-        createdById: actor.id,
-        deliveryStatus: "pending",
-        expiresAt,
-      });
-      createdInvitation = { token, tokenId, expiresAt };
-    }
-
     await tx.insert(auditLogs).values({
       id: newId(),
       actorProfileId: actor.id,
-      action: "user.created",
+      action: input.importBatchId ? "user.imported" : "user.created",
       entityType: "profile",
       entityId: profileId,
       metadata: {
@@ -758,29 +787,278 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
           email,
           name,
           role: input.role,
-          accountStatus: "invited",
+          accountStatus: "active",
           teamId: input.teamId ?? null,
+          passwordState: "temporary",
+          importBatchId: input.importBatchId,
         },
       },
     });
-
-    return createdInvitation;
   });
+  return { profileId };
+}
 
-  let emailResult: Awaited<ReturnType<typeof deliverInvitationAfterCommit>> | null = null;
+export async function revealTemporaryPassword(actor: Actor, userId: string) {
+  assertAdmin(actor);
 
-  if (input.sendInvitation && invitation) {
-    emailResult = await deliverInvitationAfterCommit({
-      profileId,
-      tokenId: invitation.tokenId,
-      email,
-      name,
-      token: invitation.token,
-      resent: false,
-    });
+  const rows = await getDb()
+    .select({
+      accountStatus: profiles.accountStatus,
+      passwordState: profiles.passwordState,
+      encryptedTemporaryPassword: profiles.encryptedTemporaryPassword,
+    })
+    .from(profiles)
+    .where(eq(profiles.id, userId))
+    .limit(1);
+  const profile = rows[0];
+
+  if (
+    !profile ||
+    profile.accountStatus === "deleted" ||
+    profile.passwordState !== "temporary" ||
+    !profile.encryptedTemporaryPassword
+  ) {
+    throw new Error("Temporary password is no longer available.");
   }
 
-  return { profileId, emailResult };
+  const password = decryptTemporaryPassword(profile.encryptedTemporaryPassword);
+  await writeAudit({
+    actorId: actor.id,
+    action: "user.temporary_password_viewed",
+    entityType: "profile",
+    entityId: userId,
+  });
+  return password;
+}
+
+export async function regenerateTemporaryPassword(actor: Actor, userId: string) {
+  assertAdmin(actor);
+
+  const temporaryPassword = generateTemporaryPassword();
+  const [passwordHash, encryptedTemporaryPassword] = await Promise.all([
+    hashPassword(temporaryPassword),
+    Promise.resolve(encryptTemporaryPassword(temporaryPassword)),
+  ]);
+
+  await getDb().transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: profiles.id,
+        accountStatus: profiles.accountStatus,
+        passwordState: profiles.passwordState,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, userId))
+      .limit(1)
+      .for("update");
+    const profile = rows[0];
+
+    if (
+      !profile ||
+      profile.accountStatus === "deleted" ||
+      profile.passwordState !== "temporary"
+    ) {
+      throw new Error("Temporary password is no longer available.");
+    }
+
+    const now = new Date();
+    await tx
+      .update(profiles)
+      .set({
+        passwordHash,
+        encryptedTemporaryPassword,
+        passwordState: "temporary",
+        passwordChangedAt: null,
+        mustResetPassword: false,
+      })
+      .where(eq(profiles.id, userId));
+    await tx
+      .update(sessions)
+      .set({ revokedAt: now })
+      .where(and(eq(sessions.profileId, userId), isNull(sessions.revokedAt)));
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: actor.id,
+      action: "user.temporary_password_regenerated",
+      entityType: "profile",
+      entityId: userId,
+      metadata: { sessionsRevoked: true },
+    });
+  });
+}
+
+export async function bulkSendInvitations(actor: Actor, userIds: string[]) {
+  assertAdmin(actor);
+  const uniqueIds = Array.from(new Set(userIds.filter(Boolean))).slice(0, 100);
+  const outcomes = await Promise.all(
+    uniqueIds.map(async (userId) => {
+      try {
+        const result = await sendOrResendInvitation(actor, userId);
+        if (!result.ok) {
+          return {
+            userId,
+            status: "failed" as const,
+            reason: "The invitation email could not be delivered.",
+          };
+        }
+        return { userId, status: "sent" as const };
+      } catch (error) {
+        return {
+          userId,
+          status: "skipped" as const,
+          reason:
+            error instanceof Error
+              ? error.message
+              : "The invitation could not be sent.",
+        };
+      }
+    }),
+  );
+
+  await writeAudit({
+    actorId: actor.id,
+    action: "user.bulk_invitation_completed",
+    entityType: "profile_batch",
+    metadata: {
+      selected: uniqueIds.length,
+      successful: outcomes.filter((outcome) => outcome.status === "sent").length,
+      skipped: outcomes.filter((outcome) => outcome.status === "skipped").length,
+      failed: outcomes.filter((outcome) => outcome.status === "failed").length,
+    },
+  });
+  return outcomes;
+}
+
+export async function permanentlyDeleteUser(
+  actor: Actor,
+  input: { userId: string; confirmationEmail: string },
+) {
+  assertAdmin(actor);
+  if (actor.id === input.userId) {
+    throw new Error("You cannot permanently delete your own account.");
+  }
+
+  await getDb().transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(profiles)
+      .where(eq(profiles.id, input.userId))
+      .limit(1)
+      .for("update");
+    const profile = rows[0];
+
+    if (!profile || profile.accountStatus === "deleted") {
+      throw new Error("User was not found.");
+    }
+    if (
+      !profile.email ||
+      normalizeEmail(input.confirmationEmail) !== normalizeEmail(profile.email)
+    ) {
+      throw new Error("Type the user's exact email address to confirm deletion.");
+    }
+
+    const activeAdminCount = await getActiveAdminCountForUpdate(tx);
+    assertCanRemoveAdmin({
+      targetRole: profile.role,
+      targetStatus: profile.accountStatus,
+      activeAdminCount,
+      nextStatus: "revoked",
+    });
+
+    const now = new Date();
+    const mappingRows = await tx
+      .select({ sourceAgentName: sourceUserMappings.sourceAgentName })
+      .from(sourceUserMappings)
+      .where(
+        and(
+          eq(sourceUserMappings.profileId, input.userId),
+          eq(sourceUserMappings.isPrimary, true),
+        ),
+      )
+      .limit(1);
+    const membershipRows = await tx
+      .select({ teamName: teams.name })
+      .from(teamMemberships)
+      .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
+      .where(
+        and(
+          eq(teamMemberships.profileId, input.userId),
+          isNull(teamMemberships.endedAt),
+        ),
+      )
+      .limit(1);
+
+    await tx
+      .delete(emailDeliveryAttempts)
+      .where(eq(emailDeliveryAttempts.profileId, input.userId));
+    await tx
+      .delete(accountInvitationTokens)
+      .where(eq(accountInvitationTokens.profileId, input.userId));
+    await tx
+      .delete(passwordResetTokens)
+      .where(eq(passwordResetTokens.profileId, input.userId));
+    await tx.delete(sessions).where(eq(sessions.profileId, input.userId));
+    await tx
+      .delete(userPermissionOverrides)
+      .where(eq(userPermissionOverrides.profileId, input.userId));
+    await tx
+      .update(teamMemberships)
+      .set({ active: false, endedAt: now })
+      .where(
+        and(
+          eq(teamMemberships.profileId, input.userId),
+          isNull(teamMemberships.endedAt),
+        ),
+      );
+    await tx
+      .update(sourceUserMappings)
+      .set({
+        active: false,
+        isPrimary: false,
+        activeMappingKey: null,
+        primaryMappingKey: null,
+        deactivatedById: actor.id,
+        deactivatedAt: now,
+      })
+      .where(
+        and(
+          eq(sourceUserMappings.profileId, input.userId),
+          eq(sourceUserMappings.active, true),
+        ),
+      );
+    await tx
+      .update(profiles)
+      .set({
+        email: null,
+        passwordHash: null,
+        encryptedTemporaryPassword: null,
+        passwordState: "permanent",
+        active: false,
+        accountStatus: "deleted",
+        mustResetPassword: false,
+        lastLoginAt: null,
+        accessRevokedAt: now,
+        deletedAt: now,
+      })
+      .where(eq(profiles.id, input.userId));
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: actor.id,
+      action: "user.deleted",
+      entityType: "profile",
+      entityId: input.userId,
+      metadata: {
+        historicalIdentity: {
+          displayName: profile.name,
+          dialerName: mappingRows[0]?.sourceAgentName ?? null,
+          team: membershipRows[0]?.teamName ?? null,
+          role: profile.role,
+          deletedAt: now.toISOString(),
+          status: "Deleted user",
+        },
+      },
+    });
+  });
 }
 
 export async function getAdminUserDetails(actor: Actor, userId: string) {
@@ -793,7 +1071,7 @@ export async function getAdminUserDetails(actor: Actor, userId: string) {
     .limit(1);
   const profile = profileRows[0];
 
-  if (!profile) return null;
+  if (!profile || !profile.email || profile.accountStatus === "deleted") return null;
 
   const [
     membershipRows,
@@ -873,7 +1151,11 @@ export async function getAdminUserDetails(actor: Actor, userId: string) {
     memberships: membershipRows,
     mappings: mappingRows,
     overrides: overrideRows,
-    invitationStatus: invitationStatus(latestInvitation),
+    invitationStatus: invitationStatus(
+      latestInvitation,
+      profile.passwordState,
+      profile.passwordChangedAt,
+    ),
     invitations: invitationRows,
     passwordResets: resetRows,
     activeSessionCount: sessionRows[0]?.total ?? 0,
@@ -925,6 +1207,9 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
     const profile = profileRows[0];
 
     if (!profile) throw new Error("User was not found.");
+    if (profile.accountStatus === "deleted") {
+      throw new Error("Deleted users cannot be edited.");
+    }
 
     const duplicateRows = await tx
       .select({ id: profiles.id })
@@ -1000,6 +1285,17 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
         after: { id: input.userId, email, name, role: input.role, teamId: input.teamId ?? null },
       },
     });
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: actor.id,
+      action: "permission.override.updated",
+      entityType: "profile",
+      entityId: input.userId,
+      metadata: {
+        supportedNamespaces: ["teams", "imports"],
+        overrideCount: overrideValues.length,
+      },
+    });
   });
 }
 
@@ -1013,9 +1309,18 @@ export async function sendOrResendInvitation(actor: Actor, userId: string) {
     .limit(1);
   const profile = profileRows[0];
 
-  if (!profile || profile.accountStatus !== "invited") {
-    throw new Error("Only invited accounts can receive invitations.");
+  if (
+    !profile ||
+    !profile.email ||
+    !(
+      (profile.accountStatus === "active" &&
+        profile.passwordState === "temporary") ||
+      (profile.accountStatus === "invited" && !profile.passwordHash)
+    )
+  ) {
+    throw new Error("This account does not need an invitation.");
   }
+  const recipientEmail = profile.email;
 
   const previousRows = await getDb()
     .select({ id: accountInvitationTokens.id })
@@ -1041,9 +1346,10 @@ export async function sendOrResendInvitation(actor: Actor, userId: string) {
   });
 
   return deliverInvitationAfterCommit({
+    actorId: actor.id,
     profileId: userId,
     tokenId: invitation.tokenId,
-    email: profile.email,
+    email: recipientEmail,
     name: profile.name,
     token: invitation.token,
     resent: previousRows.length > 0,
@@ -1096,6 +1402,7 @@ export async function forcePasswordReset(actor: Actor, input: {
       throw new Error("Only active users can receive a password reset.");
     }
 
+    if (!current.email) throw new Error("This user does not have a login email.");
     const resetProfile = { id: current.id, email: current.email, name: current.name };
     const now = new Date();
 
@@ -1169,6 +1476,9 @@ export async function setUserAccountStatus(actor: Actor, input: {
     const profile = rows[0];
 
     if (!profile) throw new Error("User was not found.");
+    if (profile.accountStatus === "deleted") {
+      throw new Error("Deleted users cannot be reactivated.");
+    }
 
     const activeAdminCount = await getActiveAdminCountForUpdate(tx);
     assertCanRemoveAdmin({
@@ -1222,7 +1532,9 @@ export async function setUserAccountStatus(actor: Actor, input: {
             isNull(passwordResetTokens.revokedAt),
           ),
         );
-      revokedNotice = { profileId: profile.id, email: profile.email, name: profile.name };
+      if (profile.email) {
+        revokedNotice = { profileId: profile.id, email: profile.email, name: profile.name };
+      }
     }
 
     await tx.insert(auditLogs).values({

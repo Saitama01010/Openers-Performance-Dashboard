@@ -8,7 +8,7 @@ Authorization fails closed and is enforced server-side.
 | Manager | Active assigned teams | Active assigned teams |
 | Agent | Self | None |
 
-Role grants are stored in `role_permissions`; explicit per-user allow or deny rows in `user_permission_overrides` take precedence. A missing grant is a denial.
+Role grants are stored in `role_permissions`. Explicit per-user allow or deny rows may override only Team Management (`teams.*`) and Imports (`imports.*`) permissions. A missing grant is a denial. User, Metrics, and Other permissions always use role defaults; the provisioning migration removes legacy overrides in those namespaces and runtime evaluation ignores them defensively.
 
 A manager with no active team receives an empty profile scope. An assigned team with no profiles also produces an empty scope; neither condition removes the database filter. Deactivated and revoked profiles cannot use existing sessions. Route visibility is not an authorization control.
 
@@ -24,7 +24,7 @@ The Phase 2 catalog is seeded from `src/admin/policy.ts`:
 
 Admins receive all defaults. Managers receive team-scoped import/metric grants and leaderboard view. Agents receive own-metric and leaderboard grants.
 
-User-specific overrides support `allow`, `deny`, or inherited role default. Admin-only permissions cannot be granted to managers or agents through manipulated requests.
+User-specific overrides support `allow`, `deny`, or inherited role default. The override mutation rejects every key outside the explicit Team Management and Imports allowlist. User provisioning, password reveal/regeneration, invitation delivery, and permanent deletion remain hard-coded administrator capabilities.
 
 Admin-only permissions include:
 

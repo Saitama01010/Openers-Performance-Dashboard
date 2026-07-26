@@ -8,7 +8,15 @@ Local development uses the console email provider. It prints test links only out
 
 ## Admin-managed accounts
 
-Admins create every dashboard account from `/admin/users`. New users start with `account_status='invited'` and no password hash. The admin may send or resend an invitation, but never supplies the user's final password. Accepting a valid invitation writes the password hash, marks the invitation accepted, sets `password_changed_at`, and activates the account.
+Admins create every dashboard account from `/admin/users`. New accounts are active immediately with a generated temporary password. The authentication copy remains a bcrypt hash; the separately retrievable temporary value is protected with AES-256-GCM and is available only through an audited, admin-only, no-store endpoint. Account creation does not send email. Accepting an invitation or completing password reset replaces the authentication hash, clears the encrypted temporary value, records `password_changed_at`, revokes outstanding links, and revokes existing sessions.
+
+`TEMP_PASSWORD_ENCRYPTION_KEY` must be a base64-encoded 32-byte key. Generate it outside source control with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Production startup fails when the key is absent or malformed. Rotate it only with a planned re-encryption process; changing it makes existing temporary passwords unrecoverable.
 
 Account statuses:
 
@@ -16,6 +24,7 @@ Account statuses:
 - `active`: login and unrevoked sessions may work.
 - `deactivated`: login is blocked and sessions are revoked; history is preserved.
 - `revoked`: login is blocked, sessions are revoked, outstanding invitations and reset tokens are revoked, and history is preserved.
+- `deleted`: authentication data and login email are removed; the stripped row remains only as a historical reporting identity.
 
 The session lookup checks session revocation, expiration, `profiles.active`, and `profiles.account_status` on authenticated requests. Cookie expiration alone is not trusted.
 

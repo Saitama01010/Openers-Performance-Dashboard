@@ -14,7 +14,7 @@ vi.mock("resend", () => ({
 
 const originalEnv = { ...process.env };
 
-function setBaseEnv(overrides: NodeJS.ProcessEnv = {}) {
+function setBaseEnv(overrides: Partial<NodeJS.ProcessEnv> = {}) {
   process.env = {
     ...originalEnv,
     DATABASE_URL: "mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard",
@@ -25,6 +25,7 @@ function setBaseEnv(overrides: NodeJS.ProcessEnv = {}) {
     EMAIL_FROM_ADDRESS: "no-reply@updates.dialexpert.com",
     INVITATION_TTL_HOURS: "48",
     PASSWORD_RESET_TTL_MINUTES: "30",
+    TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
     NODE_ENV: "development",
     ...overrides,
   };

@@ -13,22 +13,21 @@ import {
   userStatusAction,
 } from "@/admin/actions";
 import { getAdminUserDetails } from "@/admin/data";
+import { formatAuditEvent } from "@/admin/audit-format";
 import { adminErrorMessage } from "@/admin/messages";
 import {
-  PERMISSION_GROUPS,
+  OVERRIDABLE_PERMISSION_GROUPS,
+  PERMISSION_PRESENTATION,
   ROLE_DEFAULT_PERMISSIONS,
 } from "@/admin/policy";
 import { getCurrentUser } from "@/auth/session";
+import { DeleteUserDialog } from "@/components/admin/delete-user-dialog";
+import { TemporaryPasswordControls } from "@/components/admin/temporary-password-controls";
 
 export const dynamic = "force-dynamic";
 
 function fmt(value: Date | null | undefined) {
   return value ? value.toLocaleString("en-US") : "Never";
-}
-
-function jsonPreview(value: unknown) {
-  if (!value) return "-";
-  return JSON.stringify(value).slice(0, 260);
 }
 
 export default async function AdminUserDetailPage({
@@ -85,6 +84,14 @@ export default async function AdminUserDetailPage({
           <Fact label="Role" value={details.profile.role} />
           <Fact label="Team" value={details.activeMembership?.teamName ?? "-"} />
           <Fact label="Invitation" value={details.invitationStatus} />
+          <Fact
+            label="Invitation sent"
+            value={fmt(details.invitations[0]?.createdAt)}
+          />
+          <Fact
+            label="Invitation expires"
+            value={fmt(details.invitations[0]?.expiresAt)}
+          />
           <Fact label="Last login" value={fmt(details.profile.lastLoginAt)} />
           <Fact label="Password changed" value={fmt(details.profile.passwordChangedAt)} />
           <Fact label="Active sessions" value={String(details.activeSessionCount)} />
@@ -94,10 +101,30 @@ export default async function AdminUserDetailPage({
       </section>
 
       <section className="rounded-lg border border-border bg-surface p-5">
+        <h2 className="text-lg font-semibold">Temporary password</h2>
+        <p className="mt-1 text-sm text-muted">
+          The value remains masked until an administrator explicitly reveals
+          it. Permanent passwords are never retrievable.
+        </p>
+        <div className="mt-4">
+          <TemporaryPasswordControls
+            available={
+              details.profile.passwordState === "temporary" &&
+              Boolean(details.profile.encryptedTemporaryPassword)
+            }
+            passwordCreatedAt={
+              details.profile.passwordChangedAt?.toISOString() ?? null
+            }
+            userId={userId}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-border bg-surface p-5">
         <h2 className="text-lg font-semibold">Edit user</h2>
         <form action={updateAction} className="mt-4 grid gap-4 md:grid-cols-2">
           <TextField defaultValue={details.profile.name} label="Full name" name="name" required />
-          <TextField defaultValue={details.profile.email} label="Login email" name="email" required type="email" />
+          <TextField defaultValue={details.profile.email ?? ""} label="Login email" name="email" required type="email" />
           <label className="text-sm font-medium">
             Role
             <select
@@ -131,7 +158,7 @@ export default async function AdminUserDetailPage({
           <section className="md:col-span-2">
             <h3 className="font-semibold">Permission overrides</h3>
             <div className="mt-3 grid gap-4 lg:grid-cols-2">
-              {PERMISSION_GROUPS.map((group) => (
+              {OVERRIDABLE_PERMISSION_GROUPS.map((group) => (
                 <fieldset className="rounded-md border border-border p-3" key={group.name}>
                   <legend className="px-1 text-sm font-semibold">{group.name}</legend>
                   <div className="mt-2 space-y-2">
@@ -143,9 +170,16 @@ export default async function AdminUserDetailPage({
                       return (
                         <label className="grid grid-cols-[1fr_auto] gap-3 text-sm" key={permission}>
                           <span>
-                            <span className="font-medium">{permission}</span>
-                            <span className="ml-2 text-muted">
-                              default {roleDefault ? "allow" : "deny"} · effective {effective ? "allow" : "deny"}
+                            <span className="font-medium">
+                              {PERMISSION_PRESENTATION[permission].label}
+                            </span>
+                            <span className="mt-1 block text-xs text-muted">
+                              Role access: {roleDefault ? "Allowed" : "Denied"}
+                              <br />
+                              Current access: {effective ? "Allowed" : "Denied"}
+                              {override === undefined
+                                ? ""
+                                : " by individual override"}
                             </span>
                           </span>
                           <select
@@ -155,7 +189,7 @@ export default async function AdminUserDetailPage({
                             }
                             name={`permission:${permission}`}
                           >
-                            <option value="inherit">Inherit</option>
+                            <option value="inherit">Use role setting</option>
                             <option value="allow">Allow</option>
                             <option value="deny">Deny</option>
                           </select>
@@ -197,14 +231,25 @@ export default async function AdminUserDetailPage({
         </ActionPanel>
 
         <ActionPanel title="Invitation">
-          <form action={inviteAction} className="space-y-3">
-            <button className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground" name="invitationAction" value="send">
-              Send or resend invitation
-            </button>
-            <button className="rounded-md border border-danger px-3 py-2 text-sm font-semibold text-danger" name="invitationAction" value="revoke">
-              Revoke invitation
-            </button>
-          </form>
+          {details.profile.passwordState === "permanent" &&
+          details.profile.passwordChangedAt ? (
+            <p className="text-sm text-muted">
+              Password created. No invitation action is required.
+            </p>
+          ) : (
+            <form action={inviteAction} className="space-y-3">
+              <button className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground" name="invitationAction" value="send">
+                {details.invitationStatus === "invitation sent"
+                  ? "Resend invitation"
+                  : "Send invitation"}
+              </button>
+              {details.invitationStatus === "invitation sent" ? (
+                <button className="rounded-md border border-danger px-3 py-2 text-sm font-semibold text-danger" name="invitationAction" value="revoke">
+                  Revoke invitation
+                </button>
+              ) : null}
+            </form>
+          )}
         </ActionPanel>
 
         <ActionPanel title="Password and sessions">
@@ -227,6 +272,17 @@ export default async function AdminUserDetailPage({
             </button>
           </form>
         </ActionPanel>
+      </section>
+
+      <section className="rounded-lg border border-danger/40 bg-danger/10 p-5">
+        <h2 className="font-semibold text-danger">Permanent deletion</h2>
+        <p className="mt-2 text-sm text-muted">
+          This is separate from deactivation. Authentication data is removed,
+          while historical reporting data remains under Deleted users.
+        </p>
+        <div className="mt-4">
+          <DeleteUserDialog email={details.profile.email ?? ""} userId={userId} />
+        </div>
       </section>
 
       <section className="rounded-lg border border-border bg-surface">
@@ -316,10 +372,19 @@ export default async function AdminUserDetailPage({
         </form>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Team membership history</h2>
-        </div>
+      <details className="rounded-lg border border-border bg-surface">
+        <summary className="cursor-pointer px-4 py-3 font-semibold">
+          Team membership history ({details.memberships.length})
+          <span className="ml-3 text-sm font-normal text-muted">
+            Current team: {details.activeMembership?.teamName ?? "Unassigned"} ·
+            Current role:{" "}
+            {details.activeMembership?.role === "manager"
+              ? "Team Manager"
+              : details.activeMembership?.role === "admin"
+                ? "Administrator"
+                : "Agent"}
+          </span>
+        </summary>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-muted">
@@ -335,42 +400,83 @@ export default async function AdminUserDetailPage({
               {details.memberships.map((membership) => (
                 <tr className="border-t border-border" key={membership.id}>
                   <td className="px-4 py-3">{membership.teamName}</td>
-                  <td className="px-4 py-3">{membership.role}</td>
+                  <td className="px-4 py-3">
+                    {membership.role === "manager"
+                      ? "Team Manager"
+                      : membership.role === "admin"
+                        ? "Administrator"
+                        : "Agent"}
+                  </td>
                   <td className="px-4 py-3">{fmt(membership.startedAt)}</td>
-                  <td className="px-4 py-3">{fmt(membership.endedAt)}</td>
-                  <td className="px-4 py-3">{membership.active ? "Active" : "Historical"}</td>
+                  <td className="px-4 py-3">
+                    {membership.endedAt ? fmt(membership.endedAt) : "Still active"}
+                  </td>
+                  <td className="px-4 py-3">
+                    {membership.active
+                      ? "Current membership"
+                      : "Previous membership"}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </section>
+      </details>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Audit history</h2>
-        </div>
+      <details className="rounded-lg border border-border bg-surface">
+        <summary className="cursor-pointer px-4 py-3 font-semibold">
+          Audit history ({details.audits.length})
+        </summary>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-muted">
               <tr>
                 <th className="px-4 py-3">Action</th>
                 <th className="px-4 py-3">When</th>
-                <th className="px-4 py-3">Metadata</th>
+                <th className="px-4 py-3">Description</th>
               </tr>
             </thead>
             <tbody>
-              {details.audits.map((audit) => (
-                <tr className="border-t border-border" key={audit.id}>
-                  <td className="px-4 py-3">{audit.action}</td>
-                  <td className="px-4 py-3">{fmt(audit.createdAt)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{jsonPreview(audit.metadata)}</td>
-                </tr>
-              ))}
+              {details.audits.map((audit) => {
+                const formatted = formatAuditEvent(audit.action, audit.metadata);
+                const technical = formatted.technicalDetails;
+                const hasTechnical =
+                  technical &&
+                  typeof technical === "object" &&
+                  Object.keys(technical).length > 0;
+
+                return (
+                  <tr className="border-t border-border align-top" key={audit.id}>
+                    <td className="px-4 py-3">{formatted.title}</td>
+                    <td className="px-4 py-3">{fmt(audit.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      {formatted.details.length > 0 ? (
+                        <ul className="list-disc pl-5">
+                          {formatted.details.map((detail) => (
+                            <li key={detail}>{detail}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="text-muted">No additional details.</span>
+                      )}
+                      {hasTechnical ? (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs text-muted">
+                            Technical details
+                          </summary>
+                          <pre className="mt-2 max-w-xl overflow-auto whitespace-pre-wrap text-xs text-muted">
+                            {JSON.stringify(technical, null, 2)}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </section>
+      </details>
     </section>
   );
 }

@@ -24,7 +24,7 @@ import {
   updateAdminUser,
 } from "@/admin/data";
 import {
-  ALL_PERMISSION_KEYS,
+  OVERRIDABLE_PERMISSION_KEYS,
   assertValidRole,
   type PermissionOverrideInput,
 } from "@/admin/policy";
@@ -54,7 +54,7 @@ function readRole(formData: FormData): Role {
 }
 
 function readPermissionOverrides(formData: FormData): PermissionOverrideInput[] {
-  return ALL_PERMISSION_KEYS.map((permissionKey) => {
+  return OVERRIDABLE_PERMISSION_KEYS.map((permissionKey) => {
     const raw = formString(formData, `permission:${permissionKey}`);
     const value =
       raw === "allow" || raw === "deny" || raw === "inherit"
@@ -141,10 +141,8 @@ export async function createUserAction(formData: FormData) {
       dialerName: formString(formData, "dialerName"),
       dialerAliases: splitAliases(formString(formData, "dialerAliases")),
       permissionOverrides: readPermissionOverrides(formData),
-      sendInvitation: boolField(formData, "sendInvitation"),
     });
-    const suffix = result.emailResult?.ok === false ? "&warning=email" : "";
-    target = `/admin/users/${result.profileId}?ok=user-created${suffix}`;
+    target = `/admin/users/${result.profileId}?ok=user-created`;
     revalidatePath("/admin/users");
   } catch (error) {
     fail("/admin/users", error, "user-create");

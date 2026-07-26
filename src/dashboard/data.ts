@@ -97,7 +97,13 @@ export async function getScopedAgents(actor: Actor) {
     return getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
-      .where(eq(profiles.role, "agent"));
+      .where(
+        and(
+          eq(profiles.role, "agent"),
+          eq(profiles.accountStatus, "active"),
+          eq(profiles.active, true),
+        ),
+      );
   }
 
   if (actor.role === "agent") {

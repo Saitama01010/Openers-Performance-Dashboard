@@ -30,6 +30,9 @@ export const DASHBOARD_RANGES = [
 ] as const;
 
 export type DashboardRange = (typeof DASHBOARD_RANGES)[number];
+export const DASHBOARD_ACCOUNT_FILTERS = ["active", "deleted", "all"] as const;
+export type DashboardAccountFilter =
+  (typeof DASHBOARD_ACCOUNT_FILTERS)[number];
 
 export type DashboardPeriod = {
   key: DashboardRange;
@@ -85,7 +88,7 @@ export type AgentPerformanceRow = {
   untrackedSeconds: number;
   callsPerHour: number;
   talkPercentage: number;
-  status: "active" | "invited" | "deactivated" | "revoked";
+  status: "active" | "invited" | "deactivated" | "revoked" | "deleted";
 };
 
 export type TeamComparisonRow = {
@@ -166,6 +169,17 @@ export function normalizeDashboardRange(
   return DASHBOARD_RANGES.includes(candidate as DashboardRange)
     ? (candidate as DashboardRange)
     : "month-to-date";
+}
+
+export function normalizeDashboardAccountFilter(
+  value: string | string[] | undefined,
+): DashboardAccountFilter {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return DASHBOARD_ACCOUNT_FILTERS.includes(
+    candidate as DashboardAccountFilter,
+  )
+    ? (candidate as DashboardAccountFilter)
+    : "all";
 }
 
 export function resolveDashboardPeriod(
@@ -267,6 +281,7 @@ function formatHour(hour: number) {
 export async function getScopedDashboardData(
   actor: Actor,
   period: DashboardPeriod,
+  accountFilter: DashboardAccountFilter = "all",
 ): Promise<ScopedDashboardData> {
   const scopedProfileIds = await getScopedProfileIds(actor);
 
@@ -297,6 +312,19 @@ export async function getScopedDashboardData(
     gte(dialerAgentHourlyMetrics.metricDate, period.start),
     lte(dialerAgentHourlyMetrics.metricDate, period.end),
     scopeCondition,
+    accountFilter === "active"
+      ? sql`exists (
+          select 1 from profiles reporting_profiles
+          where reporting_profiles.id = ${dialerAgentHourlyMetrics.agentProfileId}
+          and reporting_profiles.account_status <> 'deleted'
+        )`
+      : accountFilter === "deleted"
+        ? sql`exists (
+            select 1 from profiles reporting_profiles
+            where reporting_profiles.id = ${dialerAgentHourlyMetrics.agentProfileId}
+            and reporting_profiles.account_status = 'deleted'
+          )`
+        : undefined,
   );
 
   const [
@@ -424,8 +452,8 @@ export async function getScopedDashboardData(
       const talkSeconds = numberValue(row.talkSeconds);
       return {
         id: row.id,
-        name: row.name,
-        email: row.email,
+        name: row.status === "deleted" ? `${row.name} (Deleted user)` : row.name,
+        email: row.email ?? "Deleted user",
         team: row.team ?? "Unassigned",
         calls,
         loginSeconds,
@@ -514,7 +542,13 @@ export async function getScopedAgents(actor: Actor) {
     return getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
-      .where(eq(profiles.role, "agent"));
+      .where(
+        and(
+          eq(profiles.role, "agent"),
+          eq(profiles.accountStatus, "active"),
+          eq(profiles.active, true),
+        ),
+      );
   }
 
   if (actor.role === "agent") {

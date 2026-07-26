@@ -6,19 +6,25 @@ import type { Actor } from "@/auth/authorization";
 import { resolvePermission } from "@/auth/authorization";
 import { getDb } from "@/db";
 import { rolePermissions, userPermissionOverrides } from "@/db/schema";
+import { OVERRIDABLE_PERMISSION_KEYS } from "@/admin/policy";
 
 export async function hasPermission(actor: Actor, permissionKey: string) {
+  const canUseIndividualOverride = OVERRIDABLE_PERMISSION_KEYS.includes(
+    permissionKey as (typeof OVERRIDABLE_PERMISSION_KEYS)[number],
+  );
   const [overrideRows, roleRows] = await Promise.all([
-    getDb()
-      .select({ allowed: userPermissionOverrides.allowed })
-      .from(userPermissionOverrides)
-      .where(
-        and(
-          eq(userPermissionOverrides.profileId, actor.id),
-          eq(userPermissionOverrides.permissionKey, permissionKey),
-        ),
-      )
-      .limit(1),
+    canUseIndividualOverride
+      ? getDb()
+          .select({ allowed: userPermissionOverrides.allowed })
+          .from(userPermissionOverrides)
+          .where(
+            and(
+              eq(userPermissionOverrides.profileId, actor.id),
+              eq(userPermissionOverrides.permissionKey, permissionKey),
+            ),
+          )
+          .limit(1)
+      : Promise.resolve([]),
     getDb()
       .select({ permissionKey: rolePermissions.permissionKey })
       .from(rolePermissions)

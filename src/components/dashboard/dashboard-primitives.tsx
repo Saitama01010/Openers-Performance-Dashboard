@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Role } from "@/auth/authorization";
 import { Icon, type IconName } from "@/components/dashboard/icon";
 import type {
+  DashboardAccountFilter,
   DashboardPeriod,
   DashboardRange,
 } from "@/dashboard/data";
@@ -173,9 +174,11 @@ const rangeOptions: { key: DashboardRange; label: string }[] = [
 ];
 
 export function FilterBar({
+  accountFilter,
   period,
   role,
 }: {
+  accountFilter: DashboardAccountFilter;
   period: DashboardPeriod;
   role: Role;
 }) {
@@ -211,10 +214,12 @@ export function FilterBar({
         <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 xl:pb-0">
           {rangeOptions.map((option) => {
             const active = period.key === option.key;
+            const accountQuery =
+              role === "admin" ? `&users=${accountFilter}` : "";
             const href =
               option.key === "custom"
-                ? `/dashboard?range=custom&from=${period.start}&to=${period.end}`
-                : `/dashboard?range=${option.key}`;
+                ? `/dashboard?range=custom&from=${period.start}&to=${period.end}${accountQuery}`
+                : `/dashboard?range=${option.key}${accountQuery}`;
             return (
               <Link
                 aria-current={active ? "page" : undefined}
@@ -232,6 +237,39 @@ export function FilterBar({
           })}
         </div>
       </div>
+      {role === "admin" ? (
+        <form
+          action="/dashboard"
+          className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3"
+          method="get"
+        >
+          <input name="range" type="hidden" value={period.key} />
+          {period.key === "custom" ? (
+            <>
+              <input name="from" type="hidden" value={period.start} />
+              <input name="to" type="hidden" value={period.end} />
+            </>
+          ) : null}
+          <label className="text-[10px] font-semibold tracking-wide text-muted uppercase">
+            Reporting users
+            <select
+              className="mt-1 block rounded-lg border border-border bg-background/70 px-3 py-2 text-xs text-white"
+              defaultValue={accountFilter}
+              name="users"
+            >
+              <option value="active">Active users</option>
+              <option value="deleted">Deleted users</option>
+              <option value="all">All users</option>
+            </select>
+          </label>
+          <button
+            className="rounded-lg bg-white/[0.07] px-3.5 py-2 text-xs font-semibold text-white"
+            type="submit"
+          >
+            Apply user filter
+          </button>
+        </form>
+      ) : null}
       {period.key === "custom" ? (
         <form
           action="/dashboard"
@@ -239,6 +277,9 @@ export function FilterBar({
           method="get"
         >
           <input name="range" type="hidden" value="custom" />
+          {role === "admin" ? (
+            <input name="users" type="hidden" value={accountFilter} />
+          ) : null}
           <label className="text-[10px] font-semibold tracking-wide text-muted uppercase">
             From
             <input

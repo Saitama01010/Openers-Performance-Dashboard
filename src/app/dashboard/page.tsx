@@ -23,6 +23,7 @@ import {
 import { Icon } from "@/components/dashboard/icon";
 import {
   getScopedDashboardData,
+  normalizeDashboardAccountFilter,
   normalizeDashboardRange,
   resolveDashboardPeriod,
 } from "@/dashboard/data";
@@ -71,6 +72,7 @@ export default async function DashboardPage({
     range?: string | string[];
     from?: string | string[];
     to?: string | string[];
+    users?: string | string[];
   }>;
 }) {
   const user = await getCurrentUser();
@@ -84,7 +86,12 @@ export default async function DashboardPage({
     from: firstValue(params.from),
     to: firstValue(params.to),
   });
-  const data = await getScopedDashboardData(user, period);
+  const accountFilter = normalizeDashboardAccountFilter(params.users);
+  const data = await getScopedDashboardData(
+    user,
+    period,
+    user.role === "admin" ? accountFilter : "all",
+  );
   const copy = roleContent(user.role);
   const callsPerHour =
     data.totals.loginSeconds > 0
@@ -223,7 +230,11 @@ export default async function DashboardPage({
         </section>
 
         <div className="reveal-section mt-4 [animation-delay:60ms]">
-          <FilterBar period={data.period} role={user.role} />
+          <FilterBar
+            accountFilter={accountFilter}
+            period={data.period}
+            role={user.role}
+          />
         </div>
 
         <section

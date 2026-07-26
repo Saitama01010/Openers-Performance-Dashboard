@@ -109,9 +109,18 @@ export async function issueInvitation(input: {
     .limit(1);
   const profile = profileRows[0];
 
-  if (!profile || profile.accountStatus !== "invited") {
+  if (
+    !profile ||
+    !profile.email ||
+    !(
+      (profile.accountStatus === "active" &&
+        profile.passwordState === "temporary") ||
+      (profile.accountStatus === "invited" && !profile.passwordHash)
+    )
+  ) {
     throw new Error("User cannot be invited.");
   }
+  const recipientEmail = profile.email;
 
   const pendingInvitations = await getDb()
     .select({ id: accountInvitationTokens.id })
@@ -166,7 +175,7 @@ export async function issueInvitation(input: {
 
   try {
     const result = await sendInvitationEmail({
-      email: profile.email,
+      email: recipientEmail,
       name: profile.name,
       token,
       tokenId,
@@ -179,7 +188,7 @@ export async function issueInvitation(input: {
         pendingInvitations.length > 0
           ? "account_invitation_resent"
           : "account_invitation",
-      recipientEmail: profile.email,
+      recipientEmail,
       provider: result.provider,
       ok: true,
       acceptedAt: result.acceptedAt,
@@ -201,7 +210,7 @@ export async function issueInvitation(input: {
             ? "account_invitation_resent"
             : "account_invitation",
         provider: getEnv().EMAIL_PROVIDER,
-        recipientEmail: profile.email,
+        recipientEmail,
         status: "failed",
         errorMessage: message,
       });
@@ -238,13 +247,21 @@ export async function inspectInvitationToken(
       accountStatus: profiles.accountStatus,
       active: profiles.active,
       passwordHash: profiles.passwordHash,
+      passwordState: profiles.passwordState,
     })
     .from(profiles)
     .where(eq(profiles.id, invitation.profileId))
     .limit(1);
   const profile = profileRows[0];
 
-  if (!profile || profile.accountStatus !== "invited" || profile.passwordHash) {
+  if (
+    !profile ||
+    !(
+      (profile.accountStatus === "active" &&
+        profile.passwordState === "temporary") ||
+      (profile.accountStatus === "invited" && !profile.passwordHash)
+    )
+  ) {
     return { status: "account_not_eligible" };
   }
 
@@ -321,7 +338,16 @@ export async function acceptInvitation(input: {
       .for("update");
     const profile = profileRows[0];
 
-    if (!profile || profile.accountStatus !== "invited") return "invalid";
+    if (
+      !profile ||
+      !(
+        (profile.accountStatus === "active" &&
+          profile.passwordState === "temporary") ||
+        (profile.accountStatus === "invited" && !profile.passwordHash)
+      )
+    ) {
+      return "invalid";
+    }
 
     if (profile.passwordHash && (await verifyPassword(input.password, profile.passwordHash))) {
       return "password_reused";
@@ -331,6 +357,8 @@ export async function acceptInvitation(input: {
       .update(profiles)
       .set({
         passwordHash,
+        passwordState: "permanent",
+        encryptedTemporaryPassword: null,
         active: true,
         accountStatus: "active",
         mustResetPassword: false,
@@ -363,10 +391,21 @@ export async function acceptInvitation(input: {
           isNull(passwordResetTokens.revokedAt),
         ),
       );
+    await tx
+      .update(sessions)
+      .set({ revokedAt: now })
+      .where(and(eq(sessions.profileId, profile.id), isNull(sessions.revokedAt)));
     await tx.insert(auditLogs).values({
       id: newId(),
       actorProfileId: profile.id,
-      action: "user.invitation_accepted",
+      action: "user.password_created",
+      entityType: "profile",
+      entityId: profile.id,
+    });
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: profile.id,
+      action: "user.temporary_password_cleared",
       entityType: "profile",
       entityId: profile.id,
     });
@@ -392,7 +431,12 @@ export async function requestPasswordReset(email: string) {
     .limit(1);
   const profile = profileRows[0];
 
-  if (!profile || profile.accountStatus !== "active" || !profile.active) {
+  if (
+    !profile ||
+    !profile.email ||
+    profile.accountStatus !== "active" ||
+    !profile.active
+  ) {
     return;
   }
 
@@ -573,7 +617,7 @@ export async function resetPassword(input: {
       .for("update");
     const currentProfile = profileRows[0];
 
-    if (!currentProfile) return "invalid";
+    if (!currentProfile || !currentProfile.email) return "invalid";
     if (
       currentProfile.passwordHash &&
       (await verifyPassword(input.password, currentProfile.passwordHash))
@@ -583,7 +627,13 @@ export async function resetPassword(input: {
 
     await tx
       .update(profiles)
-      .set({ passwordHash, mustResetPassword: false, passwordChangedAt: now })
+      .set({
+        passwordHash,
+        passwordState: "permanent",
+        encryptedTemporaryPassword: null,
+        mustResetPassword: false,
+        passwordChangedAt: now,
+      })
       .where(eq(profiles.id, currentProfile.id));
     await tx
       .update(passwordResetTokens)
@@ -617,11 +667,18 @@ export async function resetPassword(input: {
     await tx.insert(auditLogs).values({
       id: newId(),
       actorProfileId: currentProfile.id,
-      action: "user.password_reset_completed",
+      action: "user.password_created",
       entityType: "profile",
       entityId: currentProfile.id,
     });
-    return currentProfile;
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: currentProfile.id,
+      action: "user.temporary_password_cleared",
+      entityType: "profile",
+      entityId: currentProfile.id,
+    });
+    return { ...currentProfile, email: currentProfile.email };
   });
 
   if (profile === "password_reused") {

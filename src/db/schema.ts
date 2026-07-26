@@ -23,6 +23,11 @@ export const accountStatusEnum = mysqlEnum("account_status", [
   "active",
   "deactivated",
   "revoked",
+  "deleted",
+]);
+export const passwordStateEnum = mysqlEnum("password_state", [
+  "temporary",
+  "permanent",
 ]);
 export const invitationDeliveryStatusEnum = mysqlEnum(
   "invitation_delivery_status",
@@ -36,6 +41,7 @@ export const emailDeliveryStatusEnum = mysqlEnum("email_delivery_status", [
   "failed",
 ]);
 export const membershipRoleEnum = mysqlEnum("membership_role", [
+  "admin",
   "manager",
   "agent",
 ]);
@@ -54,21 +60,29 @@ export const importRowStatusEnum = mysqlEnum("import_row_status", [
   "unknown",
   "out_of_scope",
 ]);
+export const userImportStatusEnum = mysqlEnum("user_import_status", [
+  "previewed",
+  "processing",
+  "confirmed",
+]);
 
 export const profiles = mysqlTable(
   "profiles",
   {
     id: varchar("id", { length: 36 }).primaryKey(),
-    email: varchar("email", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }),
     name: varchar("name", { length: 255 }).notNull(),
     role: roleEnum.notNull(),
     passwordHash: varchar("password_hash", { length: 255 }),
+    passwordState: passwordStateEnum.notNull().default("permanent"),
+    encryptedTemporaryPassword: text("encrypted_temporary_password"),
     active: boolean("active").notNull().default(true),
     accountStatus: accountStatusEnum.notNull().default("invited"),
     mustResetPassword: boolean("must_reset_password").notNull().default(false),
     lastLoginAt: datetime("last_login_at"),
     passwordChangedAt: datetime("password_changed_at"),
     accessRevokedAt: datetime("access_revoked_at"),
+    deletedAt: datetime("deleted_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
@@ -78,6 +92,30 @@ export const profiles = mysqlTable(
     index("profiles_role_idx").on(table.role),
     index("profiles_account_status_idx").on(table.accountStatus),
     index("profiles_created_at_idx").on(table.createdAt),
+    index("profiles_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+export const userImportBatches = mysqlTable(
+  "user_import_batches",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    fileHash: varchar("file_hash", { length: 64 }).notNull(),
+    status: userImportStatusEnum.notNull().default("previewed"),
+    uploadedById: varchar("uploaded_by_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id),
+    rawFileContent: text("raw_file_content").notNull(),
+    rowCount: int("row_count").notNull().default(0),
+    expiresAt: datetime("expires_at").notNull(),
+    confirmedAt: datetime("confirmed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("user_import_uploaded_by_idx").on(table.uploadedById),
+    index("user_import_expires_at_idx").on(table.expiresAt),
+    index("user_import_file_hash_idx").on(table.fileHash),
   ],
 );
 

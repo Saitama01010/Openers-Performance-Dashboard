@@ -52,7 +52,7 @@ describe("admin access policy", () => {
         [{ permissionKey: "users.manage_permissions", value: "allow" }],
         "manager",
       ),
-    ).toThrow("Admin-only");
+    ).toThrow("Invalid permission");
   });
 
   it("validates permission override keys and duplicates", () => {
@@ -62,8 +62,8 @@ describe("admin access policy", () => {
     expect(() =>
       validatePermissionOverrides(
         [
-          { permissionKey: "users.view", value: "allow" },
-          { permissionKey: "users.view", value: "deny" },
+          { permissionKey: "teams.view", value: "allow" },
+          { permissionKey: "teams.view", value: "deny" },
         ],
         "admin",
       ),

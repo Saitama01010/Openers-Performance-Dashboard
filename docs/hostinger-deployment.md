@@ -3,7 +3,7 @@
 Production deployment is blocked until permission, authentication, import, and migration checks pass and a production email provider is configured.
 
 1. Create a Hostinger MySQL 8 database and a least-privilege application user.
-2. Configure required secrets: `DATABASE_URL`, a random 32+ character `SESSION_SECRET`, public HTTPS `APP_URL`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `INVITATION_TTL_HOURS`, `PASSWORD_RESET_TTL_MINUTES`, and `NODE_ENV=production`.
+2. Configure required secrets: `DATABASE_URL`, a random 32+ character `SESSION_SECRET`, a base64-encoded 32-byte `TEMP_PASSWORD_ENCRYPTION_KEY`, public HTTPS `APP_URL`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `INVITATION_TTL_HOURS`, `PASSWORD_RESET_TTL_MINUTES`, and `NODE_ENV=production`.
 3. Configure exactly one production email provider. Do not use `EMAIL_PROVIDER=console` in production.
 4. Build with `npm ci && npm run build`.
 5. Run `npm run db:migrate` once during release. Do not run development seed data in production.

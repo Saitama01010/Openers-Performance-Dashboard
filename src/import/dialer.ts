@@ -122,7 +122,12 @@ export type AgentPreviewSummary = {
   dashboardUserId: string | null;
   dashboardUserName: string | null;
   teamNames: string[];
-  accountStatus?: "invited" | "active" | "deactivated" | "revoked";
+  accountStatus?:
+    | "invited"
+    | "active"
+    | "deactivated"
+    | "revoked"
+    | "deleted";
   warningMessage?: string;
   csvRowCount: number;
   validRowCount: number;
@@ -215,7 +220,12 @@ export type SourceMapping = {
   profileName: string;
   teamIds: string[];
   teamNames: string[];
-  accountStatus?: "invited" | "active" | "deactivated" | "revoked";
+  accountStatus?:
+    | "invited"
+    | "active"
+    | "deactivated"
+    | "revoked"
+    | "deleted";
 };
 
 export type ImportPreviewRow = HourlyPreviewRow & {
@@ -257,7 +267,12 @@ type AgentBuilder = {
   dashboardUserId: string | null;
   dashboardUserName: string | null;
   teamNames: string[];
-  accountStatus?: "invited" | "active" | "deactivated" | "revoked";
+  accountStatus?:
+    | "invited"
+    | "active"
+    | "deactivated"
+    | "revoked"
+    | "deleted";
   warningMessage?: string;
   csvRowCount: number;
   validRowCount: number;

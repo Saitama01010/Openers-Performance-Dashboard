@@ -14,6 +14,12 @@ const optionalEmail = z.preprocess((value) => {
   return normalized.length === 0 ? undefined : normalized;
 }, z.string().email().optional());
 
+const optionalEncryptionKey = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim();
+  return normalized.length === 0 ? undefined : normalized;
+}, z.string().optional());
+
 const envSchema = z
   .object({
     DATABASE_URL: z.string().url(),
@@ -29,6 +35,7 @@ const envSchema = z
     RESEND_API_KEY: optionalTrimmedString,
     INVITATION_TTL_HOURS: z.coerce.number().positive().default(48),
     PASSWORD_RESET_TTL_MINUTES: z.coerce.number().positive().default(30),
+    TEMP_PASSWORD_ENCRYPTION_KEY: optionalEncryptionKey,
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -57,7 +64,36 @@ const envSchema = z
         message: "EMAIL_FROM_ADDRESS is required when EMAIL_PROVIDER=resend.",
       });
     }
+
+    if (
+      env.TEMP_PASSWORD_ENCRYPTION_KEY &&
+      !isValidEncryptionKey(env.TEMP_PASSWORD_ENCRYPTION_KEY)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["TEMP_PASSWORD_ENCRYPTION_KEY"],
+        message:
+          "TEMP_PASSWORD_ENCRYPTION_KEY must be a base64-encoded 32-byte key.",
+      });
+    }
+
+    if (env.NODE_ENV === "production" && !env.TEMP_PASSWORD_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["TEMP_PASSWORD_ENCRYPTION_KEY"],
+        message: "TEMP_PASSWORD_ENCRYPTION_KEY is required in production.",
+      });
+    }
   });
+
+function isValidEncryptionKey(value: string) {
+  try {
+    const decoded = Buffer.from(value, "base64");
+    return decoded.length === 32 && decoded.toString("base64") === value;
+  } catch {
+    return false;
+  }
+}
 
 export type AppEnv = z.infer<typeof envSchema>;
 

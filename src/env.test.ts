@@ -5,6 +5,7 @@ vi.mock("server-only", () => ({}));
 const baseEnv = {
   DATABASE_URL: "mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard",
   SESSION_SECRET: "12345678901234567890123456789012",
+  NODE_ENV: "development",
 } satisfies NodeJS.ProcessEnv;
 
 describe("environment validation", () => {
@@ -56,5 +57,23 @@ describe("environment validation", () => {
         EMAIL_REPLY_TO: "not-an-email",
       }),
     ).toThrow(/Invalid email address/);
+  });
+
+  it("requires a valid temporary-password encryption key in production", async () => {
+    const { parseEnv } = await import("@/env");
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        NODE_ENV: "production",
+        EMAIL_PROVIDER: "resend",
+        RESEND_API_KEY: "re_test_123",
+      }),
+    ).toThrow(/TEMP_PASSWORD_ENCRYPTION_KEY is required in production/);
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        TEMP_PASSWORD_ENCRYPTION_KEY: "not-a-32-byte-key",
+      }),
+    ).toThrow(/base64-encoded 32-byte key/);
   });
 });

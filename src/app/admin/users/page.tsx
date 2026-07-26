@@ -14,20 +14,22 @@ import {
 } from "@/admin/data";
 import { adminErrorMessage } from "@/admin/messages";
 import {
-  PERMISSION_GROUPS,
-  ROLE_DEFAULT_PERMISSIONS,
+  OVERRIDABLE_PERMISSION_GROUPS,
+  PERMISSION_PRESENTATION,
 } from "@/admin/policy";
 import type { Role } from "@/auth/authorization";
 import { getCurrentUser } from "@/auth/session";
+import { AdminUserTable } from "@/components/admin/admin-user-table";
+import { UserImportWizard } from "@/components/admin/user-import-wizard";
 
 export const dynamic = "force-dynamic";
 
 const accountStatuses = ["invited", "active", "deactivated", "revoked"];
 const invitationStatuses: InvitationStatus[] = [
-  "not sent",
-  "pending",
-  "accepted",
-  "expired",
+  "not invited",
+  "invitation sent",
+  "invitation expired",
+  "password created",
   "revoked",
   "delivery failed",
 ];
@@ -153,47 +155,20 @@ export default async function AdminUsersPage({
         {users.length === 0 ? (
           <p className="p-5 text-sm text-muted">No users match the current filters.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted">
-                <tr>
-                  <th className="px-4 py-3">Full name</th>
-                  <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3">Dialer agent name</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Team</th>
-                  <th className="px-4 py-3">Account status</th>
-                  <th className="px-4 py-3">Invitation</th>
-                  <th className="px-4 py-3">Last login</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr className="border-t border-border" key={user.id}>
-                    <td className="px-4 py-3 font-medium">{user.name}</td>
-                    <td className="px-4 py-3">{user.email}</td>
-                    <td className="px-4 py-3">{user.dialerAgentName ?? "-"}</td>
-                    <td className="px-4 py-3 capitalize">{user.role}</td>
-                    <td className="px-4 py-3">{user.team?.teamName ?? "-"}</td>
-                    <td className="px-4 py-3 capitalize">{user.accountStatus}</td>
-                    <td className="px-4 py-3 capitalize">{user.invitationStatus}</td>
-                    <td className="px-4 py-3">{fmt(user.lastLoginAt)}</td>
-                    <td className="px-4 py-3">{fmt(user.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      <Link
-                        className="font-medium text-primary hover:underline"
-                        href={`/admin/users/${user.id}`}
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AdminUserTable
+            users={users.map((user) => ({
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              dialerAgentName: user.dialerAgentName,
+              role: user.role,
+              teamName: user.team?.teamName ?? null,
+              accountStatus: user.accountStatus,
+              invitationStatus: user.invitationStatus,
+              lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+              createdAt: user.createdAt.toISOString(),
+            }))}
+          />
         )}
         <div className="flex justify-between border-t border-border px-4 py-3 text-sm">
           <PaginationLink current={page} direction="previous" params={params} totalPages={totalPages} />
@@ -216,8 +191,8 @@ export default async function AdminUsersPage({
           </label>
           <label className="text-sm font-medium">
             Team
-            <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" name="teamId">
-              <option value="">No team</option>
+            <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" name="teamId" required>
+              <option value="">Select team</option>
               {referenceData.teams.map((team) => (
                 <option disabled={!team.active} key={team.id} value={team.id}>
                   {team.name}{team.active ? "" : " (inactive)"}
@@ -225,7 +200,7 @@ export default async function AdminUsersPage({
               ))}
             </select>
           </label>
-          <TextField defaultValue={params.dialerName ?? ""} label="Dialer agent name" name="dialerName" />
+          <TextField defaultValue={params.dialerName ?? ""} label="Dialer agent name" name="dialerName" required />
           <label className="text-sm font-medium">
             Additional dialer aliases
             <textarea
@@ -234,21 +209,19 @@ export default async function AdminUsersPage({
               placeholder="One alias per line"
             />
           </label>
-          <label className="flex items-center gap-2 text-sm font-medium md:col-span-2">
-            <input name="sendInvitation" type="checkbox" defaultChecked />
-            Send invitation immediately
-          </label>
           <details className="md:col-span-2 rounded-md border border-border p-4">
             <summary className="cursor-pointer font-medium">Optional permission overrides</summary>
             <PermissionOverrideControls />
           </details>
           <div className="md:col-span-2">
             <button className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-              Create invited user
+              Create user with temporary password
             </button>
           </div>
         </form>
       </section>
+
+      <UserImportWizard teams={referenceData.teams} />
 
       <section className="rounded-lg border border-border bg-surface">
         <div className="border-b border-border px-4 py-3">
@@ -433,16 +406,18 @@ function TextField({
 function PermissionOverrideControls() {
   return (
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
-      {PERMISSION_GROUPS.map((group) => (
+      {OVERRIDABLE_PERMISSION_GROUPS.map((group) => (
         <fieldset className="rounded-md border border-border p-3" key={group.name}>
           <legend className="px-1 text-sm font-semibold">{group.name}</legend>
           <div className="mt-2 space-y-2">
             {group.permissions.map((permission) => (
               <label className="flex items-center justify-between gap-3 text-sm" key={permission}>
                 <span>
-                  {permission}
+                  <span className="font-medium">
+                    {PERMISSION_PRESENTATION[permission].label}
+                  </span>
                   <span className="ml-2 text-muted">
-                    default {ROLE_DEFAULT_PERMISSIONS.agent.includes(permission) ? "agent" : "role"}
+                    {PERMISSION_PRESENTATION[permission].description}
                   </span>
                 </span>
                 <select
@@ -450,7 +425,7 @@ function PermissionOverrideControls() {
                   defaultValue="inherit"
                   name={`permission:${permission}`}
                 >
-                  <option value="inherit">Inherit</option>
+                  <option value="inherit">Use role setting</option>
                   <option value="allow">Allow</option>
                   <option value="deny">Deny</option>
                 </select>

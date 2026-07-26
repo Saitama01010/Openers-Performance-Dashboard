@@ -142,7 +142,7 @@ async function getMappings(source: string) {
 
   for (const mapping of rows) {
     const key = `${normalizeAgentName(mapping.sourceAgentName)}:${mapping.profileId}`;
-    const current = mappingByAgent.get(key) ?? {
+    const current: SourceMapping = mappingByAgent.get(key) ?? {
       sourceAgentName: mapping.sourceAgentName,
       profileId: mapping.profileId,
       profileName: mapping.profileName,
@@ -402,7 +402,7 @@ export async function confirmDialerImportBatch(input: {
 
     for (const mapping of mappingRows) {
       const key = `${normalizeAgentName(mapping.sourceAgentName)}:${mapping.profileId}`;
-      const current = mappingByAgent.get(key) ?? {
+      const current: SourceMapping = mappingByAgent.get(key) ?? {
         sourceAgentName: mapping.sourceAgentName,
         profileId: mapping.profileId,
         profileName: mapping.profileName,

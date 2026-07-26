@@ -4,6 +4,8 @@ Drizzle schema lives in `src/db/schema.ts`; versioned SQL migrations live in `dr
 
 Foundational tables currently cover profiles, teams, historical team memberships, roles, permissions, user permission overrides, hashed sessions, invitation tokens, reset tokens, rate-limit counters, source mappings, dialer preview/import batches, hourly dialer metrics, import errors, and audit logs.
 
+User provisioning adds encrypted temporary-password state to `profiles` and server-owned `user_import_batches`. The CSV batch stores the original upload for confirmation-time revalidation, is bound to the uploading administrator, expires after 30 minutes, and uses a `processing` state to reject duplicate confirmation races.
+
 Important invariants:
 
 - External dialer identities are unique by source plus normalized name.
@@ -38,3 +40,5 @@ MySQL unique constraints on nullable keys allow historical inactive aliases whil
 Team membership changes end the previous active row and insert a new row instead of overwriting history. Imported metric rows keep `team_id_snapshot` and `team_name_snapshot`.
 
 Audit metadata must remain safe: never store passwords, password hashes, raw invitation/reset/session tokens, API keys, SMTP passwords, or other secrets.
+
+Permanent deletion is implemented as authentication scrubbing rather than a physical profile-row delete because historical metrics and audit rows reference the profile. Email, password hash, encrypted temporary password, sessions, reset/invitation tokens, and overrides are removed; current memberships and dialer mappings are ended while their historical display values remain.

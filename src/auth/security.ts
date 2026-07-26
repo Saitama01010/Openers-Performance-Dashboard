@@ -9,7 +9,8 @@ export type AccountStatus =
   | "invited"
   | "active"
   | "deactivated"
-  | "revoked";
+  | "revoked"
+  | "deleted";
 
 export function createOpaqueToken() {
   return randomBytes(32).toString("base64url");

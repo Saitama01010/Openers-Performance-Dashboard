@@ -276,7 +276,6 @@ describe("admin user provisioning integration", () => {
 
     await permanentlyDeleteUser(actor(adminId), {
       userId: created.profileId,
-      confirmationEmail: "historical.agent@example.test",
     });
 
     const [deleted] = await getDb()
@@ -322,5 +321,13 @@ describe("admin user provisioning integration", () => {
         "anything",
       ),
     ).toMatchObject({ ok: false });
+  });
+
+  it("keeps the self-deletion safeguard", async () => {
+    const actorId = await createActorProfile("admin");
+
+    await expect(
+      permanentlyDeleteUser(actor(actorId), { userId: actorId }),
+    ).rejects.toThrow("You cannot permanently delete your own account.");
   });
 });

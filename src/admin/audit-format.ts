@@ -2,6 +2,9 @@ const EVENT_LABELS: Record<string, string> = {
   "user.created": "User account created",
   "user.imported": "User imported through CSV",
   "user.updated": "User details updated",
+  "user.email_updated": "Login email updated",
+  "user.primary_dialer_updated": "Primary dialer name updated",
+  "user.team_moved": "Team membership changed",
   "user.activated": "User account activated",
   "user.deactivated": "User account deactivated",
   "user.access_revoked": "User access revoked",
@@ -46,6 +49,8 @@ const FIELD_LABELS: Record<string, string> = {
   teamName: "Team",
   accountStatus: "Account status",
   active: "Active state",
+  sourceAgentName: "Dialer name",
+  normalizedAgentName: "Normalized dialer name",
 };
 
 const SECRET_KEY_PATTERN =
@@ -108,7 +113,14 @@ export function formatAuditEvent(action: string, metadata: unknown) {
       .replaceAll(".", " ")
       .replaceAll("_", " ")
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
-  const details = action === "user.updated" ? changedFields(metadata) : [];
+  const details = [
+    "user.updated",
+    "user.email_updated",
+    "user.primary_dialer_updated",
+    "user.team_moved",
+  ].includes(action)
+    ? changedFields(metadata)
+    : [];
 
   return {
     title: title || "Administrative event",

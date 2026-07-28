@@ -3,10 +3,12 @@
 import { useState } from "react";
 
 export function TemporaryPasswordControls({
+  allowRegenerate = true,
   available,
   passwordCreatedAt,
   userId,
 }: {
+  allowRegenerate?: boolean;
   available: boolean;
   passwordCreatedAt?: string | null;
   userId: string;
@@ -124,16 +126,18 @@ export function TemporaryPasswordControls({
         >
           {busy === "copy" ? "Copying…" : "Copy"}
         </button>
-        <button
-          className="rounded-md border border-danger px-3 py-2 text-sm font-medium text-danger"
-          disabled={busy !== null}
-          onClick={regenerate}
-          type="button"
-        >
+        {allowRegenerate ? (
+          <button
+            className="rounded-md border border-danger px-3 py-2 text-sm font-medium text-danger"
+            disabled={busy !== null}
+            onClick={regenerate}
+            type="button"
+          >
           {busy === "regenerate"
             ? "Generating…"
             : "Generate new temporary password"}
-        </button>
+          </button>
+        ) : null}
       </div>
       {error ? (
         <p className="text-sm text-danger" role="alert">

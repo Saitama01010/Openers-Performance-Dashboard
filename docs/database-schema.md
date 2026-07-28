@@ -2,16 +2,39 @@
 
 Drizzle schema lives in `src/db/schema.ts`; versioned SQL migrations live in `drizzle/`.
 
-Foundational tables currently cover profiles, teams, historical team memberships, roles, permissions, user permission overrides, hashed sessions, invitation tokens, reset tokens, rate-limit counters, source mappings, dialer preview/import batches, hourly dialer metrics, import errors, and audit logs.
+Foundational tables currently cover profiles, teams, historical team
+memberships, roles, permissions, user permission overrides, hashed sessions,
+invitation tokens, reset tokens, rate-limit counters, source mappings,
+permanent dialer import batches, staged import rows, immutable dataset versions,
+active dataset scope pointers, hourly dialer metrics, import errors, and audit
+logs.
 
 User provisioning adds encrypted temporary-password state to `profiles` and server-owned `user_import_batches`. The CSV batch stores the original upload for confirmation-time revalidation, is bound to the uploading administrator, expires after 30 minutes, and uses a `processing` state to reject duplicate confirmation races.
 
 Important invariants:
 
 - External dialer identities are unique by source plus normalized name.
-- Hourly metrics are unique by source, agent, date, and hour.
+- Hourly metrics are unique by dataset version, agent, date, and hour.
+- `dialer_dataset_scopes.active_version_id` is the only dashboard-visible
+  version for a source/import-type/date/team/dialer scope.
+- Publication and rollback lock scope rows and update pointers transactionally.
+- Deactivation and active deletion lock the exact scope pointers, activate a
+  confirmed same-scope fallback or clear the pointer, and only then change or
+  remove the selected import.
+- Every new hourly metric references its permanent import batch and version.
+- `dialer_agent_hourly_metrics.version_id` owns snapshot lifetime;
+  nullable `batch_id` records import provenance and uses `ON DELETE SET NULL`
+  for legacy rows retained by another version.
+- Existing metrics are assigned to additive legacy active versions by migration.
 - Duration metrics are integer seconds.
 - Imported metrics store team ID and name snapshots.
+- Original dialer CSVs are private `LONGTEXT` records and are never publicly
+  addressed.
+- Import deletion explicitly removes owned metric, staging, error, version, and
+  batch rows in one transaction. Audit rows intentionally have no import foreign
+  key, so the metadata-only deletion event survives.
+- Legacy metrics whose batch and version owners differ are treated as shared
+  history and cannot be deleted through import cleanup.
 - Account and reset tokens store SHA-256 hashes, never raw values.
 - Historical memberships use `started_at` and nullable `ended_at`; active membership queries require `ended_at IS NULL`.
 

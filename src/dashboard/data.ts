@@ -1,19 +1,37 @@
 import "server-only";
 
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
-  dialerAgentHourlyMetrics,
   profiles,
   teamMemberships,
 } from "@/db/schema";
 import { resolveProfileScope, type Actor } from "@/auth/authorization";
+import { getActiveDialerMetricTotals } from "@/import/active-data";
 
 export type DashboardMetric = {
   label: string;
   value: string;
 };
+
+export type DashboardMetricsResult =
+  | {
+      status: "ACTIVE_IMPORT";
+      data: DashboardMetric[];
+      datasetScope: {
+        importType: string;
+        teamIds: string[];
+      };
+    }
+  | {
+      status: "NO_ACTIVE_IMPORT";
+      data: null;
+      datasetScope: {
+        importType: string;
+        teamIds: string[];
+      };
+    };
 
 const EMPTY_TOTALS = {
   calls: 0,
@@ -48,6 +66,10 @@ function secondsToDuration(seconds: number) {
 }
 
 export async function getScopedDashboardMetrics(actor: Actor) {
+  const datasetScope = {
+    importType: "agent_hours_performance",
+    teamIds: actor.role === "manager" ? actor.teamIds : [],
+  };
   const managerProfileIds =
     actor.role === "manager" && actor.teamIds.length > 0
       ? (
@@ -65,31 +87,28 @@ export async function getScopedDashboardMetrics(actor: Actor) {
   const scopedProfileIds = resolveProfileScope(actor, managerProfileIds);
 
   if (scopedProfileIds?.length === 0) {
-    return formatTotals();
+    return {
+      status: "NO_ACTIVE_IMPORT",
+      data: null,
+      datasetScope,
+    } satisfies DashboardMetricsResult;
   }
 
-  const where =
-    scopedProfileIds && scopedProfileIds.length > 0
-      ? inArray(dialerAgentHourlyMetrics.agentProfileId, scopedProfileIds)
-      : undefined;
+  const row = await getActiveDialerMetricTotals(scopedProfileIds);
 
-  const rows = await getDb()
-    .select({
-      calls: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.calls}), 0)`,
-      loginSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.loggedInSeconds}), 0)`,
-      readySeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.readySeconds}), 0)`,
-      talkSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.talkSeconds}), 0)`,
-      ringingSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.ringingSeconds}), 0)`,
-      wrapSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.wrapSeconds}), 0)`,
-      pausedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.pausedSeconds}), 0)`,
-      idleSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.idleSeconds}), 0)`,
-      untrackedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.untrackedSeconds}), 0)`,
-    })
-    .from(dialerAgentHourlyMetrics)
-    .where(where);
-  const row = rows[0];
+  if (Number(row?.activeScopeCount ?? 0) === 0) {
+    return {
+      status: "NO_ACTIVE_IMPORT",
+      data: null,
+      datasetScope,
+    } satisfies DashboardMetricsResult;
+  }
 
-  return formatTotals(row);
+  return {
+    status: "ACTIVE_IMPORT",
+    data: formatTotals(row),
+    datasetScope,
+  } satisfies DashboardMetricsResult;
 }
 
 export async function getScopedAgents(actor: Actor) {

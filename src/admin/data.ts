@@ -2231,8 +2231,9 @@ export async function getUnmappedDialerNames(actor: Actor) {
       and(
         eq(importErrors.status, "unknown"),
         inArray(dialerImportBatches.status, [
-          "previewed",
-          "partially_confirmed",
+          "draft",
+          "validation_failed",
+          "ready_to_publish",
         ]),
       ),
     )

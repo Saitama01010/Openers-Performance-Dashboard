@@ -6,7 +6,9 @@ Current vertical slices:
 
 - Hashed, revocable database sessions with HTTP-only cookies.
 - Invitation and password-reset token services with expiring, single-use hashed tokens.
-- Dialer CSV preview batches stored server-side and confirmed transactionally.
+- Permanent dialer CSV batches with staged validation, immutable versions,
+  atomic publication, administrator rollback/restore/deactivation,
+  transactionally resolved active deletion, and permission-gated cleanup.
 - Role-scoped operational totals with fail-closed manager scope.
 
 Planned slices remain Google Sheets ingestion, transfer and closed-deal analytics, leaderboards, commissions, and metric flags. Those integrations are not represented as verified until real source Sheets are available.

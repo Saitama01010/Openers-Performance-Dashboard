@@ -18,11 +18,22 @@ The Phase 2 catalog is seeded from `src/admin/policy.ts`:
 
 - User management: `users.view`, `users.create`, `users.update`, `users.activate`, `users.deactivate`, `users.revoke`, `users.assign_role`, `users.assign_team`, `users.manage_permissions`, `users.revoke_sessions`
 - Team management: `teams.view`, `teams.create`, `teams.update`, `teams.deactivate`, `teams.assign_manager`, `teams.assign_agents`
-- Imports: `imports.preview`, `imports.confirm`, `imports.view_history`, `imports.view_errors`, plus compatibility grants `imports.company` and `imports.team`
+- Imports: `imports.preview`, `imports.confirm`, `imports.view_history`,
+  `imports.view_errors`, administrator-only `imports.deactivate`,
+  `imports.delete`, and `imports.restore`, plus compatibility grants
+  `imports.company` and `imports.team`
 - Metrics: `metrics.view_own`, `metrics.view_team`, `metrics.view_company`, plus compatibility grants `metrics.self`, `metrics.team`, and `metrics.company`
 - Other: `leaderboard.view`, `leaderboards.view`, `audit.view`, `audit.view_company`, `integrations.manage`, `commissions.manage`, `flags.manage`
 
 Admins receive all defaults. Managers receive team-scoped import/metric grants and leaderboard view. Agents receive own-metric and leaderboard grants.
+
+Managers may upload, review, reject, and publish warning-free drafts containing
+only their currently assigned teams. Only administrators can override import
+warnings, roll back an active import, restore a historical version, or access
+company-wide import history. Deactivation, permanent deletion, and historical
+activation use separate `imports.deactivate`, `imports.delete`, and
+`imports.restore` permissions. Uploading or publishing does not imply any of
+these destructive permissions. Every mutation repeats authorization server-side.
 
 User-specific overrides support `allow`, `deny`, or inherited role default. The override mutation rejects every key outside the explicit Team Management and Imports allowlist. User provisioning, password reveal/regeneration, invitation delivery, and permanent deletion remain hard-coded administrator capabilities.
 
@@ -35,6 +46,9 @@ Admin-only permissions include:
 - `audit.view_company`
 - `metrics.view_company`
 - `metrics.company`
+- `imports.delete`
+- `imports.deactivate`
+- `imports.restore`
 
 ## Protected routes and actions
 

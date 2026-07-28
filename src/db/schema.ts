@@ -7,6 +7,7 @@ import {
   index,
   int,
   json,
+  longtext,
   mysqlEnum,
   mysqlTable,
   primaryKey,
@@ -46,9 +47,15 @@ export const membershipRoleEnum = mysqlEnum("membership_role", [
   "agent",
 ]);
 export const importStatusEnum = mysqlEnum("import_status", [
-  "previewed",
-  "partially_confirmed",
-  "confirmed",
+  "uploaded",
+  "processing",
+  "draft",
+  "validation_failed",
+  "ready_to_publish",
+  "active",
+  "deactivated",
+  "superseded",
+  "rolled_back",
   "failed",
   "rejected",
 ]);
@@ -65,6 +72,25 @@ export const userImportStatusEnum = mysqlEnum("user_import_status", [
   "processing",
   "confirmed",
 ]);
+export const datasetVersionStatusEnum = mysqlEnum("dataset_version_status", [
+  "draft",
+  "active",
+  "deactivated",
+  "superseded",
+  "rolled_back",
+  "rejected",
+]);
+export const importMatchingStatusEnum = mysqlEnum("import_matching_status", [
+  "mapped",
+  "unmapped",
+  "ambiguous",
+  "out_of_scope",
+  "invalid_mapping",
+]);
+export const importValidationStatusEnum = mysqlEnum(
+  "import_validation_status",
+  ["valid", "warning", "error"],
+);
 
 export const profiles = mysqlTable(
   "profiles",
@@ -206,9 +232,18 @@ export const dialerImportBatches = mysqlTable(
   {
     id: varchar("id", { length: 36 }).primaryKey(),
     source: varchar("source", { length: 64 }).notNull(),
+    importType: varchar("import_type", { length: 64 })
+      .notNull()
+      .default("agent_hours_performance"),
+    dialerId: varchar("dialer_id", { length: 120 }),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     fileHash: varchar("file_hash", { length: 64 }).notNull(),
-    status: importStatusEnum.notNull().default("previewed"),
+    fileSizeBytes: int("file_size_bytes").notNull().default(0),
+    storageProvider: varchar("storage_provider", { length: 40 })
+      .notNull()
+      .default("database"),
+    storageLocation: varchar("storage_location", { length: 512 }),
+    status: importStatusEnum.notNull().default("uploaded"),
     uploadedById: varchar("uploaded_by_id", { length: 36 })
       .notNull()
       .references(() => profiles.id),
@@ -216,19 +251,142 @@ export const dialerImportBatches = mysqlTable(
       () => profiles.id,
     ),
     rowCount: int("row_count").notNull().default(0),
+    matchedAgentCount: int("matched_agent_count").notNull().default(0),
+    unmatchedAgentCount: int("unmatched_agent_count").notNull().default(0),
+    reportingStartDate: date("reporting_start_date", { mode: "string" }),
+    reportingEndDate: date("reporting_end_date", { mode: "string" }),
     previewSummary: json("preview_summary").$type<Record<string, unknown>>(),
+    validationErrors: json("validation_errors").$type<string[]>(),
+    validationWarnings: json("validation_warnings").$type<string[]>(),
+    validationNotices: json("validation_notices").$type<string[]>(),
     detectedHeaders: json("detected_headers").$type<string[]>(),
     missingRequiredHeaders: json("missing_required_headers").$type<string[]>(),
-    rawFileContent: text("raw_file_content").notNull(),
-    expiresAt: datetime("expires_at").notNull(),
+    rawFileContent: longtext("raw_file_content").notNull(),
+    expiresAt: datetime("expires_at"),
+    parsedAt: datetime("parsed_at"),
+    publishedById: varchar("published_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
+    publishedAt: datetime("published_at"),
+    previousImportId: varchar("previous_import_id", { length: 36 }),
+    rejectedById: varchar("rejected_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
+    rejectedAt: datetime("rejected_at"),
+    rejectionReason: text("rejection_reason"),
+    rolledBackById: varchar("rolled_back_by_id", { length: 36 }).references(
+      () => profiles.id,
+    ),
+    rolledBackAt: datetime("rolled_back_at"),
+    rollbackReason: text("rollback_reason"),
     confirmedAt: timestamp("confirmed_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
-    index("dialer_import_file_hash_idx").on(table.source, table.fileHash),
+    foreignKey({
+      columns: [table.previousImportId],
+      foreignColumns: [table.id],
+      name: "dialer_import_previous_import_fk",
+    }).onDelete("set null"),
+    index("dialer_import_file_hash_idx").on(
+      table.source,
+      table.importType,
+      table.fileHash,
+    ),
+    index("dialer_import_status_idx").on(table.status),
+    index("dialer_import_reporting_idx").on(
+      table.source,
+      table.importType,
+      table.reportingStartDate,
+      table.reportingEndDate,
+    ),
     index("dialer_import_uploaded_by_idx").on(table.uploadedById),
     index("dialer_import_confirmed_by_idx").on(table.confirmedById),
+    index("dialer_import_published_by_idx").on(table.publishedById),
     index("dialer_import_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export const dialerDatasetVersions = mysqlTable(
+  "dialer_dataset_versions",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    importBatchId: varchar("import_batch_id", { length: 36 }).references(
+      () => dialerImportBatches.id,
+      { onDelete: "restrict" },
+    ),
+    scopeKey: varchar("scope_key", { length: 512 }).notNull(),
+    source: varchar("source", { length: 64 }).notNull(),
+    importType: varchar("import_type", { length: 64 }).notNull(),
+    reportingDate: date("reporting_date", { mode: "string" }).notNull(),
+    teamId: varchar("team_id", { length: 36 }).references(() => teams.id),
+    dialerId: varchar("dialer_id", { length: 120 }),
+    versionNumber: int("version_number").notNull(),
+    status: datasetVersionStatusEnum.notNull().default("draft"),
+    previousVersionId: varchar("previous_version_id", { length: 36 }),
+    rowCount: int("row_count").notNull().default(0),
+    matchedAgentCount: int("matched_agent_count").notNull().default(0),
+    unmatchedAgentCount: int("unmatched_agent_count").notNull().default(0),
+    totalCalls: int("total_calls").notNull().default(0),
+    totalLoggedInSeconds: int("total_logged_in_seconds").notNull().default(0),
+    totalTalkSeconds: int("total_talk_seconds").notNull().default(0),
+    totalWrapSeconds: int("total_wrap_seconds").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    activatedAt: datetime("activated_at"),
+    supersededAt: datetime("superseded_at"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.previousVersionId],
+      foreignColumns: [table.id],
+      name: "dialer_dataset_previous_version_fk",
+    }).onDelete("set null"),
+    unique("dialer_dataset_scope_version_unique").on(
+      table.scopeKey,
+      table.versionNumber,
+    ),
+    unique("dialer_dataset_import_scope_unique").on(
+      table.importBatchId,
+      table.scopeKey,
+    ),
+    index("dialer_dataset_version_status_idx").on(table.status),
+    index("dialer_dataset_version_scope_idx").on(
+      table.source,
+      table.importType,
+      table.reportingDate,
+      table.teamId,
+      table.dialerId,
+    ),
+  ],
+);
+
+export const dialerDatasetScopes = mysqlTable(
+  "dialer_dataset_scopes",
+  {
+    scopeKey: varchar("scope_key", { length: 512 }).primaryKey(),
+    source: varchar("source", { length: 64 }).notNull(),
+    importType: varchar("import_type", { length: 64 }).notNull(),
+    reportingDate: date("reporting_date", { mode: "string" }).notNull(),
+    teamId: varchar("team_id", { length: 36 }).references(() => teams.id),
+    dialerId: varchar("dialer_id", { length: 120 }),
+    activeVersionId: varchar("active_version_id", { length: 36 }).references(
+      () => dialerDatasetVersions.id,
+      { onDelete: "restrict" },
+    ),
+    revision: int("revision").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    unique("dialer_dataset_scope_fields_unique").on(table.scopeKey),
+    index("dialer_dataset_scope_active_idx").on(table.activeVersionId),
+    index("dialer_dataset_scope_lookup_idx").on(
+      table.source,
+      table.importType,
+      table.reportingDate,
+      table.teamId,
+      table.dialerId,
+    ),
   ],
 );
 
@@ -242,8 +400,11 @@ export const dialerAgentHourlyMetrics = mysqlTable(
       .notNull()
       .references(() => profiles.id),
     batchId: varchar("batch_id", { length: 36 })
-      .notNull()
-      .references(() => dialerImportBatches.id),
+      .references(() => dialerImportBatches.id, { onDelete: "set null" }),
+    versionId: varchar("version_id", { length: 36 }).references(
+      () => dialerDatasetVersions.id,
+      { onDelete: "restrict" },
+    ),
     metricDate: date("metric_date", { mode: "string" }).notNull(),
     metricHour: int("metric_hour").notNull(),
     calls: int("calls").notNull().default(0),
@@ -264,8 +425,8 @@ export const dialerAgentHourlyMetrics = mysqlTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
   (table) => [
-    unique("dialer_hourly_unique").on(
-      table.source,
+    unique("dialer_version_hourly_unique").on(
+      table.versionId,
       table.agentProfileId,
       table.metricDate,
       table.metricHour,
@@ -274,6 +435,60 @@ export const dialerAgentHourlyMetrics = mysqlTable(
       table.agentProfileId,
       table.metricDate,
     ),
+    index("dialer_hourly_version_idx").on(table.versionId),
+    index("dialer_hourly_batch_idx").on(table.batchId),
+  ],
+);
+
+export const dialerImportRows = mysqlTable(
+  "dialer_import_rows",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    batchId: varchar("batch_id", { length: 36 })
+      .notNull()
+      .references(() => dialerImportBatches.id, { onDelete: "cascade" }),
+    versionId: varchar("version_id", { length: 36 }).references(
+      () => dialerDatasetVersions.id,
+      { onDelete: "set null" },
+    ),
+    rowNumber: int("row_number").notNull(),
+    sourceAgentName: varchar("source_agent_name", { length: 255 }).notNull(),
+    normalizedAgentName: varchar("normalized_agent_name", {
+      length: 255,
+    }).notNull(),
+    matchedAgentProfileId: varchar("matched_agent_profile_id", {
+      length: 36,
+    }).references(() => profiles.id),
+    metricDate: date("metric_date", { mode: "string" }),
+    metricHour: int("metric_hour"),
+    calls: int("calls"),
+    loggedInSeconds: int("logged_in_seconds"),
+    readySeconds: int("ready_seconds"),
+    talkSeconds: int("talk_seconds"),
+    ringingSeconds: int("ringing_seconds"),
+    wrapSeconds: int("wrap_seconds"),
+    pausedSeconds: int("paused_seconds"),
+    idleSeconds: int("idle_seconds"),
+    untrackedSeconds: int("untracked_seconds"),
+    teamIdSnapshot: varchar("team_id_snapshot", { length: 36 }).references(
+      () => teams.id,
+    ),
+    matchingStatus: importMatchingStatusEnum.notNull(),
+    validationStatus: importValidationStatusEnum.notNull(),
+    validationMessages: json("validation_messages").$type<string[]>(),
+    warningMessages: json("warning_messages").$type<string[]>(),
+    rowHash: varchar("row_hash", { length: 64 }),
+    rawRow: json("raw_row").$type<Record<string, string>>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("dialer_import_row_number_unique").on(table.batchId, table.rowNumber),
+    index("dialer_import_row_batch_status_idx").on(
+      table.batchId,
+      table.validationStatus,
+    ),
+    index("dialer_import_row_agent_idx").on(table.matchedAgentProfileId),
+    index("dialer_import_row_version_idx").on(table.versionId),
   ],
 );
 

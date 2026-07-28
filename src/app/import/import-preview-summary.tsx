@@ -15,7 +15,11 @@ import {
   type PreviewSortKey,
   type PreviewStatusFilter,
 } from "@/app/import/import-preview-table";
-import { confirmImportAction } from "@/import/actions";
+import { SubmitButton } from "@/components/dashboard/action-controls";
+import {
+  confirmImportAction,
+  rejectImportAction,
+} from "@/import/actions";
 import {
   formatDurationSeconds,
   formatNumber,
@@ -27,6 +31,7 @@ import type {
   DurationTotals,
   ImportPreview,
 } from "@/import/dialer";
+import type { ImportValidationResult } from "@/import/validation";
 
 const tableColumnCount = 26;
 
@@ -153,12 +158,16 @@ export function ImportPreviewSummary({
   batchId,
   disabledReasons,
   fileName,
+  isAdmin,
   preview,
+  validation,
 }: {
   batchId: string;
   disabledReasons: string[];
   fileName: string;
+  isAdmin: boolean;
   preview: ImportPreview;
+  validation: ImportValidationResult;
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<PreviewStatusFilter>("all");
@@ -178,6 +187,8 @@ export function ImportPreviewSummary({
   const partialAcknowledgementRequired =
     mappedRowsToImport > 0 &&
     unresolvedRowsToSkip + preview.fileSummary.invalidRows > 0;
+  const warningPublicationBlocked =
+    validation.warnings.length > 0 && !isAdmin;
   const teams = useMemo(() => getPreviewTeams(preview.agents), [preview.agents]);
   const warningGroups = useMemo(() => {
     const groups = new Map<string, string[]>();
@@ -245,8 +256,8 @@ export function ImportPreviewSummary({
           </div>
           <div className="flex flex-wrap gap-2">
             {preview.duplicateFile ? (
-              <span className="rounded-md border border-danger/40 bg-danger/10 px-2 py-1 text-xs font-semibold text-danger">
-                Duplicate file blocked
+              <span className="rounded-md border border-amber-500/40 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-950">
+                Duplicate file warning
               </span>
             ) : (
               <span className="rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold text-muted">
@@ -255,12 +266,12 @@ export function ImportPreviewSummary({
             )}
             <span
               className={`rounded-md border px-2 py-1 text-xs font-semibold ${
-                disabledReasons.length > 0
+                disabledReasons.length > 0 || warningPublicationBlocked
                   ? "border-danger/40 bg-danger/10 text-danger"
                   : "border-primary/40 bg-primary/10 text-primary"
               }`}
             >
-              {disabledReasons.length > 0
+              {disabledReasons.length > 0 || warningPublicationBlocked
                 ? "Publish blocked"
                 : "Ready to publish"}
             </span>
@@ -290,10 +301,15 @@ export function ImportPreviewSummary({
           </div>
         ) : null}
 
-        {warningGroups.length > 0 || partialAcknowledgementRequired ? (
+        {validation.warnings.length > 0 ||
+        warningGroups.length > 0 ||
+        partialAcknowledgementRequired ? (
           <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-sm text-amber-950">
             <p className="font-semibold">Warnings</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
+              {validation.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
               {partialAcknowledgementRequired ? (
                 <li>
                   {formatNumber(
@@ -311,6 +327,23 @@ export function ImportPreviewSummary({
                     : ""}
                   .
                 </li>
+              ))}
+            </ul>
+            {warningPublicationBlocked ? (
+              <p className="mt-2 font-semibold">
+                An administrator must review these warnings before the draft
+                can be published.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {validation.notices.length > 0 ? (
+          <div className="mt-4 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+            <p className="font-semibold">Notices</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {validation.notices.map((notice) => (
+                <li key={notice}>{notice}</li>
               ))}
             </ul>
           </div>
@@ -349,7 +382,9 @@ export function ImportPreviewSummary({
             ) : null}
             <div className="flex flex-wrap items-center gap-3">
               <PublishButton
-                disabled={disabledReasons.length > 0}
+                disabled={
+                  disabledReasons.length > 0 || warningPublicationBlocked
+                }
                 rowCount={mappedRowsToImport}
               />
               <Link
@@ -821,6 +856,26 @@ export function ImportPreviewSummary({
           {formatNumber(skippedRows)} rows will be skipped in total. Final
           values use the backend preview output without recalculation.
         </p>
+
+        <form action={rejectImportAction} className="mt-6 border-t border-border pt-5">
+          <input name="batchId" type="hidden" value={batchId} />
+          <label className="block max-w-xl text-sm font-medium">
+            Rejection reason
+            <textarea
+              className="mt-2 min-h-24 w-full rounded-md border border-border bg-background px-3 py-2"
+              minLength={5}
+              name="reason"
+              required
+            />
+          </label>
+          <SubmitButton
+            className="mt-3"
+            pendingLabel="Rejecting draft"
+            variant="secondary"
+          >
+            Reject draft
+          </SubmitButton>
+        </form>
       </div>
     </section>
   );

@@ -19,7 +19,7 @@ export default async function AdminAuditPage() {
   const rows = await listAuditLogs(actor);
 
   return (
-    <section className="mx-auto max-w-7xl px-6 py-6">
+    <section className="dashboard-page">
       <section className="rounded-lg border border-border bg-surface">
         <div className="border-b border-border px-4 py-3">
           <p className="text-sm text-muted">Admin only</p>

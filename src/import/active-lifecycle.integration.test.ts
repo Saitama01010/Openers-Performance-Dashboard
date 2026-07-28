@@ -19,7 +19,7 @@ import {
   deactivateDialerImportBatch,
   getActiveImportLifecycleOptions,
 } from "@/import/active-lifecycle";
-import { getScopedDashboardMetrics } from "@/dashboard/data";
+import { getDashboardData } from "@/dashboard/data";
 import { restoreDialerImportBatch } from "@/import/service";
 import { newId } from "@/lib/ids";
 
@@ -248,7 +248,7 @@ describe("active import lifecycle", () => {
       resolution: { mode: "none" },
     });
 
-    const dashboard = await getScopedDashboardMetrics({
+    const dashboard = await getDashboardData({
       ...admin,
       role: "manager",
       teamIds: [chain.teamId],
@@ -258,10 +258,7 @@ describe("active import lifecycle", () => {
       .from(dialerDatasetScopes)
       .where(eq(dialerDatasetScopes.scopeKey, chain.scopeKey));
     expect(scope.activeVersionId).toBeNull();
-    expect(dashboard).toMatchObject({
-      status: "NO_ACTIVE_IMPORT",
-      data: null,
-    });
+    expect(dashboard.status).toBe("NO_ACTIVE_IMPORT");
   });
 
   it("restores a deactivated import from a no-active scope", async () => {

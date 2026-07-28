@@ -243,7 +243,7 @@ describe("dialer import service integration", () => {
     expect(corrected.preview.fileSummary.newRows).toBe(1);
   });
 
-  it("shows inactive mapped accounts as mapped with a warning", async () => {
+  it("publishes warned mapped accounts without a reason and audits the warnings", async () => {
     const actor = await createAdminActor();
     const teamId = await createTeam("Inactive Import Team");
     await createMappedAgent({
@@ -263,6 +263,33 @@ describe("dialer import service integration", () => {
     expect(preview.fileSummary.uniqueMappedAgents).toBe(1);
     expect(preview.fileSummary.unknownRows).toBe(0);
     expect(preview.rows[0]?.warningMessage).toContain("deactivated");
+
+    await confirmDialerImportBatch({ actor, batchId });
+
+    const logs = await getDb()
+      .select({
+        action: auditLogs.action,
+        metadata: auditLogs.metadata,
+      })
+      .from(auditLogs)
+      .where(eq(auditLogs.entityId, batchId));
+    const publication = logs.find(
+      (log) => log.action === "dialer_import.confirmed",
+    );
+
+    expect(publication?.metadata).toMatchObject({
+      confirmedById: actor.id,
+      warningsPresent: true,
+      warningAgentCount: 1,
+      warnings: [
+        {
+          agentName: "Inactive Agent",
+          message:
+            "Mapped account is deactivated. Historical rows may still be imported by authorized users.",
+        },
+      ],
+      status: "confirmed",
+    });
   });
 
   it("replaces stale preview errors when mappings are resolved", async () => {

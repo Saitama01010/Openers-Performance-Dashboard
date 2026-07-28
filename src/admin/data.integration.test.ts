@@ -172,12 +172,12 @@ describe("admin data management integration", () => {
 
     await addDialerMapping(actor(adminA), {
       userId: agentA,
-      sourceAgentName: "John Williams",
+      sourceAgentName: `John ${agentA}`,
       makePrimary: true,
     });
     await addDialerMapping(actor(adminA), {
       userId: agentB,
-      sourceAgentName: "Jane Williams",
+      sourceAgentName: `Jane ${agentB}`,
       makePrimary: true,
     });
 
@@ -192,13 +192,13 @@ describe("admin data management integration", () => {
     await expect(
       editDialerMapping(actor(adminA), {
         mappingId: activeBefore!.id,
-        sourceAgentName: " jane   williams ",
+        sourceAgentName: ` jane   ${agentB} `,
       }),
     ).rejects.toThrow("This active dialer identity is already mapped.");
 
     await editDialerMapping(actor(adminA), {
       mappingId: activeBefore!.id,
-      sourceAgentName: " johnny   williams ",
+      sourceAgentName: ` johnny   ${agentA} `,
     });
 
     const mappingsAfter = await getDb()
@@ -209,8 +209,8 @@ describe("admin data management integration", () => {
     const oldAfter = mappingsAfter.find((mapping) => mapping.id === activeBefore!.id);
 
     expect(oldAfter?.active).toBe(false);
-    expect(activeAfter?.sourceAgentName).toBe("johnny williams");
-    expect(activeAfter?.normalizedAgentName).toBe("johnny williams");
+    expect(activeAfter?.sourceAgentName).toBe(`johnny ${agentA}`);
+    expect(activeAfter?.normalizedAgentName).toBe(`johnny ${agentA}`);
     expect(activeAfter?.isPrimary).toBe(true);
     expect(mappingsAfter).toHaveLength(2);
   });

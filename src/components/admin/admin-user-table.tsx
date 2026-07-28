@@ -3,29 +3,48 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import {
+  InlineDialerNameEditor,
+  InlineEmailEditor,
+  InlineTeamSelect,
+  type InlineTeamOption,
+} from "@/components/admin/inline-user-fields";
+
 type UserRow = {
   id: string;
   name: string;
   email: string | null;
   dialerAgentName: string | null;
   role: string;
+  teamId: string | null;
   teamName: string | null;
   accountStatus: string;
   invitationStatus: string;
   lastLoginAt: string | null;
-  createdAt: string;
 };
 
-export function AdminUserTable({ users }: { users: UserRow[] }) {
+type InvitationResult = {
+  selected: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  outcomes: { userId: string; status: string; reason?: string }[];
+};
+
+function readableStatus(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+export function AdminUserTable({
+  activeTeams,
+  users,
+}: {
+  activeTeams: InlineTeamOption[];
+  users: UserRow[];
+}) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{
-    selected: number;
-    sent: number;
-    skipped: number;
-    failed: number;
-    outcomes: { userId: string; status: string; reason?: string }[];
-  } | null>(null);
+  const [result, setResult] = useState<InvitationResult | null>(null);
 
   function toggle(id: string) {
     setSelected((current) => {
@@ -45,8 +64,12 @@ export function AdminUserTable({ users }: { users: UserRow[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userIds: Array.from(selected) }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "Invitations failed.");
+      const payload = (await response.json()) as InvitationResult & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Invitations failed.");
+      }
       setResult(payload);
     } catch (cause) {
       setResult({
@@ -58,7 +81,8 @@ export function AdminUserTable({ users }: { users: UserRow[] }) {
           {
             userId: "",
             status: "failed",
-            reason: cause instanceof Error ? cause.message : "Invitations failed.",
+            reason:
+              cause instanceof Error ? cause.message : "Invitations failed.",
           },
         ],
       });
@@ -98,7 +122,8 @@ export function AdminUserTable({ users }: { users: UserRow[] }) {
                 .map((outcome, index) => (
                   <li key={`${outcome.userId}-${index}`}>
                     {users.find((user) => user.id === outcome.userId)?.name ??
-                      "Invitation"}: {outcome.reason}
+                      "Invitation"}
+                    : {outcome.reason}
                   </li>
                 ))}
             </ul>
@@ -110,20 +135,22 @@ export function AdminUserTable({ users }: { users: UserRow[] }) {
           <thead className="text-left text-muted">
             <tr>
               <th className="px-4 py-3">
-                <input
-                  aria-label="Select all users on this page"
-                  checked={allSelected}
-                  onChange={() =>
-                    setSelected(
-                      allSelected
-                        ? new Set()
-                        : new Set(users.map((user) => user.id)),
-                    )
-                  }
-                  type="checkbox"
-                />
+                <span className="flex min-w-48 items-center gap-3">
+                  <input
+                    aria-label="Select all users on this page"
+                    checked={allSelected}
+                    onChange={() =>
+                      setSelected(
+                        allSelected
+                          ? new Set()
+                          : new Set(users.map((user) => user.id)),
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span>Full name</span>
+                </span>
               </th>
-              <th className="px-4 py-3">Full name</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Dialer name</th>
               <th className="px-4 py-3">Role</th>
@@ -131,43 +158,70 @@ export function AdminUserTable({ users }: { users: UserRow[] }) {
               <th className="px-4 py-3">Account</th>
               <th className="px-4 py-3">Invitation</th>
               <th className="px-4 py-3">Last login</th>
-              <th className="px-4 py-3">Created</th>
-              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {users.map((user) => (
-              <tr className="border-t border-border" key={user.id}>
+              <tr className="border-t border-border align-top" key={user.id}>
                 <td className="px-4 py-3">
-                  <input
-                    aria-label={`Select ${user.name}`}
-                    checked={selected.has(user.id)}
-                    onChange={() => toggle(user.id)}
-                    type="checkbox"
+                  <span className="flex items-center gap-3">
+                    <input
+                      aria-label={`Select ${user.name}`}
+                      checked={selected.has(user.id)}
+                      onChange={() => toggle(user.id)}
+                      type="checkbox"
+                    />
+                    <Link
+                      className="font-medium text-primary hover:underline"
+                      href={`/admin/users/${user.id}`}
+                    >
+                      {user.name}
+                    </Link>
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  {user.email ? (
+                    <InlineEmailEditor
+                      email={user.email}
+                      userId={user.id}
+                    />
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <InlineDialerNameEditor
+                    dialerName={user.dialerAgentName}
+                    userId={user.id}
                   />
                 </td>
-                <td className="px-4 py-3 font-medium">{user.name}</td>
-                <td className="px-4 py-3">{user.email ?? "—"}</td>
-                <td className="px-4 py-3">{user.dialerAgentName ?? "—"}</td>
                 <td className="px-4 py-3 capitalize">{user.role}</td>
-                <td className="px-4 py-3">{user.teamName ?? "—"}</td>
-                <td className="px-4 py-3 capitalize">{user.accountStatus}</td>
-                <td className="px-4 py-3 capitalize">{user.invitationStatus}</td>
+                <td className="px-4 py-3">
+                  {user.role === "agent" || user.role === "manager" ? (
+                    <InlineTeamSelect
+                      currentTeamId={user.teamId}
+                      currentTeamName={user.teamName}
+                      teams={activeTeams}
+                      userId={user.id}
+                    />
+                  ) : (
+                    user.teamName ?? "—"
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex rounded-full border border-border bg-background px-2 py-0.5 text-xs capitalize">
+                    {readableStatus(user.accountStatus)}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex rounded-full border border-border bg-background px-2 py-0.5 text-xs capitalize">
+                    {readableStatus(user.invitationStatus)}
+                  </span>
+                </td>
                 <td className="px-4 py-3">
                   {user.lastLoginAt
                     ? new Date(user.lastLoginAt).toLocaleString("en-US")
                     : "Never"}
-                </td>
-                <td className="px-4 py-3">
-                  {new Date(user.createdAt).toLocaleString("en-US")}
-                </td>
-                <td className="px-4 py-3">
-                  <Link
-                    className="font-medium text-primary hover:underline"
-                    href={`/admin/users/${user.id}`}
-                  >
-                    View
-                  </Link>
                 </td>
               </tr>
             ))}

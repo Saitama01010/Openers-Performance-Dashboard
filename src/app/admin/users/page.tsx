@@ -156,17 +156,20 @@ export default async function AdminUsersPage({
           <p className="p-5 text-sm text-muted">No users match the current filters.</p>
         ) : (
           <AdminUserTable
+            activeTeams={referenceData.teams
+              .filter((team) => team.active)
+              .map((team) => ({ id: team.id, name: team.name }))}
             users={users.map((user) => ({
               id: user.id,
               name: user.name,
               email: user.email,
               dialerAgentName: user.dialerAgentName,
               role: user.role,
+              teamId: user.team?.teamId ?? null,
               teamName: user.team?.teamName ?? null,
               accountStatus: user.accountStatus,
               invitationStatus: user.invitationStatus,
               lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
-              createdAt: user.createdAt.toISOString(),
             }))}
           />
         )}

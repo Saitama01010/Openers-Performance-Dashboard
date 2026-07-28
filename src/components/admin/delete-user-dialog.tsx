@@ -1,20 +1,17 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-export function DeleteUserDialog({
-  email,
-  userId,
-}: {
-  email: string;
-  userId: string;
-}) {
+export function DeleteUserDialog({ userId }: { userId: string }) {
+  const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function remove() {
+    if (busy) return;
+
     setBusy(true);
     setError(null);
     try {
@@ -22,15 +19,21 @@ export function DeleteUserDialog({
         `/api/admin/users/${encodeURIComponent(userId)}`,
         {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ confirmationEmail: confirmation }),
+          cache: "no-store",
         },
       );
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "Deletion failed.");
-      window.location.assign("/admin/users?ok=user-deleted");
+      if (!response.ok) {
+        throw new Error(result.error ?? "Deletion failed.");
+      }
+
+      dialog.current?.close();
+      router.replace("/admin/users?ok=user-deleted");
+      router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Deletion failed.");
+      setError(
+        cause instanceof Error ? cause.message : "Deletion failed.",
+      );
       setBusy(false);
     }
   }
@@ -39,7 +42,10 @@ export function DeleteUserDialog({
     <>
       <button
         className="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white"
-        onClick={() => dialog.current?.showModal()}
+        onClick={() => {
+          setError(null);
+          dialog.current?.showModal();
+        }}
         type="button"
       >
         Permanently delete user
@@ -49,21 +55,18 @@ export function DeleteUserDialog({
         ref={dialog}
       >
         <div className="p-5">
-          <h2 className="text-lg font-semibold">Permanently delete user</h2>
+          <h2 className="text-lg font-semibold">Permanently delete user?</h2>
           <p className="mt-2 text-sm text-muted">
-            Login access and private authentication data will be removed.
-            Historical calls, metrics, team attribution, and reporting totals
-            will remain.
+            This immediately removes login access, active sessions,
+            authentication credentials, temporary-password data, invitations,
+            reset tokens, permission overrides, active team memberships, and
+            active dialer mappings.
           </p>
-          <label className="mt-4 block text-sm font-medium">
-            Type <span className="font-mono">{email}</span> to confirm
-            <input
-              autoFocus
-              className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2"
-              onChange={(event) => setConfirmation(event.target.value)}
-              value={confirmation}
-            />
-          </label>
+          <p className="mt-3 text-sm text-muted">
+            Historical calls, metrics, display name, dialer attribution, team
+            attribution, and audit information will be preserved. This action
+            cannot be undone.
+          </p>
           {error ? (
             <p className="mt-3 text-sm text-danger" role="alert">
               {error}
@@ -80,11 +83,11 @@ export function DeleteUserDialog({
             </button>
             <button
               className="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              disabled={busy || confirmation !== email}
+              disabled={busy}
               onClick={remove}
               type="button"
             >
-              {busy ? "Deleting…" : "Delete permanently"}
+              {busy ? "Deleting…" : "Confirm permanent deletion"}
             </button>
           </div>
         </div>

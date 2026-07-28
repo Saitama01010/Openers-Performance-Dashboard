@@ -107,6 +107,25 @@ export type UpdateUserInput = {
   permissionOverrides: PermissionOverrideInput[];
 };
 
+export type InlineUserUpdateResult =
+  | {
+      field: "email";
+      value: string;
+      changed: boolean;
+    }
+  | {
+      field: "dialerName";
+      value: string;
+      normalizedValue: string;
+      changed: boolean;
+    }
+  | {
+      field: "teamId";
+      value: string;
+      teamName: string;
+      changed: boolean;
+    };
+
 function assertAdmin(actor: Actor) {
   if (actor.role !== "admin") {
     throw new Error("Forbidden");
@@ -123,6 +142,21 @@ function normalizeDialerDisplayName(value: string) {
 
 function normalizeDialerIdentity(value: string) {
   return normalizeDialerDisplayName(value).toLowerCase();
+}
+
+function isDuplicateEntryError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const candidate = error as {
+    code?: unknown;
+    cause?: unknown;
+  };
+
+  return (
+    candidate.code === "ER_DUP_ENTRY" ||
+    candidate.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+    (candidate.cause !== error && isDuplicateEntryError(candidate.cause))
+  );
 }
 
 function invitationStatus(token?: {
@@ -931,7 +965,7 @@ export async function bulkSendInvitations(actor: Actor, userIds: string[]) {
 
 export async function permanentlyDeleteUser(
   actor: Actor,
-  input: { userId: string; confirmationEmail: string },
+  input: { userId: string },
 ) {
   assertAdmin(actor);
   if (actor.id === input.userId) {
@@ -949,12 +983,6 @@ export async function permanentlyDeleteUser(
 
     if (!profile || profile.accountStatus === "deleted") {
       throw new Error("User was not found.");
-    }
-    if (
-      !profile.email ||
-      normalizeEmail(input.confirmationEmail) !== normalizeEmail(profile.email)
-    ) {
-      throw new Error("Type the user's exact email address to confirm deletion.");
     }
 
     const activeAdminCount = await getActiveAdminCountForUpdate(tx);
@@ -1161,6 +1189,379 @@ export async function getAdminUserDetails(actor: Actor, userId: string) {
     activeSessionCount: sessionRows[0]?.total ?? 0,
     audits: auditRows,
   };
+}
+
+export async function updateUserEmail(
+  actor: Actor,
+  input: { userId: string; email: string },
+): Promise<Extract<InlineUserUpdateResult, { field: "email" }>> {
+  assertAdmin(actor);
+
+  const email = normalizeEmail(input.email);
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  if (!isValidEmail || email.length > 255) {
+    throw new Error("Enter a valid email address.");
+  }
+
+  try {
+    return await getDb().transaction(async (tx) => {
+      const profileRows = await tx
+        .select({
+          id: profiles.id,
+          email: profiles.email,
+          accountStatus: profiles.accountStatus,
+        })
+        .from(profiles)
+        .where(eq(profiles.id, input.userId))
+        .limit(1)
+        .for("update");
+      const profile = profileRows[0];
+
+      if (!profile || profile.accountStatus === "deleted") {
+        throw new Error("User was not found.");
+      }
+
+      if (profile.email === email) {
+        return { field: "email", value: email, changed: false };
+      }
+
+      const duplicateRows = await tx
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(and(eq(profiles.email, email), ne(profiles.id, input.userId)))
+        .limit(1)
+        .for("update");
+
+      if (duplicateRows[0]) {
+        throw new Error("Another user already owns this email address.");
+      }
+
+      const now = new Date();
+
+      await tx
+        .update(accountInvitationTokens)
+        .set({ revokedAt: now, deliveryStatus: "revoked" })
+        .where(
+          and(
+            eq(accountInvitationTokens.profileId, input.userId),
+            isNull(accountInvitationTokens.usedAt),
+            isNull(accountInvitationTokens.revokedAt),
+          ),
+        );
+      await tx
+        .update(passwordResetTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(passwordResetTokens.profileId, input.userId),
+            isNull(passwordResetTokens.usedAt),
+            isNull(passwordResetTokens.revokedAt),
+          ),
+        );
+      await tx
+        .update(profiles)
+        .set({ email })
+        .where(eq(profiles.id, input.userId));
+      await tx.insert(auditLogs).values({
+        id: newId(),
+        actorProfileId: actor.id,
+        action: "user.email_updated",
+        entityType: "profile",
+        entityId: input.userId,
+        metadata: {
+          before: { email: profile.email },
+          after: { email },
+          outstandingTokensRevoked: true,
+        },
+      });
+
+      return { field: "email", value: email, changed: true };
+    });
+  } catch (error) {
+    if (isDuplicateEntryError(error)) {
+      throw new Error("Another user already owns this email address.");
+    }
+    throw error;
+  }
+}
+
+export async function updateUserPrimaryDialerName(
+  actor: Actor,
+  input: { userId: string; dialerName: string },
+): Promise<Extract<InlineUserUpdateResult, { field: "dialerName" }>> {
+  assertAdmin(actor);
+
+  const sourceAgentName = normalizeDialerDisplayName(input.dialerName);
+  const normalizedAgentName = normalizeDialerIdentity(sourceAgentName);
+
+  if (!normalizedAgentName) {
+    throw new Error("Dialer name is required.");
+  }
+  if (sourceAgentName.length > 255) {
+    throw new Error("Dialer name must be 255 characters or fewer.");
+  }
+
+  try {
+    return await getDb().transaction(async (tx) => {
+      const profileRows = await tx
+        .select({ id: profiles.id, accountStatus: profiles.accountStatus })
+        .from(profiles)
+        .where(eq(profiles.id, input.userId))
+        .limit(1)
+        .for("update");
+      const profile = profileRows[0];
+
+      if (!profile || profile.accountStatus === "deleted") {
+        throw new Error("User was not found.");
+      }
+
+      const activeMappings = await tx
+        .select()
+        .from(sourceUserMappings)
+        .where(
+          and(
+            eq(sourceUserMappings.profileId, input.userId),
+            eq(sourceUserMappings.source, "dialer"),
+            eq(sourceUserMappings.active, true),
+          ),
+        )
+        .for("update");
+      const currentPrimary =
+        activeMappings.find((mapping) => mapping.isPrimary) ?? null;
+
+      if (
+        currentPrimary &&
+        currentPrimary.sourceAgentName === sourceAgentName &&
+        currentPrimary.normalizedAgentName === normalizedAgentName
+      ) {
+        return {
+          field: "dialerName",
+          value: currentPrimary.sourceAgentName,
+          normalizedValue: currentPrimary.normalizedAgentName,
+          changed: false,
+        };
+      }
+
+      const duplicateRows = await tx
+        .select()
+        .from(sourceUserMappings)
+        .where(
+          eq(
+            sourceUserMappings.activeMappingKey,
+            activeMappingKey("dialer", normalizedAgentName),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      const duplicate = duplicateRows[0];
+
+      if (duplicate && duplicate.profileId !== input.userId) {
+        throw new Error("Another user already owns this dialer name.");
+      }
+
+      const mappingsToDeactivate = Array.from(
+        new Set(
+          [currentPrimary?.id, duplicate?.id].filter(
+            (id): id is string => Boolean(id),
+          ),
+        ),
+      );
+      const now = new Date();
+
+      if (mappingsToDeactivate.length > 0) {
+        await tx
+          .update(sourceUserMappings)
+          .set({
+            active: false,
+            isPrimary: false,
+            activeMappingKey: null,
+            primaryMappingKey: null,
+            deactivatedAt: now,
+            deactivatedById: actor.id,
+          })
+          .where(inArray(sourceUserMappings.id, mappingsToDeactivate));
+      }
+
+      await tx
+        .update(sourceUserMappings)
+        .set({ isPrimary: false, primaryMappingKey: null })
+        .where(
+          and(
+            eq(sourceUserMappings.profileId, input.userId),
+            eq(sourceUserMappings.source, "dialer"),
+            eq(sourceUserMappings.active, true),
+          ),
+        );
+
+      const values = mappingValues({
+        source: "dialer",
+        sourceAgentName,
+        profileId: input.userId,
+        isPrimary: true,
+        actorId: actor.id,
+      });
+
+      await tx.insert(sourceUserMappings).values(values);
+      await tx.insert(auditLogs).values({
+        id: newId(),
+        actorProfileId: actor.id,
+        action: "user.primary_dialer_updated",
+        entityType: "profile",
+        entityId: input.userId,
+        metadata: {
+          before: currentPrimary
+            ? {
+                sourceAgentName: currentPrimary.sourceAgentName,
+                normalizedAgentName: currentPrimary.normalizedAgentName,
+              }
+            : null,
+          after: {
+            sourceAgentName: values.sourceAgentName,
+            normalizedAgentName: values.normalizedAgentName,
+          },
+          previousMappingId: currentPrimary?.id ?? null,
+          mappingId: values.id,
+        },
+      });
+
+      return {
+        field: "dialerName",
+        value: values.sourceAgentName,
+        normalizedValue: values.normalizedAgentName,
+        changed: true,
+      };
+    });
+  } catch (error) {
+    if (isDuplicateEntryError(error)) {
+      throw new Error("Another user already owns this dialer name.");
+    }
+    throw error;
+  }
+}
+
+export async function moveUserToTeam(
+  actor: Actor,
+  input: { userId: string; teamId: string },
+): Promise<Extract<InlineUserUpdateResult, { field: "teamId" }>> {
+  assertAdmin(actor);
+
+  if (!input.teamId) {
+    throw new Error("Select an active team.");
+  }
+
+  return getDb().transaction(async (tx) => {
+    const profileRows = await tx
+      .select({
+        id: profiles.id,
+        role: profiles.role,
+        accountStatus: profiles.accountStatus,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, input.userId))
+      .limit(1)
+      .for("update");
+    const profile = profileRows[0];
+
+    if (!profile || profile.accountStatus === "deleted") {
+      throw new Error("User was not found.");
+    }
+    if (profile.role !== "agent" && profile.role !== "manager") {
+      throw new Error("Team can only be changed for agents and managers.");
+    }
+
+    const teamRows = await tx
+      .select({ id: teams.id, name: teams.name, active: teams.active })
+      .from(teams)
+      .where(eq(teams.id, input.teamId))
+      .limit(1)
+      .for("update");
+    const team = teamRows[0];
+
+    if (!team) throw new Error("Team was not found.");
+    if (!team.active) throw new Error("Select an active team.");
+
+    const activeMemberships = await tx
+      .select({
+        id: teamMemberships.id,
+        teamId: teamMemberships.teamId,
+        role: teamMemberships.role,
+      })
+      .from(teamMemberships)
+      .where(
+        and(
+          eq(teamMemberships.profileId, input.userId),
+          eq(teamMemberships.active, true),
+          isNull(teamMemberships.endedAt),
+        ),
+      )
+      .for("update");
+    const currentMembership = activeMemberships[0] ?? null;
+
+    if (
+      activeMemberships.some(
+        (membership) => membership.teamId === input.teamId,
+      )
+    ) {
+      return {
+        field: "teamId",
+        value: input.teamId,
+        teamName: team.name,
+        changed: false,
+      };
+    }
+
+    const now = new Date();
+
+    await tx
+      .update(teamMemberships)
+      .set({ active: false, endedAt: now })
+      .where(
+        and(
+          eq(teamMemberships.profileId, input.userId),
+          eq(teamMemberships.active, true),
+          isNull(teamMemberships.endedAt),
+        ),
+      );
+
+    const membershipId = newId();
+    await tx.insert(teamMemberships).values({
+      id: membershipId,
+      profileId: input.userId,
+      teamId: input.teamId,
+      role: profile.role,
+      active: true,
+      createdById: actor.id,
+    });
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: actor.id,
+      action: "user.team_moved",
+      entityType: "profile",
+      entityId: input.userId,
+        metadata: {
+          before: currentMembership
+            ? {
+              teamId: currentMembership.teamId,
+              role: currentMembership.role,
+            }
+            : null,
+          after: {
+            teamId: input.teamId,
+            teamName: team.name,
+            role: profile.role,
+          },
+          membershipId,
+        },
+      });
+
+    return {
+      field: "teamId",
+      value: input.teamId,
+      teamName: team.name,
+      changed: true,
+    };
+  });
 }
 
 export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
@@ -1947,7 +2348,13 @@ export async function listTeams(actor: Actor) {
       })
       .from(teamMemberships)
       .innerJoin(profiles, eq(profiles.id, teamMemberships.profileId))
-      .where(eq(teamMemberships.active, true))
+      .where(
+        and(
+          eq(teamMemberships.active, true),
+          isNull(teamMemberships.endedAt),
+          ne(profiles.accountStatus, "deleted"),
+        ),
+      )
       .orderBy(asc(profiles.name)),
     getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })

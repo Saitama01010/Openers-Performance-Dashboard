@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/auth/session";
 import {
   EmptyTableRow,
   PageHeader,
+  StatusBanner,
   TableScroll,
 } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -31,17 +32,22 @@ export default async function DashboardPage() {
           eyebrow="Performance"
           title="Overview"
         />
-        <div className="metric-grid">
-          {metrics.map((metric) => (
-            <article
-              className="metric-card"
-              key={metric.label}
-            >
-              <p className="metric-card__label">{metric.label}</p>
-              <p className="metric-card__value">{metric.value}</p>
-            </article>
-          ))}
-        </div>
+        {metrics.status === "NO_ACTIVE_IMPORT" ? (
+          <StatusBanner tone="warning">
+            No approved import is currently active for this reporting scope.
+            Historical, superseded, and deactivated uploads are not used as a
+            fallback.
+          </StatusBanner>
+        ) : (
+          <div className="metric-grid">
+            {metrics.data.map((metric) => (
+              <article className="metric-card" key={metric.label}>
+                <p className="metric-card__label">{metric.label}</p>
+                <p className="metric-card__value">{metric.value}</p>
+              </article>
+            ))}
+          </div>
+        )}
         <section className="ui-card mt-5">
           <div className="ui-card__header">
             <div>

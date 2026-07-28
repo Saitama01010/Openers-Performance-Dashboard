@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
 
 import { SubmitButton } from "@/components/dashboard/action-controls";
@@ -9,7 +10,7 @@ import {
   StatusBanner,
   TableScroll,
 } from "@/components/dashboard/dashboard-primitives";
-import { confirmImportAction } from "@/import/actions";
+import { confirmImportAction, rejectImportAction } from "@/import/actions";
 import {
   formatDurationSeconds,
   formatNumber,
@@ -22,6 +23,10 @@ import type {
   DurationTotals,
   ImportPreview,
 } from "@/import/dialer";
+import type {
+  ImportValidationResult,
+} from "@/import/validation";
+import type { MetricDifference } from "@/import/versioning";
 
 type SortKey =
   | "agent"
@@ -127,6 +132,37 @@ function DurationCell({ seconds }: { seconds: number }) {
         {formatted.decimalHoursLabel}
       </span>
     </span>
+  );
+}
+
+function DifferenceCard({
+  difference,
+  duration = false,
+  label,
+}: {
+  difference: MetricDifference;
+  duration?: boolean;
+  label: string;
+}) {
+  const formatValue = (value: number) =>
+    duration
+      ? `${value < 0 ? "-" : ""}${formatDurationSeconds(Math.abs(value)).hms}`
+      : formatNumber(value);
+
+  return (
+    <div className="rounded-md border border-border p-3">
+      <p className="text-xs uppercase text-muted">{label}</p>
+      <p className="mt-1 font-mono text-lg">
+        {formatValue(difference.before)} &rarr; {formatValue(difference.after)}
+      </p>
+      <p className="text-xs text-muted">
+        Difference: {difference.difference > 0 ? "+" : ""}
+        {formatValue(difference.difference)}
+        {difference.percentageDifference === null
+          ? ""
+          : ` (${difference.percentageDifference > 0 ? "+" : ""}${difference.percentageDifference.toFixed(1)}%)`}
+      </p>
+    </div>
   );
 }
 
@@ -303,27 +339,25 @@ export function ImportPreviewSummary({
   batchId,
   disabledReasons,
   fileName,
+  isAdmin,
   preview,
+  validation,
 }: {
   batchId: string;
   disabledReasons: string[];
   fileName: string;
+  isAdmin: boolean;
   preview: ImportPreview;
+  validation: ImportValidationResult;
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("agent");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
-  const mappedRowsToImport = preview.fileSummary.mappedRowsToImport;
+  const mappedRowsToPublish = preview.fileSummary.mappedValidRows;
   const unresolvedRowsToSkip =
     preview.fileSummary.unmappedRowsToSkip +
     preview.fileSummary.outOfScopeRowsToSkip;
-  const skippedRows =
-    unresolvedRowsToSkip +
-    preview.fileSummary.unchangedRowsToSkip +
-    preview.fileSummary.invalidRows;
-  const partialAcknowledgementRequired =
-    mappedRowsToImport > 0 &&
-    (unresolvedRowsToSkip + preview.fileSummary.invalidRows > 0);
+  const warningOverrideRequired = validation.warnings.length > 0;
   const filteredAgents = useMemo(() => {
     const agents = preview.agents.filter((agent) => {
       if (filter === "all") {
@@ -368,9 +402,15 @@ export function ImportPreviewSummary({
           </p>
         </div>
         {preview.duplicateFile ? (
-          <StatusBadge tone="danger">Duplicate file blocked</StatusBadge>
+          <StatusBadge tone="warning">Duplicate file requires override</StatusBadge>
         ) : (
-          <StatusBadge tone="success">Ready for validation</StatusBadge>
+          <StatusBadge
+            tone={validation.errors.length > 0 ? "danger" : "success"}
+          >
+            {validation.errors.length > 0
+              ? "Validation failed"
+              : "Ready to publish"}
+          </StatusBadge>
         )}
       </div>
 
@@ -381,18 +421,156 @@ export function ImportPreviewSummary({
       ) : null}
 
       <StatusBanner tone="info">
-        This import will save {formatNumber(mappedRowsToImport)} mapped rows and
-        skip {formatNumber(unresolvedRowsToSkip)} unresolved or unauthorized
-        rows.
-        {preview.fileSummary.unchangedRowsToSkip > 0 ||
-        preview.fileSummary.invalidRows > 0 ? (
-          <span className="ml-1">
-            It will also skip {formatNumber(preview.fileSummary.unchangedRowsToSkip)}
-            {" "}unchanged rows and {formatNumber(preview.fileSummary.invalidRows)}
-            {" "}invalid rows.
-          </span>
-        ) : null}
+        Publishing will activate an immutable version containing{" "}
+        {formatNumber(mappedRowsToPublish)} mapped rows and exclude{" "}
+        {formatNumber(unresolvedRowsToSkip)} unresolved or unauthorized rows.
+        Nothing in this draft is dashboard-visible yet.
       </StatusBanner>
+
+      {validation.errors.length > 0 ? (
+        <StatusBanner tone="danger">
+          <p className="font-semibold">Blocking errors</p>
+          <ul className="mt-2 list-inside list-disc">
+            {validation.errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </StatusBanner>
+      ) : null}
+
+      {validation.warnings.length > 0 ? (
+        <StatusBanner tone="warning">
+          <p className="font-semibold">Administrator override required</p>
+          <ul className="mt-2 list-inside list-disc">
+            {validation.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </StatusBanner>
+      ) : null}
+
+      {validation.notices.length > 0 ? (
+        <StatusBanner tone="info">
+          <p className="font-semibold">Informational notices</p>
+          <ul className="mt-2 list-inside list-disc">
+            {validation.notices.map((notice) => (
+              <li key={notice}>{notice}</li>
+            ))}
+          </ul>
+        </StatusBanner>
+      ) : null}
+
+      <section className="mt-5 rounded-md border border-border p-4">
+        <h3 className="text-base font-semibold">Current versus uploaded</h3>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs uppercase text-muted">Current agents</p>
+            <p className="mt-1 font-mono text-2xl">
+              {formatNumber(validation.comparison.currentAgentCount)}
+            </p>
+          </div>
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs uppercase text-muted">Uploaded agents</p>
+            <p className="mt-1 font-mono text-2xl">
+              {formatNumber(validation.comparison.uploadedAgentCount)}
+            </p>
+          </div>
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs uppercase text-muted">Matched agents</p>
+            <p className="mt-1 font-mono text-2xl">
+              {formatNumber(validation.comparison.matchedAgentCount)}
+            </p>
+          </div>
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs uppercase text-muted">Unmatched agents</p>
+            <p className="mt-1 font-mono text-2xl">
+              {formatNumber(validation.comparison.unmatchedAgentCount)}
+            </p>
+          </div>
+          <DifferenceCard
+            difference={validation.comparison.calls}
+            label="Calls"
+          />
+          <DifferenceCard
+            difference={validation.comparison.loggedInSeconds}
+            duration
+            label="Login time"
+          />
+          <DifferenceCard
+            difference={validation.comparison.talkSeconds}
+            duration
+            label="Talk time"
+          />
+          <DifferenceCard
+            difference={validation.comparison.wrapSeconds}
+            duration
+            label="Wrap time"
+          />
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <p className="text-xs uppercase text-muted">New agents</p>
+            <p className="mt-1 text-sm">
+              {validation.comparison.newAgents.join(", ") || "None"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-muted">Missing agents</p>
+            <p className="mt-1 text-sm">
+              {validation.comparison.missingAgents.join(", ") || "None"}
+            </p>
+          </div>
+        </div>
+
+        {validation.comparison.agents.length > 0 ? (
+          <details className="mt-4">
+            <summary className="cursor-pointer text-sm font-semibold">
+              Per-agent differences
+            </summary>
+            <TableScroll label="Per-agent differences">
+              <table className="ui-table">
+                <caption>Current and uploaded metric totals per agent</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Agent</th>
+                    <th scope="col">Calls</th>
+                    <th scope="col">Login</th>
+                    <th scope="col">Talk</th>
+                    <th scope="col">Wrap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {validation.comparison.agents.map((agent) => (
+                    <tr key={agent.agentProfileId}>
+                      <td>{agent.agentName}</td>
+                      <td className="font-mono">
+                        {formatNumber(agent.calls.before)} →{" "}
+                        {formatNumber(agent.calls.after)}
+                      </td>
+                      <td className="font-mono">
+                        {formatDurationSeconds(agent.loggedInSeconds.before).hms}
+                        {" → "}
+                        {formatDurationSeconds(agent.loggedInSeconds.after).hms}
+                      </td>
+                      <td className="font-mono">
+                        {formatDurationSeconds(agent.talkSeconds.before).hms}
+                        {" → "}
+                        {formatDurationSeconds(agent.talkSeconds.after).hms}
+                      </td>
+                      <td className="font-mono">
+                        {formatDurationSeconds(agent.wrapSeconds.before).hms}
+                        {" → "}
+                        {formatDurationSeconds(agent.wrapSeconds.after).hms}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
+          </details>
+        ) : null}
+      </section>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {summaryCards.map(([key, label]) => (
@@ -625,37 +803,81 @@ export function ImportPreviewSummary({
         </table>
       </TableScroll>
 
-      <form action={confirmImportAction} className="mt-5">
+      <form action={confirmImportAction} className="mt-5 space-y-3">
         <input name="batchId" type="hidden" value={batchId} />
-        {partialAcknowledgementRequired ? (
+        {warningOverrideRequired && isAdmin ? (
           <StatusBanner tone="warning">
-            <label className="ui-checkbox-label">
-              <input
-                name="allowPartialImport"
+            <label className="ui-label">
+              Warning override reason
+              <textarea
+                className="ui-input min-h-24"
+                minLength={5}
+                name="warningOverrideReason"
                 required
-                type="checkbox"
-                value="true"
               />
-              <span>
-                I understand that unmapped and out-of-scope rows will not be
-                imported.
-              </span>
             </label>
             <p className="mt-2 text-muted">
-              Skipped rows: {formatNumber(skippedRows)} total, including{" "}
-              {formatNumber(preview.fileSummary.unmappedRowsToSkip)} unmapped,{" "}
-              {formatNumber(preview.fileSummary.outOfScopeRowsToSkip)}{" "}
-              out-of-scope, {formatNumber(preview.fileSummary.unchangedRowsToSkip)}
-              {" "}unchanged, and {formatNumber(preview.fileSummary.invalidRows)}
-              {" "}invalid.
+              The reason and administrator identity will be written to the audit
+              log.
             </p>
           </StatusBanner>
         ) : null}
+        {warningOverrideRequired && !isAdmin ? (
+          <StatusBanner tone="warning">
+            An administrator must review and override these warnings before the
+            draft can be published.
+          </StatusBanner>
+        ) : null}
         <SubmitButton
-          disabled={disabledReasons.length > 0}
-          pendingLabel="Importing mapped rows"
+          disabled={
+            disabledReasons.length > 0 ||
+            (warningOverrideRequired && !isAdmin)
+          }
+          pendingLabel="Publishing version"
         >
-          Import {formatNumber(mappedRowsToImport)} mapped rows
+          {warningOverrideRequired
+            ? "Publish with warning override"
+            : `Publish ${formatNumber(mappedRowsToPublish)} mapped rows`}
+        </SubmitButton>
+      </form>
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        <a
+          className="ui-button ui-button--secondary"
+          href={`/api/imports/${batchId}/download`}
+        >
+          Download original CSV
+        </a>
+        <Link className="ui-button ui-button--secondary" href="/import">
+          Cancel
+        </Link>
+        {isAdmin ? (
+          <Link
+            className="ui-button ui-button--secondary"
+            href="/admin/imports"
+          >
+            Return to import history
+          </Link>
+        ) : null}
+      </div>
+
+      <form action={rejectImportAction} className="mt-5">
+        <input name="batchId" type="hidden" value={batchId} />
+        <label className="ui-label">
+          Rejection reason
+          <textarea
+            className="ui-input min-h-20"
+            minLength={5}
+            name="reason"
+            required
+          />
+        </label>
+        <SubmitButton
+          className="mt-3"
+          pendingLabel="Rejecting draft"
+          variant="secondary"
+        >
+          Reject draft
         </SubmitButton>
       </form>
     </section>

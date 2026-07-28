@@ -16,6 +16,27 @@ CI runs the same commands against an isolated MySQL 8.4 service and fails if `db
 
 Current unit coverage includes CSV header normalization, duplicate and corrected rows, aggregate reconciliation, duration formatting, mapping/scope outcomes, authentication security policy, token lifecycle policy, fail-closed authorization, Resend env validation, transactional email rendering, provider selection, reply-to handling, provider message IDs, and duplicate password-reset suppression. Database-backed end-to-end tests for invitation/reset consumption and admin account management remain required before production.
 
+Versioned import integration coverage includes permanent draft creation, invalid
+headers, active-data isolation, first publish, superseding, latest rollback,
+historical restore, team/date isolation, checksum override, manager/admin/agent
+authorization, blocking errors, warning reasons, concurrent publication,
+active-only dashboard queries, malformed input, and draft rejection.
+
+Active-import lifecycle coverage includes previous and explicitly selected
+fallbacks, no-active mode, exact-scope isolation, administrator-only
+authorization, durable history, explicit dashboard empty state, and audit
+metadata.
+
+Permanent-import deletion coverage includes failed, rejected, deactivated,
+superseded, rolled-back, and transactionally resolved active imports;
+processing protection; administrator-only
+authorization; owned metric/staging/validation removal; user/team/unrelated
+import preservation; automatic previous-version activation; invalid fallback
+status exclusion; shared legacy metric retention and provenance re-homing;
+zero-reference metric removal; stored-file success, missing-file, and
+cleanup-pending behavior; durable audits; concurrent deletion; concurrent
+activation; database transaction rollback; and targeted history revalidation.
+
 Provisioning coverage also includes authenticated temporary-password encryption and tamper detection, strict user-CSV header mapping and validation, formula-injection blocking, plain-English audit formatting and secret removal, immediate temporary-password authentication, regeneration invalidation, no automatic invitation, and deletion that preserves metric rows while scrubbing authentication state.
 
 Phase 2 adds unit coverage for:

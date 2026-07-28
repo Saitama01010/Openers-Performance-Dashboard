@@ -1,29 +1,31 @@
 import "dotenv/config";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 
-import { editDialerMapping } from "@/admin/data";
 import { activeMappingKey, primaryMappingKey } from "@/admin/policy";
 import type { Actor } from "@/auth/authorization";
 import { getDb } from "@/db";
 import {
   auditLogs,
   dialerAgentHourlyMetrics,
+  dialerDatasetScopes,
+  dialerDatasetVersions,
   dialerImportBatches,
+  dialerImportRows,
   importErrors,
   profiles,
   sourceUserMappings,
   teamMemberships,
   teams,
 } from "@/db/schema";
+import { listActiveDialerMetrics } from "@/import/active-data";
 import {
-  getImportConfirmationBlockReason,
-} from "@/import/dialer";
-import {
-  confirmDialerImportBatch,
   createDialerPreviewBatch,
-  getStoredImportPreview,
+  publishDialerImportBatch,
+  rejectDialerImportBatch,
+  restoreDialerImportBatch,
+  rollbackDialerImportBatch,
 } from "@/import/service";
 import { newId } from "@/lib/ids";
 
@@ -36,21 +38,19 @@ const batchIds: string[] = [];
 const header =
   "Agent,Date,Hour,Logged In (sec),Ready (sec),Talk (sec),Ringing (sec),Wrap (sec),Paused (sec),Idle (sec),Untracked (sec),Calls";
 
-function csvFor(agentName: string) {
-  return `${header}\n${agentName},2026-07-20,0,3600,600,1200,60,60,300,300,0,5\n`;
+function csvFor(input: {
+  agentName: string;
+  calls?: number;
+  date?: string;
+  hour?: number;
+  loggedInSeconds?: number;
+  talkSeconds?: number;
+}) {
+  return `${header}\n${input.agentName},${input.date ?? "2099-01-01"},${input.hour ?? 0},${input.loggedInSeconds ?? 3600},600,${input.talkSeconds ?? 1200},60,60,300,300,0,${input.calls ?? 5}\n`;
 }
 
-function csvFromRows(rows: string[]) {
-  return `${header}\n${rows.join("\n")}\n`;
-}
-
-async function importErrorCount(batchId: string) {
-  const rows = await getDb()
-    .select({ id: importErrors.id })
-    .from(importErrors)
-    .where(eq(importErrors.batchId, batchId));
-
-  return rows.length;
+function malformedCsv(agentName: string) {
+  return `${header}\n"${agentName},2099-01-01,0,3600,600,1200,60,60,300,300,0,5\n`;
 }
 
 async function createTeam(name: string) {
@@ -60,26 +60,42 @@ async function createTeam(name: string) {
   return id;
 }
 
-async function createMappedAgent(input: {
-  teamId: string;
-  accountStatus: "invited" | "active" | "deactivated" | "revoked";
-  dialerName: string;
-}) {
+async function createActor(
+  role: "admin" | "manager" | "agent",
+  assignedTeamIds: string[] = [],
+): Promise<Actor> {
   const id = newId();
-  const normalized = input.dialerName.trim().replace(/\s+/g, " ").toLowerCase();
   profileIds.push(id);
-
   await getDb().insert(profiles).values({
     id,
     email: `${id}@example.test`,
-    name: `Import Agent ${id.slice(0, 8)}`,
+    name: `Import ${role} ${id.slice(0, 8)}`,
+    role,
+    active: true,
+    accountStatus: "active",
+    passwordHash: "test-hash",
+  });
+
+  return { id, role, teamIds: assignedTeamIds };
+}
+
+async function createMappedAgent(teamId: string, label: string) {
+  const id = newId();
+  const dialerName = `${label} ${id.slice(0, 8)}`;
+  const normalized = dialerName.toLowerCase();
+  profileIds.push(id);
+  await getDb().insert(profiles).values({
+    id,
+    email: `${id}@example.test`,
+    name: `Agent ${label}`,
     role: "agent",
-    active: input.accountStatus === "invited" || input.accountStatus === "active",
-    accountStatus: input.accountStatus,
+    active: true,
+    accountStatus: "active",
+    passwordHash: "test-hash",
   });
   await getDb().insert(teamMemberships).values({
     id: newId(),
-    teamId: input.teamId,
+    teamId,
     profileId: id,
     role: "agent",
     active: true,
@@ -87,7 +103,7 @@ async function createMappedAgent(input: {
   await getDb().insert(sourceUserMappings).values({
     id: newId(),
     source: "dialer",
-    sourceAgentName: input.dialerName.trim().replace(/\s+/g, " "),
+    sourceAgentName: dialerName,
     normalizedAgentName: normalized,
     activeMappingKey: activeMappingKey("dialer", normalized),
     primaryMappingKey: primaryMappingKey("dialer", id),
@@ -96,478 +112,693 @@ async function createMappedAgent(input: {
     isPrimary: true,
   });
 
-  return id;
+  return { id, dialerName };
 }
 
-async function createAdminActor(): Promise<Actor> {
-  const id = newId();
-  profileIds.push(id);
-  await getDb().insert(profiles).values({
-    id,
-    email: `${id}@example.test`,
-    name: `Import Admin ${id.slice(0, 8)}`,
-    role: "admin",
-    active: true,
-    accountStatus: "active",
-    passwordHash: "test-hash",
+async function upload(input: {
+  actor: Actor;
+  fileName: string;
+  fileContent: string;
+  reportingDate?: string;
+}) {
+  const result = await createDialerPreviewBatch({
+    actor: input.actor,
+    source: "dialer",
+    fileName: input.fileName,
+    fileContent: input.fileContent,
+    selectedReportingDate: input.reportingDate ?? "2099-01-01",
   });
-  return { id, role: "admin", teamIds: [] };
+  batchIds.push(result.batchId);
+  return result;
 }
 
-async function createManagerActor(teamIds: string[]): Promise<Actor> {
-  const id = newId();
-  profileIds.push(id);
-  await getDb().insert(profiles).values({
-    id,
-    email: `${id}@example.test`,
-    name: `Import Manager ${id.slice(0, 8)}`,
-    role: "manager",
-    active: true,
-    accountStatus: "active",
-    passwordHash: "test-hash",
-  });
-  return { id, role: "manager", teamIds };
+async function batchStatus(batchId: string) {
+  const [batch] = await getDb()
+    .select({ status: dialerImportBatches.status })
+    .from(dialerImportBatches)
+    .where(eq(dialerImportBatches.id, batchId));
+  return batch?.status;
 }
 
-describe("dialer import service integration", () => {
-  afterEach(async () => {
-    const batches = batchIds.splice(0);
-    const profilesToDelete = profileIds.splice(0);
-    const teamsToDelete = teamIds.splice(0);
+async function activeCalls(agentProfileId: string, date = "2099-01-01") {
+  const rows = await listActiveDialerMetrics();
+  return rows
+    .filter(
+      (row) =>
+        row.agentProfileId === agentProfileId && row.metricDate === date,
+    )
+    .reduce((total, row) => total + row.calls, 0);
+}
 
-    if (batches.length > 0) {
-      await getDb()
-        .delete(dialerAgentHourlyMetrics)
-        .where(inArray(dialerAgentHourlyMetrics.batchId, batches));
-    }
+afterEach(async () => {
+  const batches = batchIds.splice(0);
+  const createdProfiles = profileIds.splice(0);
+  const createdTeams = teamIds.splice(0);
 
-    if (profilesToDelete.length > 0) {
-      await getDb()
-        .delete(dialerAgentHourlyMetrics)
-        .where(inArray(dialerAgentHourlyMetrics.agentProfileId, profilesToDelete));
-    }
+  if (createdTeams.length > 0) {
+    await getDb()
+      .update(dialerDatasetScopes)
+      .set({ activeVersionId: null })
+      .where(inArray(dialerDatasetScopes.teamId, createdTeams));
+  }
 
-    if (batches.length > 0) {
-      await getDb().delete(importErrors).where(inArray(importErrors.batchId, batches));
-      await getDb()
-        .delete(dialerImportBatches)
-        .where(inArray(dialerImportBatches.id, batches));
-    }
+  if (batches.length > 0) {
+    await getDb()
+      .delete(dialerAgentHourlyMetrics)
+      .where(inArray(dialerAgentHourlyMetrics.batchId, batches));
+    await getDb()
+      .delete(dialerImportRows)
+      .where(inArray(dialerImportRows.batchId, batches));
+    await getDb()
+      .delete(importErrors)
+      .where(inArray(importErrors.batchId, batches));
+    await getDb()
+      .delete(dialerDatasetVersions)
+      .where(inArray(dialerDatasetVersions.importBatchId, batches));
+    await getDb()
+      .delete(dialerImportBatches)
+      .where(inArray(dialerImportBatches.id, batches));
+  }
 
-    if (profilesToDelete.length > 0) {
-      await getDb()
-        .delete(auditLogs)
-        .where(
-          or(
-            inArray(auditLogs.actorProfileId, profilesToDelete),
-            inArray(auditLogs.entityId, profilesToDelete),
-          ),
-        );
-      await getDb()
-        .delete(sourceUserMappings)
-        .where(inArray(sourceUserMappings.profileId, profilesToDelete));
-      await getDb()
-        .delete(teamMemberships)
-        .where(inArray(teamMemberships.profileId, profilesToDelete));
-      await getDb().delete(profiles).where(inArray(profiles.id, profilesToDelete));
-    }
+  if (createdTeams.length > 0) {
+    await getDb()
+      .delete(dialerDatasetScopes)
+      .where(inArray(dialerDatasetScopes.teamId, createdTeams));
+  }
 
-    if (teamsToDelete.length > 0) {
-      await getDb().delete(teams).where(inArray(teams.id, teamsToDelete));
-    }
-  });
+  if (createdProfiles.length > 0) {
+    await getDb()
+      .delete(auditLogs)
+      .where(
+        or(
+          inArray(auditLogs.actorProfileId, createdProfiles),
+          inArray(auditLogs.entityId, [...createdProfiles, ...batches]),
+        ),
+      );
+    await getDb()
+      .delete(sourceUserMappings)
+      .where(inArray(sourceUserMappings.profileId, createdProfiles));
+    await getDb()
+      .delete(teamMemberships)
+      .where(inArray(teamMemberships.profileId, createdProfiles));
+    await getDb()
+      .delete(profiles)
+      .where(inArray(profiles.id, createdProfiles));
+  }
 
-  it("recognizes invited mapped agents as mapped new rows", async () => {
-    const actor = await createAdminActor();
-    const teamId = await createTeam("Invited Import Team");
-    await createMappedAgent({
-      teamId,
-      accountStatus: "invited",
-      dialerName: "Invited Agent",
+  if (createdTeams.length > 0) {
+    await getDb().delete(teams).where(inArray(teams.id, createdTeams));
+  }
+});
+
+describe("versioned dialer import service integration", () => {
+  it("stores a valid CSV as a permanent ready draft without changing live data", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Draft Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Draft Agent");
+    const draft = await upload({
+      actor: admin,
+      fileName: "draft.csv",
+      fileContent: csvFor({ agentName: agent.dialerName }),
     });
 
-    const { batchId, preview } = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "invited.csv",
-      fileContent: csvFor("invited   agent"),
-    });
-    batchIds.push(batchId);
+    expect(draft.status).toBe("ready_to_publish");
+    expect(draft.validation.errors).toEqual([]);
+    expect(await activeCalls(agent.id)).toBe(0);
 
-    expect(preview.fileSummary.uniqueMappedAgents).toBe(1);
-    expect(preview.fileSummary.unknownRows).toBe(0);
-    expect(preview.fileSummary.newRows).toBe(1);
-    expect(preview.agents[0]?.mappingStatus).toBe("mapped");
-    expect(preview.agents[0]?.calls).toBe(5);
-  });
-
-  it("recalculates pending previews after a mapping edit", async () => {
-    const actor = await createAdminActor();
-    const teamId = await createTeam("Edit Import Team");
-    const profileId = await createMappedAgent({
-      teamId,
-      accountStatus: "active",
-      dialerName: "Old Dialer",
-    });
-    const [mapping] = await getDb()
-      .select()
-      .from(sourceUserMappings)
-      .where(eq(sourceUserMappings.profileId, profileId))
-      .limit(1);
-    const { batchId } = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "old.csv",
-      fileContent: csvFor("Old Dialer"),
-    });
-    batchIds.push(batchId);
-
-    await editDialerMapping(actor, {
-      mappingId: mapping.id,
-      sourceAgentName: "Corrected Dialer",
-    });
-
-    const recalculatedOld = await getStoredImportPreview({ actor, batchId });
-    expect(recalculatedOld?.preview.fileSummary.uniqueMappedAgents).toBe(0);
-    expect(recalculatedOld?.preview.fileSummary.unknownRows).toBe(1);
-
-    const corrected = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "corrected.csv",
-      fileContent: csvFor("Corrected Dialer"),
-    });
-    batchIds.push(corrected.batchId);
-
-    expect(corrected.preview.fileSummary.uniqueMappedAgents).toBe(1);
-    expect(corrected.preview.fileSummary.newRows).toBe(1);
-  });
-
-  it("shows inactive mapped accounts as mapped with a warning", async () => {
-    const actor = await createAdminActor();
-    const teamId = await createTeam("Inactive Import Team");
-    await createMappedAgent({
-      teamId,
-      accountStatus: "deactivated",
-      dialerName: "Inactive Agent",
-    });
-
-    const { batchId, preview } = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "inactive.csv",
-      fileContent: csvFor("Inactive Agent"),
-    });
-    batchIds.push(batchId);
-
-    expect(preview.fileSummary.uniqueMappedAgents).toBe(1);
-    expect(preview.fileSummary.unknownRows).toBe(0);
-    expect(preview.rows[0]?.warningMessage).toContain("deactivated");
-  });
-
-  it("replaces stale preview errors when mappings are resolved", async () => {
-    const actor = await createAdminActor();
-    const { batchId, preview } = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "mapped-later.csv",
-      fileContent: csvFor("Mapped Later"),
-    });
-    batchIds.push(batchId);
-
-    expect(preview.fileSummary.unknownRows).toBe(1);
-    expect(await importErrorCount(batchId)).toBe(1);
-
-    await getStoredImportPreview({ actor, batchId });
-    await getStoredImportPreview({ actor, batchId });
-    expect(await importErrorCount(batchId)).toBe(1);
-
-    const teamId = await createTeam("Mapped Later Team");
-    await createMappedAgent({
-      teamId,
-      accountStatus: "invited",
-      dialerName: "Mapped Later",
-    });
-
-    const refreshed = await getStoredImportPreview({ actor, batchId });
-
-    expect(refreshed?.preview.fileSummary.uniqueMappedAgents).toBe(1);
-    expect(refreshed?.preview.fileSummary.unknownRows).toBe(0);
-    expect(refreshed?.preview.fileSummary.newRows).toBe(1);
-    expect(await importErrorCount(batchId)).toBe(0);
-  });
-
-  it("removes stale invalid preview errors after a successful re-preview", async () => {
-    const actor = await createAdminActor();
-    const teamId = await createTeam("Stale Invalid Team");
-    await createMappedAgent({
-      teamId,
-      accountStatus: "active",
-      dialerName: "Stale Invalid",
-    });
-    const { batchId, preview } = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "stale-invalid.csv",
-      fileContent: csvFor("Stale Invalid"),
-    });
-    batchIds.push(batchId);
-
-    expect(preview.fileSummary.invalidRows).toBe(0);
-    await getDb().insert(importErrors).values({
-      id: newId(),
-      batchId,
-      rowNumber: 2,
-      status: "invalid",
-      message: "Stale parser error.",
-      rawRow: { agent: "Stale Invalid" },
-    });
-    expect(await importErrorCount(batchId)).toBe(1);
-
-    const refreshed = await getStoredImportPreview({ actor, batchId });
-
-    expect(refreshed?.preview.fileSummary.invalidRows).toBe(0);
-    expect(await importErrorCount(batchId)).toBe(0);
-  });
-
-  it("partially confirms mapped rows and later imports newly mapped rows without duplicates", async () => {
-    const actor = await createAdminActor();
-    const teamId = await createTeam("Partial Import Team");
-    const alphaProfileId = await createMappedAgent({
-      teamId,
-      accountStatus: "active",
-      dialerName: "Partial Alpha",
-    });
-    const fileContent = csvFromRows([
-      "Partial Alpha,2026-07-20,0,3600,600,1200,60,60,300,300,0,5",
-      "Partial Alpha,2026-07-20,1,3600,600,1200,60,60,300,300,0,7",
-      "Partial Beta,2026-07-20,0,3600,600,1200,60,60,300,300,0,11",
-    ]);
-    const { batchId, preview } = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "partial.csv",
-      fileContent,
-    });
-    batchIds.push(batchId);
-
-    expect(preview.fileSummary.mappedRowsToImport).toBe(2);
-    expect(preview.fileSummary.unmappedRowsToSkip).toBe(1);
-    expect(getImportConfirmationBlockReason(preview)).toBeNull();
-    await expect(
-      confirmDialerImportBatch({ actor, batchId }),
-    ).rejects.toThrow("Skipped rows acknowledgement is required");
-
-    await confirmDialerImportBatch({
-      actor,
-      batchId,
-      allowPartialImport: true,
-    });
-
-    const [partialBatch] = await getDb()
-      .select({
-        status: dialerImportBatches.status,
-        confirmedById: dialerImportBatches.confirmedById,
-        previewSummary: dialerImportBatches.previewSummary,
-      })
-      .from(dialerImportBatches)
-      .where(eq(dialerImportBatches.id, batchId));
-    const firstMetrics = await getDb()
-      .select({
-        agentProfileId: dialerAgentHourlyMetrics.agentProfileId,
-        metricDate: dialerAgentHourlyMetrics.metricDate,
-        metricHour: dialerAgentHourlyMetrics.metricHour,
-      })
-      .from(dialerAgentHourlyMetrics)
-      .where(eq(dialerAgentHourlyMetrics.batchId, batchId));
-
-    expect(partialBatch.status).toBe("partially_confirmed");
-    expect(partialBatch.confirmedById).toBe(actor.id);
-    expect(partialBatch.previewSummary).toMatchObject({
-      importedNewRows: 2,
-      updatedRows: 0,
-      skippedUnmappedRows: 1,
-      unresolvedAgentCount: 1,
-    });
-    expect(firstMetrics).toHaveLength(2);
-    expect(firstMetrics.every((row) => row.agentProfileId === alphaProfileId)).toBe(
-      true,
-    );
-    expect(await importErrorCount(batchId)).toBe(1);
-
-    const betaProfileId = await createMappedAgent({
-      teamId,
-      accountStatus: "active",
-      dialerName: "Partial Beta",
-    });
-    const refreshed = await getStoredImportPreview({ actor, batchId });
-
-    expect(refreshed?.preview.fileSummary.unmappedRowsToSkip).toBe(0);
-    expect(refreshed?.preview.summary.unchanged).toBe(2);
-    expect(refreshed?.preview.summary.new).toBe(1);
-    expect(refreshed?.preview.fileSummary.mappedRowsToImport).toBe(1);
-    expect(await importErrorCount(batchId)).toBe(0);
-
-    await confirmDialerImportBatch({ actor, batchId });
-
-    const [confirmedBatch] = await getDb()
-      .select({
-        status: dialerImportBatches.status,
-        previewSummary: dialerImportBatches.previewSummary,
-      })
-      .from(dialerImportBatches)
-      .where(eq(dialerImportBatches.id, batchId));
-    const finalMetrics = await getDb()
-      .select({
-        agentProfileId: dialerAgentHourlyMetrics.agentProfileId,
-        metricDate: dialerAgentHourlyMetrics.metricDate,
-        metricHour: dialerAgentHourlyMetrics.metricHour,
-      })
-      .from(dialerAgentHourlyMetrics)
-      .where(inArray(dialerAgentHourlyMetrics.agentProfileId, [
-        alphaProfileId,
-        betaProfileId,
-      ]));
-    const metricKeys = new Set(
-      finalMetrics.map(
-        (row) => `${row.agentProfileId}:${row.metricDate}:${row.metricHour}`,
-      ),
-    );
-
-    expect(confirmedBatch.status).toBe("confirmed");
-    expect(confirmedBatch.previewSummary).toMatchObject({
-      importedNewRows: 1,
-      updatedRows: 0,
-      unchangedRows: 2,
-      skippedUnmappedRows: 0,
-      unresolvedAgentCount: 0,
-    });
-    expect(finalMetrics).toHaveLength(3);
-    expect(metricKeys.size).toBe(3);
-    expect(await importErrorCount(batchId)).toBe(0);
-
-    const duplicate = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "partial-copy.csv",
-      fileContent,
-    });
-    batchIds.push(duplicate.batchId);
-
-    expect(duplicate.preview.duplicateFile).toBe(true);
-    expect(duplicate.preview.fileSummary.mappedRowsToImport).toBe(0);
-    expect(getImportConfirmationBlockReason(duplicate.preview)).toContain(
-      "Duplicate file blocked.",
-    );
-    await expect(
-      confirmDialerImportBatch({ actor, batchId: duplicate.batchId }),
-    ).rejects.toThrow("Duplicate file blocked.");
-  });
-
-  it("lets managers import own-team rows while out-of-scope rows remain skipped", async () => {
-    const ownTeamId = await createTeam("Manager Own Scope Team");
-    const otherTeamId = await createTeam("Manager Other Scope Team");
-    const manager = await createManagerActor([ownTeamId]);
-    const ownProfileId = await createMappedAgent({
-      teamId: ownTeamId,
-      accountStatus: "active",
-      dialerName: "Scoped Alpha",
-    });
-    const otherProfileId = await createMappedAgent({
-      teamId: otherTeamId,
-      accountStatus: "active",
-      dialerName: "Scoped Beta",
-    });
-    const fileContent = csvFromRows([
-      "Scoped Alpha,2026-07-20,0,3600,600,1200,60,60,300,300,0,5",
-      "Scoped Beta,2026-07-20,0,3600,600,1200,60,60,300,300,0,8",
-    ]);
-    const { batchId, preview } = await createDialerPreviewBatch({
-      actor: manager,
-      source: "dialer",
-      fileName: "manager-scope.csv",
-      fileContent,
-    });
-    batchIds.push(batchId);
-
-    expect(preview.fileSummary.mappedRowsToImport).toBe(1);
-    expect(preview.fileSummary.outOfScopeRowsToSkip).toBe(1);
-    expect(getImportConfirmationBlockReason(preview)).toBeNull();
-
-    await confirmDialerImportBatch({
-      actor: manager,
-      batchId,
-      allowPartialImport: true,
-    });
-
-    const managerMetrics = await getDb()
-      .select({
-        agentProfileId: dialerAgentHourlyMetrics.agentProfileId,
-      })
-      .from(dialerAgentHourlyMetrics)
-      .where(eq(dialerAgentHourlyMetrics.batchId, batchId));
     const [batch] = await getDb()
-      .select({ status: dialerImportBatches.status })
+      .select()
       .from(dialerImportBatches)
-      .where(eq(dialerImportBatches.id, batchId));
+      .where(eq(dialerImportBatches.id, draft.batchId));
+    const staged = await getDb()
+      .select()
+      .from(dialerImportRows)
+      .where(eq(dialerImportRows.batchId, draft.batchId));
+    const metrics = await getDb()
+      .select()
+      .from(dialerAgentHourlyMetrics)
+      .where(eq(dialerAgentHourlyMetrics.batchId, draft.batchId));
 
-    expect(batch.status).toBe("partially_confirmed");
-    expect(managerMetrics).toEqual([{ agentProfileId: ownProfileId }]);
-    expect(managerMetrics).not.toContainEqual({ agentProfileId: otherProfileId });
-
-    const noTeamManager = await createManagerActor([]);
-    const noTeamPreview = await createDialerPreviewBatch({
-      actor: noTeamManager,
-      source: "dialer",
-      fileName: "manager-no-team.csv",
-      fileContent,
-    });
-    batchIds.push(noTeamPreview.batchId);
-
-    expect(noTeamPreview.preview.fileSummary.mappedRowsToImport).toBe(0);
-    expect(noTeamPreview.preview.fileSummary.outOfScopeRowsToSkip).toBe(2);
-    expect(getImportConfirmationBlockReason(noTeamPreview.preview)).toContain(
-      "No mapped new or changed rows exist.",
-    );
-    await expect(
-      confirmDialerImportBatch({
-        actor: noTeamManager,
-        batchId: noTeamPreview.batchId,
-        allowPartialImport: true,
-      }),
-    ).rejects.toThrow("No mapped new or changed rows exist.");
+    expect(batch.rawFileContent).toContain(agent.dialerName);
+    expect(batch.fileSizeBytes).toBeGreaterThan(0);
+    expect(staged).toHaveLength(1);
+    expect(metrics).toHaveLength(1);
   });
 
-  it("blocks confirmation when an importable mapped agent has invalid rows", async () => {
-    const actor = await createAdminActor();
-    const teamId = await createTeam("Invalid Mapped Team");
-    await createMappedAgent({
-      teamId,
-      accountStatus: "active",
-      dialerName: "Invalid Alpha",
+  it("retains invalid headers as validation failure and never exposes staged data", async () => {
+    const admin = await createActor("admin");
+    const draft = await upload({
+      actor: admin,
+      fileName: "invalid-headers.csv",
+      fileContent: "Agent,Date\nNobody,2099-01-01\n",
     });
-    const { batchId, preview } = await createDialerPreviewBatch({
-      actor,
-      source: "dialer",
-      fileName: "invalid-mapped.csv",
-      fileContent: csvFromRows([
-        "Invalid Alpha,2026-07-20,0,3600,600,1200,60,60,300,300,0,5",
-        "Invalid Alpha,2026-07-20,25,3600,600,1200,60,60,300,300,0,5",
-      ]),
-    });
-    batchIds.push(batchId);
 
-    expect(preview.fileSummary.mappedRowsToImport).toBe(1);
-    expect(preview.fileSummary.invalidMappedRows).toBe(1);
-    expect(getImportConfirmationBlockReason(preview)).toContain(
-      "invalid mapped row",
+    expect(draft.status).toBe("validation_failed");
+    expect(draft.validation.errors.join(" ")).toContain(
+      "Missing required CSV headers",
+    );
+    expect(await batchStatus(draft.batchId)).toBe("validation_failed");
+  });
+
+  it("publishes the first version atomically", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Publish Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Publish Agent");
+    const draft = await upload({
+      actor: admin,
+      fileName: "first.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 5 }),
+    });
+
+    await publishDialerImportBatch({ actor: admin, batchId: draft.batchId });
+
+    expect(await batchStatus(draft.batchId)).toBe("active");
+    expect(await activeCalls(agent.id)).toBe(5);
+
+    const [scope] = await getDb()
+      .select()
+      .from(dialerDatasetScopes)
+      .where(eq(dialerDatasetScopes.teamId, teamId));
+    const [version] = await getDb()
+      .select()
+      .from(dialerDatasetVersions)
+      .where(eq(dialerDatasetVersions.importBatchId, draft.batchId));
+
+    expect(scope.activeVersionId).toBe(version.id);
+    expect(version.status).toBe("active");
+  });
+
+  it("publishing a second snapshot supersedes the previous version", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Supersede Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Supersede Agent");
+    const first = await upload({
+      actor: admin,
+      fileName: "version-1.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 5 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
+    const second = await upload({
+      actor: admin,
+      fileName: "version-2.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 7 }),
+    });
+
+    await publishDialerImportBatch({ actor: admin, batchId: second.batchId });
+
+    expect(await activeCalls(agent.id)).toBe(7);
+    expect(await batchStatus(first.batchId)).toBe("superseded");
+    expect(await batchStatus(second.batchId)).toBe("active");
+  });
+
+  it("rollback reactivates the previous valid version", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Rollback Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Rollback Agent");
+    const first = await upload({
+      actor: admin,
+      fileName: "rollback-1.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 5 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
+    const second = await upload({
+      actor: admin,
+      fileName: "rollback-2.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 8 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: second.batchId });
+
+    await rollbackDialerImportBatch({
+      actor: admin,
+      batchId: second.batchId,
+      reason: "The second file contains incorrect values.",
+    });
+
+    expect(await activeCalls(agent.id)).toBe(5);
+    expect(await batchStatus(first.batchId)).toBe("active");
+    expect(await batchStatus(second.batchId)).toBe("rolled_back");
+  });
+
+  it("restores a selected historical version without deleting later versions", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Restore Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Restore Agent");
+    const first = await upload({
+      actor: admin,
+      fileName: "restore-1.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 4 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
+    const second = await upload({
+      actor: admin,
+      fileName: "restore-2.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 9 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: second.batchId });
+    await rollbackDialerImportBatch({
+      actor: admin,
+      batchId: second.batchId,
+      reason: "Temporarily restore the earlier values.",
+    });
+
+    await restoreDialerImportBatch({
+      actor: admin,
+      batchId: second.batchId,
+      reason: "The corrected second file has now been verified.",
+    });
+
+    expect(await activeCalls(agent.id)).toBe(9);
+    const versions = await getDb()
+      .select()
+      .from(dialerDatasetVersions)
+      .where(
+        inArray(dialerDatasetVersions.importBatchId, [
+          first.batchId,
+          second.batchId,
+        ]),
+      );
+    expect(versions).toHaveLength(2);
+  });
+
+  it("isolates rollback by team and reporting date", async () => {
+    const admin = await createActor("admin");
+    const firstTeam = await createTeam(`Isolation A ${newId()}`);
+    const secondTeam = await createTeam(`Isolation B ${newId()}`);
+    const firstAgent = await createMappedAgent(firstTeam, "Isolation A");
+    const secondAgent = await createMappedAgent(secondTeam, "Isolation B");
+    const firstBase = await upload({
+      actor: admin,
+      fileName: "isolation-a-1.csv",
+      fileContent: csvFor({ agentName: firstAgent.dialerName, calls: 2 }),
+    });
+    const secondBase = await upload({
+      actor: admin,
+      fileName: "isolation-b-1.csv",
+      fileContent: csvFor({
+        agentName: secondAgent.dialerName,
+        calls: 3,
+        date: "2099-01-02",
+      }),
+      reportingDate: "2099-01-02",
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: firstBase.batchId });
+    await publishDialerImportBatch({ actor: admin, batchId: secondBase.batchId });
+    const firstChanged = await upload({
+      actor: admin,
+      fileName: "isolation-a-2.csv",
+      fileContent: csvFor({ agentName: firstAgent.dialerName, calls: 5 }),
+    });
+    await publishDialerImportBatch({
+      actor: admin,
+      batchId: firstChanged.batchId,
+    });
+
+    await rollbackDialerImportBatch({
+      actor: admin,
+      batchId: firstChanged.batchId,
+      reason: "Undo only the first team and date.",
+    });
+
+    expect(await activeCalls(firstAgent.id)).toBe(2);
+    expect(await activeCalls(secondAgent.id, "2099-01-02")).toBe(3);
+  });
+
+  it("detects exact duplicate checksums and requires an explicit admin override", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Duplicate Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Duplicate Agent");
+    const fileContent = csvFor({ agentName: agent.dialerName, calls: 5 });
+    const first = await upload({
+      actor: admin,
+      fileName: "duplicate.csv",
+      fileContent,
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
+    const duplicate = await upload({
+      actor: admin,
+      fileName: "duplicate-copy.csv",
+      fileContent,
+    });
+
+    expect(duplicate.validation.warnings.join(" ")).toContain(
+      "already uploaded",
     );
     await expect(
-      confirmDialerImportBatch({
-        actor,
-        batchId,
-        allowPartialImport: true,
+      publishDialerImportBatch({
+        actor: admin,
+        batchId: duplicate.batchId,
       }),
-    ).rejects.toThrow("invalid mapped row");
+    ).rejects.toThrow("Warning override reason");
+
+    await publishDialerImportBatch({
+      actor: admin,
+      batchId: duplicate.batchId,
+      warningOverrideReason:
+        "Verified intentional republish of the identical source file.",
+    });
+
+    expect(await batchStatus(duplicate.batchId)).toBe("active");
+  });
+
+  it("does not flag identical bytes when the parsed dataset scope changed", async () => {
+    const admin = await createActor("admin");
+    const firstTeamId = await createTeam(`Duplicate Scope A ${newId()}`);
+    const secondTeamId = await createTeam(`Duplicate Scope B ${newId()}`);
+    const agent = await createMappedAgent(
+      firstTeamId,
+      "Duplicate Scope Agent",
+    );
+    const fileContent = csvFor({ agentName: agent.dialerName });
+
+    await upload({
+      actor: admin,
+      fileName: "same-bytes-first-scope.csv",
+      fileContent,
+    });
+    await getDb()
+      .update(teamMemberships)
+      .set({ active: false, endedAt: new Date() })
+      .where(
+        and(
+          eq(teamMemberships.profileId, agent.id),
+          eq(teamMemberships.teamId, firstTeamId),
+        ),
+      );
+    await getDb().insert(teamMemberships).values({
+      id: newId(),
+      teamId: secondTeamId,
+      profileId: agent.id,
+      role: "agent",
+      active: true,
+    });
+
+    const second = await upload({
+      actor: admin,
+      fileName: "same-bytes-second-scope.csv",
+      fileContent,
+    });
+
+    expect(second.preview.duplicateFile).toBe(false);
+    expect(second.validation.warnings.join(" ")).not.toContain(
+      "already uploaded",
+    );
+  });
+
+  it("does not let managers override warnings", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Manager Warning ${newId()}`);
+    const manager = await createActor("manager", [teamId]);
+    const agent = await createMappedAgent(teamId, "Manager Warning Agent");
+    const fileContent = csvFor({ agentName: agent.dialerName });
+    const first = await upload({
+      actor: admin,
+      fileName: "manager-warning-base.csv",
+      fileContent,
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
+    const duplicate = await upload({
+      actor: manager,
+      fileName: "manager-warning-copy.csv",
+      fileContent,
+    });
+
+    await expect(
+      publishDialerImportBatch({
+        actor: manager,
+        batchId: duplicate.batchId,
+        warningOverrideReason: "Manager attempts a warning override.",
+      }),
+    ).rejects.toThrow("Only an administrator");
+  });
+
+  it("rejects unauthorized upload, publish, and rollback callers", async () => {
+    const admin = await createActor("admin");
+    const agentActor = await createActor("agent");
+    const manager = await createActor("manager");
+    const teamId = await createTeam(`Authorization Team ${newId()}`);
+    const mapped = await createMappedAgent(teamId, "Authorization Agent");
+
+    await expect(
+      createDialerPreviewBatch({
+        actor: agentActor,
+        source: "dialer",
+        fileName: "agent-upload.csv",
+        fileContent: csvFor({ agentName: mapped.dialerName }),
+      }),
+    ).rejects.toThrow("Agents cannot upload");
+
+    const draft = await upload({
+      actor: admin,
+      fileName: "authorization.csv",
+      fileContent: csvFor({ agentName: mapped.dialerName }),
+    });
+    await expect(
+      publishDialerImportBatch({ actor: manager, batchId: draft.batchId }),
+    ).rejects.toThrow("does not belong");
+    await expect(
+      rollbackDialerImportBatch({
+        actor: agentActor,
+        batchId: draft.batchId,
+        reason: "Unauthorized rollback attempt.",
+      }),
+    ).rejects.toThrow("Administrator access");
+  });
+
+  it("prevents blocking row errors from publishing", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Blocking Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Blocking Agent");
+    const draft = await upload({
+      actor: admin,
+      fileName: "blocking.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, hour: 25 }),
+    });
+
+    expect(draft.validation.errors.join(" ")).toContain(
+      "blocking validation errors",
+    );
+    await expect(
+      publishDialerImportBatch({ actor: admin, batchId: draft.batchId }),
+    ).rejects.toThrow("Blocking validation errors");
+    expect(await activeCalls(agent.id)).toBe(0);
+  });
+
+  it("requires an administrator reason for overrideable anomaly warnings", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Warning Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Warning Agent");
+    const first = await upload({
+      actor: admin,
+      fileName: "warning-base.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 5 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
+    const anomaly = await upload({
+      actor: admin,
+      fileName: "warning-anomaly.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 50 }),
+    });
+
+    expect(anomaly.validation.warnings.join(" ")).toContain(
+      "Total calls increased",
+    );
+    await expect(
+      publishDialerImportBatch({ actor: admin, batchId: anomaly.batchId }),
+    ).rejects.toThrow("Warning override reason");
+    await publishDialerImportBatch({
+      actor: admin,
+      batchId: anomaly.batchId,
+      warningOverrideReason: "The dialer confirms this expected call increase.",
+    });
+    expect(await activeCalls(agent.id)).toBe(50);
+  });
+
+  it("serializes concurrent publication so only one draft can become active", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Concurrency Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Concurrency Agent");
+    const base = await upload({
+      actor: admin,
+      fileName: "concurrency-base.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 5 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: base.batchId });
+    const left = await upload({
+      actor: admin,
+      fileName: "concurrency-left.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 6 }),
+    });
+    const right = await upload({
+      actor: admin,
+      fileName: "concurrency-right.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 7 }),
+    });
+
+    const results = await Promise.allSettled([
+      publishDialerImportBatch({ actor: admin, batchId: left.batchId }),
+      publishDialerImportBatch({ actor: admin, batchId: right.batchId }),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(
+      1,
+    );
+    const [scope] = await getDb()
+      .select()
+      .from(dialerDatasetScopes)
+      .where(eq(dialerDatasetScopes.teamId, teamId));
+    const activeVersions = await getDb()
+      .select()
+      .from(dialerDatasetVersions)
+      .where(
+        and(
+          eq(dialerDatasetVersions.scopeKey, scope.scopeKey),
+          eq(dialerDatasetVersions.status, "active"),
+        ),
+      );
+    expect(activeVersions).toHaveLength(1);
+  });
+
+  it("rolls back pointer and version changes when a publication transaction fails", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Transaction Failure ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Transaction Failure Agent");
+    const base = await upload({
+      actor: admin,
+      fileName: "transaction-base.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 5 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: base.batchId });
+    const draft = await upload({
+      actor: admin,
+      fileName: "transaction-draft.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 6 }),
+    });
+    const [scopeBefore] = await getDb()
+      .select()
+      .from(dialerDatasetScopes)
+      .where(eq(dialerDatasetScopes.teamId, teamId));
+    const [draftVersion] = await getDb()
+      .select()
+      .from(dialerDatasetVersions)
+      .where(eq(dialerDatasetVersions.importBatchId, draft.batchId));
+
+    await expect(
+      getDb().transaction(async (tx) => {
+        await tx
+          .update(dialerDatasetVersions)
+          .set({ status: "superseded" })
+          .where(eq(dialerDatasetVersions.id, scopeBefore.activeVersionId!));
+        await tx
+          .update(dialerDatasetVersions)
+          .set({ status: "active" })
+          .where(eq(dialerDatasetVersions.id, draftVersion.id));
+        await tx
+          .update(dialerDatasetScopes)
+          .set({ activeVersionId: draftVersion.id })
+          .where(eq(dialerDatasetScopes.scopeKey, scopeBefore.scopeKey));
+        throw new Error("Simulated database failure after pointer update.");
+      }),
+    ).rejects.toThrow("Simulated database failure");
+
+    const [scopeAfter] = await getDb()
+      .select()
+      .from(dialerDatasetScopes)
+      .where(eq(dialerDatasetScopes.scopeKey, scopeBefore.scopeKey));
+    const versionsAfter = await getDb()
+      .select({
+        id: dialerDatasetVersions.id,
+        status: dialerDatasetVersions.status,
+      })
+      .from(dialerDatasetVersions)
+      .where(
+        inArray(dialerDatasetVersions.id, [
+          scopeBefore.activeVersionId!,
+          draftVersion.id,
+        ]),
+      );
+
+    expect(scopeAfter.activeVersionId).toBe(scopeBefore.activeVersionId);
+    expect(
+      versionsAfter.find(
+        (version) => version.id === scopeBefore.activeVersionId,
+      )?.status,
+    ).toBe("active");
+    expect(
+      versionsAfter.find((version) => version.id === draftVersion.id)?.status,
+    ).toBe("draft");
+    expect(await activeCalls(agent.id)).toBe(5);
+  });
+
+  it("dashboard-facing active queries exclude unpublished and superseded rows", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Query Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Query Agent");
+    const first = await upload({
+      actor: admin,
+      fileName: "query-1.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 3 }),
+    });
+    const second = await upload({
+      actor: admin,
+      fileName: "query-2.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 8 }),
+    });
+
+    expect(await activeCalls(agent.id)).toBe(0);
+    await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
+    expect(await activeCalls(agent.id)).toBe(3);
+    await publishDialerImportBatch({ actor: admin, batchId: second.batchId });
+    expect(await activeCalls(agent.id)).toBe(8);
+  });
+
+  it("retains malformed uploads as failed validation without changing active data", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Malformed Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Malformed Agent");
+    const base = await upload({
+      actor: admin,
+      fileName: "malformed-base.csv",
+      fileContent: csvFor({ agentName: agent.dialerName, calls: 4 }),
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: base.batchId });
+    const malformed = await upload({
+      actor: admin,
+      fileName: "malformed.csv",
+      fileContent: malformedCsv(agent.dialerName),
+    });
+
+    expect(malformed.status).toBe("validation_failed");
+    expect(malformed.validation.errors.join(" ")).toContain("malformed");
+    expect(await activeCalls(agent.id)).toBe(4);
+  });
+
+  it("rejects a draft without deleting its file, staged rows, or history", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Reject Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Reject Agent");
+    const draft = await upload({
+      actor: admin,
+      fileName: "reject.csv",
+      fileContent: csvFor({ agentName: agent.dialerName }),
+    });
+
+    await rejectDialerImportBatch({
+      actor: admin,
+      batchId: draft.batchId,
+      reason: "The administrator selected the wrong reporting file.",
+    });
+
+    expect(await batchStatus(draft.batchId)).toBe("rejected");
+    const [batch] = await getDb()
+      .select()
+      .from(dialerImportBatches)
+      .where(eq(dialerImportBatches.id, draft.batchId));
+    const staged = await getDb()
+      .select()
+      .from(dialerImportRows)
+      .where(eq(dialerImportRows.batchId, draft.batchId));
+    expect(batch.rawFileContent).toContain(agent.dialerName);
+    expect(staged).toHaveLength(1);
+    expect(await activeCalls(agent.id)).toBe(0);
   });
 });

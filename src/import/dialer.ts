@@ -236,6 +236,7 @@ export type ImportPreviewRow = HourlyPreviewRow & {
 export type ImportPreview = {
   fileHash: string;
   duplicateFile: boolean;
+  parseError?: string;
   headers: string[];
   missingHeaders: string[];
   totalCsvRows: number;
@@ -897,6 +898,7 @@ function buildFileSummary(input: {
 function emptyPreview(input: {
   fileHash: string;
   duplicateFile: boolean;
+  parseError?: string;
   headers: string[];
   missingHeaders: string[];
   totalCsvRows: number;
@@ -910,6 +912,7 @@ function emptyPreview(input: {
   return {
     fileHash: input.fileHash,
     duplicateFile: input.duplicateFile,
+    parseError: input.parseError,
     headers: input.headers,
     missingHeaders: input.missingHeaders,
     totalCsvRows: input.totalCsvRows,
@@ -933,18 +936,34 @@ export function previewDialerCsv(input: {
   const fileHash = sha256(input.fileContent);
   const duplicateFile = input.existingFileHashes.has(fileHash);
   let detectedHeaders: string[] = [];
-  const records = parse(input.fileContent, {
-    bom: true,
-    columns: (headers: string[]) => {
-      detectedHeaders = headers.map((header) =>
-        header.replace(/^\uFEFF/, "").trim(),
-      );
-      return headers.map(normalizeDialerHeader);
-    },
-    relax_column_count: true,
-    skip_empty_lines: true,
-    trim: true,
-  }) as Record<string, string>[];
+  let records: Record<string, string>[];
+
+  try {
+    records = parse(input.fileContent, {
+      bom: true,
+      columns: (headers: string[]) => {
+        detectedHeaders = headers.map((header) =>
+          header.replace(/^\uFEFF/, "").trim(),
+        );
+        return headers.map(normalizeDialerHeader);
+      },
+      relax_column_count: true,
+      skip_empty_lines: true,
+      trim: true,
+    }) as Record<string, string>[];
+  } catch {
+    return emptyPreview({
+      fileHash,
+      duplicateFile,
+      parseError: "The CSV is malformed and could not be parsed.",
+      headers: detectedHeaders,
+      missingHeaders: validateDialerHeaders(
+        detectedHeaders.map(normalizeDialerHeader),
+      ),
+      totalCsvRows: 0,
+      summary: emptySummary(),
+    });
+  }
   const headers = detectedHeaders;
   const normalizedHeaders = detectedHeaders.map(normalizeDialerHeader);
   const missingHeaders = validateDialerHeaders(normalizedHeaders);

@@ -10,7 +10,6 @@ import {
 } from "@/components/dashboard/dashboard-primitives";
 import { getCurrentUser } from "@/auth/session";
 import { previewImportAction } from "@/import/actions";
-import { getImportConfirmationBlockReasons } from "@/import/dialer";
 import { getStoredImportPreview } from "@/import/service";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +21,14 @@ const confirmErrorMessages: Record<string, string> = {
   preview_blocked:
     "Import could not be completed because the preview has blocking issues.",
   preview_expired: "Preview expired. Upload the file again.",
+  reason_required: "Enter a reason of at least five characters.",
+  stale_draft:
+    "The active dataset changed after this review. Review the refreshed comparison and publish again.",
+  warning_override_forbidden:
+    "Only an administrator can publish a draft that contains warnings.",
+  warning_override_required:
+    "Enter an administrator warning-override reason before publishing.",
+  reject_failed: "The draft could not be rejected.",
 };
 
 export default async function ImportPage({
@@ -32,6 +39,7 @@ export default async function ImportPage({
     confirmed?: string;
     confirmError?: string;
     error?: string;
+    rejected?: string;
   }>;
 }) {
   const user = await getCurrentUser();
@@ -48,9 +56,7 @@ export default async function ImportPage({
   const storedPreview = params.preview
     ? await getStoredImportPreview({ actor: user, batchId: params.preview })
     : null;
-  const disabledReasons = storedPreview
-    ? getImportConfirmationBlockReasons(storedPreview.preview)
-    : [];
+  const disabledReasons = storedPreview?.validation.errors ?? [];
 
   return (
     <DashboardShell user={user}>
@@ -68,11 +74,24 @@ export default async function ImportPage({
                 Upload source file
               </h2>
               <p className="ui-card__subtitle">
-                CSV files are validated before any records are saved.
+                Every upload is retained privately. Dashboard data changes only
+                after the reviewed draft is published.
               </p>
             </div>
           </div>
           <form action={previewImportAction}>
+            <label className="ui-label mt-4">
+              Reporting date
+              <input
+                className="ui-input"
+                name="reportingDate"
+                required
+                type="date"
+              />
+              <span className="ui-helper">
+                Used to warn when the CSV contains a different reporting date.
+              </span>
+            </label>
             <FileUploadField
               accept=".csv,text/csv"
               helperText="Choose a CSV export from your dialer. The filename appears here before preview."
@@ -88,7 +107,9 @@ export default async function ImportPage({
 
         {params.error ? (
           <StatusBanner tone="danger">
-            Upload a CSV file before previewing.
+            {params.error === "reporting_date"
+              ? "Choose the expected reporting date."
+              : "Upload a valid CSV file before previewing."}
           </StatusBanner>
         ) : null}
 
@@ -100,7 +121,15 @@ export default async function ImportPage({
         ) : null}
 
         {params.confirmed ? (
-          <StatusBanner tone="success">Import confirmed.</StatusBanner>
+          <StatusBanner tone="success">
+            Import published. The dashboard now reads this active version.
+          </StatusBanner>
+        ) : null}
+
+        {params.rejected ? (
+          <StatusBanner tone="success">
+            Draft rejected. Its file and validation history were preserved.
+          </StatusBanner>
         ) : null}
 
         {params.preview && !storedPreview ? (
@@ -112,8 +141,8 @@ export default async function ImportPage({
               Preview unavailable
             </h2>
             <StatusBanner tone="danger">
-              Confirm import disabled: preview expired or does not belong to the
-              current user.
+              This draft is unavailable, no longer unpublished, or does not
+              belong to the current user.
             </StatusBanner>
             <SubmitButton disabled>
               Confirm import
@@ -126,7 +155,9 @@ export default async function ImportPage({
             batchId={storedPreview.batchId}
             disabledReasons={disabledReasons}
             fileName={storedPreview.fileName}
+            isAdmin={user.role === "admin"}
             preview={storedPreview.preview}
+            validation={storedPreview.validation}
           />
         ) : null}
       </div>

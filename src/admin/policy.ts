@@ -34,6 +34,9 @@ export const PERMISSION_GROUPS = [
       "imports.confirm",
       "imports.view_history",
       "imports.view_errors",
+      "imports.deactivate",
+      "imports.delete",
+      "imports.restore",
       "imports.company",
       "imports.team",
     ],
@@ -82,6 +85,9 @@ export const OVERRIDABLE_PERMISSION_GROUPS = [
       "imports.confirm",
       "imports.view_history",
       "imports.view_errors",
+      "imports.deactivate",
+      "imports.delete",
+      "imports.restore",
       "imports.company",
       "imports.team",
     ],
@@ -109,6 +115,9 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   "imports.confirm": "Confirm dialer imports",
   "imports.view_history": "View import history",
   "imports.view_errors": "View import errors",
+  "imports.deactivate": "Deactivate active imports and resolve their dataset scopes",
+  "imports.delete": "Permanently delete imports, including resolved active imports",
+  "imports.restore": "Restore valid historical import versions",
   "imports.company": "Import company-wide dialer data",
   "imports.team": "Import dialer data for assigned teams",
   "metrics.view_own": "View own metrics",
@@ -175,6 +184,20 @@ export const PERMISSION_PRESENTATION: Record<
     label: "View import errors",
     description: "Review validation and confirmation errors.",
   },
+  "imports.deactivate": {
+    label: "Deactivate active imports",
+    description:
+      "Remove an active import from dashboard calculations and choose its replacement.",
+  },
+  "imports.delete": {
+    label: "Permanently delete imports",
+    description:
+      "Permanently remove import records, stored files, and owned rows after resolving active data.",
+  },
+  "imports.restore": {
+    label: "Restore historical imports",
+    description: "Activate a valid historical version for the same dataset scope.",
+  },
   "imports.company": {
     label: "Import company-wide data",
     description: "Import operational data across the company.",
@@ -193,6 +216,9 @@ export const ADMIN_ONLY_PERMISSIONS = new Set([
   "audit.view_company",
   "metrics.view_company",
   "metrics.company",
+  "imports.deactivate",
+  "imports.delete",
+  "imports.restore",
 ]);
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<Role, string[]> = {

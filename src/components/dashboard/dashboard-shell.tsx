@@ -17,6 +17,7 @@ const importItem: DashboardNavItem = {
 };
 
 const adminItems: DashboardNavItem[] = [
+  { href: "/admin/imports", icon: "import", label: "Import History" },
   { href: "/admin/users", icon: "users", label: "Users & Access" },
   { href: "/admin/teams", icon: "teams", label: "Teams" },
   {

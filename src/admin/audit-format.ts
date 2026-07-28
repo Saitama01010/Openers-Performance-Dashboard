@@ -23,6 +23,19 @@ const EVENT_LABELS: Record<string, string> = {
   "permission.override.updated": "Individual permissions updated",
   "user.bulk_import_completed": "Bulk user import completed",
   "user.bulk_invitation_completed": "Bulk invitation completed",
+  "dialer_import.uploaded": "Dialer CSV uploaded",
+  "dialer_import.parsed": "Dialer CSV parsed",
+  "dialer_import.revalidated": "Dialer CSV revalidated",
+  "dialer_import.validation_failed": "Dialer CSV validation failed",
+  "dialer_import.failed": "Dialer CSV processing failed",
+  "dialer_import.rejected": "Dialer CSV draft rejected",
+  "dialer_import.published": "Dialer dataset version published",
+  "dialer_import.warning_overridden": "Import warnings overridden",
+  "dialer_import.duplicate_overridden": "Duplicate CSV override used",
+  "dialer_import.rolled_back": "Latest dialer import rolled back",
+  "dialer_import.historical_restored": "Historical dialer version restored",
+  "dialer_import.deactivated": "Active dialer import deactivated",
+  "dialer_import.deleted": "Deleted import audit record",
 };
 
 const FIELD_LABELS: Record<string, string> = {

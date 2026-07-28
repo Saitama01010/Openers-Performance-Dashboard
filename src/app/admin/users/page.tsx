@@ -19,6 +19,17 @@ import {
 } from "@/admin/policy";
 import type { Role } from "@/auth/authorization";
 import { getCurrentUser } from "@/auth/session";
+import {
+  ConfirmSubmitButton,
+  SubmitButton,
+} from "@/components/dashboard/action-controls";
+import {
+  EmptyTableRow,
+  PageHeader,
+  StatusBadge,
+  StatusBanner,
+  TableScroll,
+} from "@/components/dashboard/dashboard-primitives";
 
 export const dynamic = "force-dynamic";
 
@@ -79,31 +90,43 @@ export default async function AdminUsersPage({
   const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));
 
   return (
-    <section className="mx-auto max-w-7xl space-y-6 px-6 py-6">
-      <StatusMessage error={params.error} ok={params.ok} warning={params.warning} />
-
-      <section className="rounded-lg border border-border bg-surface p-5" id="create-user">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-muted">Admin only</p>
-            <h2 className="text-xl font-semibold">Users & Access</h2>
-          </div>
-          <Link
-            className="rounded-md border border-border px-3 py-2 text-sm font-medium"
-            href="/admin/teams"
-          >
+    <div className="dashboard-page">
+      <PageHeader
+        actions={
+          <Link className="ui-button ui-button--secondary" href="/admin/teams">
             Manage teams
           </Link>
+        }
+        description="Search accounts, review access, invite new users, and resolve dialer identity mappings."
+        eyebrow="Admin only"
+        title="Users and access"
+      />
+      <StatusMessage error={params.error} ok={params.ok} warning={params.warning} />
+
+      <section
+        aria-labelledby="account-filters-heading"
+        className="ui-card ui-card--padded"
+      >
+        <div className="ui-card__header">
+          <div>
+            <h2 className="ui-card__title" id="account-filters-heading">
+              Account filters
+            </h2>
+            <p className="ui-card__subtitle">
+              Narrow the account list without changing any records.
+            </p>
+          </div>
         </div>
 
-        <form className="mt-5 grid gap-3 md:grid-cols-6">
-          <label className="md:col-span-2 text-sm font-medium">
+        <form className="admin-filter-grid">
+          <label className="ui-label admin-filter-grid__search">
             Search
             <input
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+              className="ui-input"
               defaultValue={params.q ?? ""}
               name="q"
               placeholder="Name, email, or dialer name"
+              type="search"
             />
           </label>
           <FilterSelect defaultValue={params.role} label="Role" name="role" options={["admin", "manager", "agent"]} />
@@ -114,10 +137,10 @@ export default async function AdminUsersPage({
             name="invitation"
             options={invitationStatuses}
           />
-          <label className="text-sm font-medium">
+          <label className="ui-label">
             Team
             <select
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+              className="ui-select"
               defaultValue={params.teamId ?? ""}
               name="teamId"
             >
@@ -129,12 +152,12 @@ export default async function AdminUsersPage({
               ))}
             </select>
           </label>
-          <div className="flex items-end gap-2 md:col-span-6">
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          <div className="admin-filter-grid__actions">
+            <button className="ui-button ui-button--primary">
               Apply filters
             </button>
             <Link
-              className="rounded-md border border-border px-4 py-2 text-sm font-medium"
+              className="ui-button ui-button--secondary"
               href="/admin/users"
             >
               Clear filters
@@ -143,30 +166,30 @@ export default async function AdminUsersPage({
         </form>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Accounts</h2>
+      <section aria-labelledby="accounts-heading" className="ui-card">
+        <div className="ui-card__header">
+          <h2 className="ui-card__title" id="accounts-heading">
+            Accounts
+          </h2>
           <p className="text-sm text-muted">
             Page {pagination.page} of {totalPages}, {pagination.total} total
           </p>
         </div>
-        {users.length === 0 ? (
-          <p className="p-5 text-sm text-muted">No users match the current filters.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted">
+        <TableScroll label="User accounts">
+            <table className="ui-table">
+              <caption>Dashboard user accounts and access status</caption>
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Full name</th>
-                  <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3">Dialer agent name</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Team</th>
-                  <th className="px-4 py-3">Account status</th>
-                  <th className="px-4 py-3">Invitation</th>
-                  <th className="px-4 py-3">Last login</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3">Actions</th>
+                  <th scope="col">Full name</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">Dialer agent name</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Team</th>
+                  <th scope="col">Account status</th>
+                  <th scope="col">Invitation</th>
+                  <th scope="col">Last login</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -177,13 +200,39 @@ export default async function AdminUsersPage({
                     <td className="px-4 py-3">{user.dialerAgentName ?? "-"}</td>
                     <td className="px-4 py-3 capitalize">{user.role}</td>
                     <td className="px-4 py-3">{user.team?.teamName ?? "-"}</td>
-                    <td className="px-4 py-3 capitalize">{user.accountStatus}</td>
-                    <td className="px-4 py-3 capitalize">{user.invitationStatus}</td>
+                    <td className="px-4 py-3 capitalize">
+                      <StatusBadge
+                        tone={
+                          user.accountStatus === "active"
+                            ? "success"
+                            : user.accountStatus === "deactivated" ||
+                                user.accountStatus === "revoked"
+                              ? "danger"
+                              : "warning"
+                        }
+                      >
+                        {user.accountStatus}
+                      </StatusBadge>
+                    </td>
+                    <td className="px-4 py-3 capitalize">
+                      <StatusBadge
+                        tone={
+                          user.invitationStatus === "accepted"
+                            ? "success"
+                            : user.invitationStatus === "delivery failed" ||
+                                user.invitationStatus === "expired"
+                              ? "danger"
+                              : "neutral"
+                        }
+                      >
+                        {user.invitationStatus}
+                      </StatusBadge>
+                    </td>
                     <td className="px-4 py-3">{fmt(user.lastLoginAt)}</td>
                     <td className="px-4 py-3">{fmt(user.createdAt)}</td>
                     <td className="px-4 py-3">
                       <Link
-                        className="font-medium text-primary hover:underline"
+                        className="ui-link"
                         href={`/admin/users/${user.id}`}
                       >
                         View
@@ -191,32 +240,44 @@ export default async function AdminUsersPage({
                     </td>
                   </tr>
                 ))}
+                {users.length === 0 ? (
+                  <EmptyTableRow
+                    colSpan={10}
+                    description="Clear or adjust the current filters to see more accounts."
+                    title="No matching users"
+                  />
+                ) : null}
               </tbody>
             </table>
-          </div>
-        )}
-        <div className="flex justify-between border-t border-border px-4 py-3 text-sm">
+        </TableScroll>
+        <div className="pagination">
           <PaginationLink current={page} direction="previous" params={params} totalPages={totalPages} />
           <PaginationLink current={page} direction="next" params={params} totalPages={totalPages} />
         </div>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface p-5">
-        <h2 className="text-lg font-semibold">Create user</h2>
+      <section
+        aria-labelledby="create-user-heading"
+        className="ui-card ui-card--padded"
+        id="create-user"
+      >
+        <h2 className="ui-card__title" id="create-user-heading">
+          Create user
+        </h2>
         <form action={createUserAction} className="mt-4 grid gap-4 md:grid-cols-2">
-          <TextField label="Full name" name="name" required />
-          <TextField label="Login email" name="email" required type="email" />
-          <label className="text-sm font-medium">
+          <TextField autoComplete="name" label="Full name" name="name" required />
+          <TextField autoComplete="email" label="Login email" name="email" required type="email" />
+          <label className="ui-label">
             Role
-            <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" name="role" required>
+            <select className="ui-select" name="role" required>
               <option value="agent">Agent</option>
               <option value="manager">Manager</option>
               <option value="admin">Admin</option>
             </select>
           </label>
-          <label className="text-sm font-medium">
+          <label className="ui-label">
             Team
-            <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" name="teamId">
+            <select className="ui-select" name="teamId">
               <option value="">No team</option>
               {referenceData.teams.map((team) => (
                 <option disabled={!team.active} key={team.id} value={team.id}>
@@ -226,48 +287,53 @@ export default async function AdminUsersPage({
             </select>
           </label>
           <TextField defaultValue={params.dialerName ?? ""} label="Dialer agent name" name="dialerName" />
-          <label className="text-sm font-medium">
+          <label className="ui-label">
             Additional dialer aliases
             <textarea
-              className="mt-1 min-h-24 w-full rounded-md border border-border bg-background px-3 py-2"
+              className="ui-textarea"
               name="dialerAliases"
               placeholder="One alias per line"
             />
           </label>
-          <label className="flex items-center gap-2 text-sm font-medium md:col-span-2">
+          <label className="ui-checkbox-label md:col-span-2">
             <input name="sendInvitation" type="checkbox" defaultChecked />
             Send invitation immediately
           </label>
-          <details className="md:col-span-2 rounded-md border border-border p-4">
-            <summary className="cursor-pointer font-medium">Optional permission overrides</summary>
+          <details className="ui-details md:col-span-2">
+            <summary>Optional permission overrides</summary>
             <PermissionOverrideControls />
           </details>
           <div className="md:col-span-2">
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <SubmitButton pendingLabel="Creating invited user">
               Create invited user
-            </button>
+            </SubmitButton>
           </div>
         </form>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Unmapped Dialer Names</h2>
+      <section aria-labelledby="unmapped-heading" className="ui-card">
+        <div className="ui-card__header">
+          <div>
+            <h2 className="ui-card__title" id="unmapped-heading">
+              Unmapped dialer names
+            </h2>
+            <p className="ui-card__subtitle">
+              Resolve identities from open import previews.
+            </p>
+          </div>
         </div>
-        {unmappedNames.length === 0 ? (
-          <p className="p-5 text-sm text-muted">No unmapped names are present in open import previews.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted">
+        <TableScroll label="Unmapped dialer names">
+            <table className="ui-table">
+              <caption>Dialer identities awaiting an admin decision</caption>
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Dialer name</th>
-                  <th className="px-4 py-3">Normalized</th>
-                  <th className="px-4 py-3">Affected rows</th>
-                  <th className="px-4 py-3">File</th>
-                  <th className="px-4 py-3">Batch status</th>
-                  <th className="px-4 py-3">Uploaded</th>
-                  <th className="px-4 py-3">Actions</th>
+                  <th scope="col">Dialer name</th>
+                  <th scope="col">Normalized</th>
+                  <th scope="col">Affected rows</th>
+                  <th scope="col">File</th>
+                  <th scope="col">Batch status</th>
+                  <th scope="col">Uploaded</th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -287,7 +353,8 @@ export default async function AdminUsersPage({
                       <form action={mapUnknownDialerNameAction} className="mb-2 flex gap-2">
                         <input name="sourceAgentName" type="hidden" value={name.dialerName} />
                         <select
-                          className="min-w-48 rounded-md border border-border bg-background px-2 py-1"
+                          aria-label={`Map ${name.dialerName} to dashboard user`}
+                          className="ui-select min-w-48"
                           name="userId"
                           required
                         >
@@ -298,19 +365,19 @@ export default async function AdminUsersPage({
                             </option>
                           ))}
                         </select>
-                        <button className="rounded-md border border-border px-2 py-1 font-medium">
+                        <SubmitButton pendingLabel="Saving mapping" variant="secondary">
                           Save
-                        </button>
+                        </SubmitButton>
                       </form>
                       <Link
-                        className="font-medium text-primary hover:underline"
+                        className="ui-link"
                         href={`/admin/users?dialerName=${encodeURIComponent(name.dialerName)}#create-user`}
                       >
                         Create with name
                       </Link>
                       {name.files[0] ? (
                         <Link
-                          className="ml-3 font-medium text-primary hover:underline"
+                          className="ml-3 ui-link"
                           href={`/import?preview=${name.files[0].batchId}`}
                         >
                           Re-run preview
@@ -319,24 +386,36 @@ export default async function AdminUsersPage({
                       <form action={ignoreUnknownDialerNameAction} className="mt-2 flex gap-2">
                         <input name="sourceAgentName" type="hidden" value={name.dialerName} />
                         <input
-                          className="min-w-48 rounded-md border border-border bg-background px-2 py-1"
+                          aria-label={`Reason for ignoring ${name.dialerName}`}
+                          className="ui-input min-w-48"
                           name="reason"
                           placeholder="Ignore reason"
                           required
                         />
-                        <button className="rounded-md border border-danger px-2 py-1 font-medium text-danger">
+                        <ConfirmSubmitButton
+                          confirmLabel="Ignore name"
+                          description={`Future rows for ${name.dialerName} will remain unmapped until an admin creates or changes a mapping.`}
+                          pendingLabel="Ignoring dialer name"
+                          title="Ignore this dialer name?"
+                        >
                           Ignore
-                        </button>
+                        </ConfirmSubmitButton>
                       </form>
                     </td>
                   </tr>
                 ))}
+                {unmappedNames.length === 0 ? (
+                  <EmptyTableRow
+                    colSpan={7}
+                    description="New unresolved identities will appear here after a preview."
+                    title="No unmapped names"
+                  />
+                ) : null}
               </tbody>
             </table>
-          </div>
-        )}
+        </TableScroll>
       </section>
-    </section>
+    </div>
   );
 }
 
@@ -351,23 +430,21 @@ function StatusMessage({
 }) {
   if (error) {
     return (
-      <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+      <StatusBanner tone="danger">
         {adminErrorMessage(error)}
-      </p>
+      </StatusBanner>
     );
   }
   if (warning === "email") {
     return (
-      <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+      <StatusBanner tone="warning">
         Invitation delivery could not be completed. Please try again.
-      </p>
+      </StatusBanner>
     );
   }
   if (ok) {
     return (
-      <p className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-        Action completed.
-      </p>
+      <StatusBanner tone="success">Action completed.</StatusBanner>
     );
   }
   return null;
@@ -385,10 +462,10 @@ function FilterSelect({
   options: readonly string[];
 }) {
   return (
-    <label className="text-sm font-medium">
+    <label className="ui-label">
       {label}
       <select
-        className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+        className="ui-select"
         defaultValue={defaultValue ?? ""}
         name={name}
       >
@@ -404,12 +481,14 @@ function FilterSelect({
 }
 
 function TextField({
+  autoComplete,
   defaultValue,
   label,
   name,
   required,
   type = "text",
 }: {
+  autoComplete?: string;
   defaultValue?: string;
   label: string;
   name: string;
@@ -417,10 +496,12 @@ function TextField({
   type?: string;
 }) {
   return (
-    <label className="text-sm font-medium">
-      {label}
+    <label className="ui-label">
+      {label}{" "}
+      {required ? <span className="ui-required">(required)</span> : null}
       <input
-        className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+        autoComplete={autoComplete}
+        className="ui-input"
         defaultValue={defaultValue}
         name={name}
         required={required}
@@ -434,7 +515,7 @@ function PermissionOverrideControls() {
   return (
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
       {PERMISSION_GROUPS.map((group) => (
-        <fieldset className="rounded-md border border-border p-3" key={group.name}>
+        <fieldset className="ui-fieldset" key={group.name}>
           <legend className="px-1 text-sm font-semibold">{group.name}</legend>
           <div className="mt-2 space-y-2">
             {group.permissions.map((permission) => (
@@ -446,7 +527,8 @@ function PermissionOverrideControls() {
                   </span>
                 </span>
                 <select
-                  className="rounded-md border border-border bg-background px-2 py-1"
+                  aria-label={`${permission} override`}
+                  className="ui-select"
                   defaultValue="inherit"
                   name={`permission:${permission}`}
                 >
@@ -484,9 +566,11 @@ function PaginationLink({
   search.set("page", String(nextPage));
 
   return disabled ? (
-    <span className="text-muted">{direction === "previous" ? "Previous" : "Next"}</span>
+    <span aria-disabled="true" className="ui-button ui-button--secondary pagination__disabled">
+      {direction === "previous" ? "Previous" : "Next"}
+    </span>
   ) : (
-    <Link className="font-medium text-primary hover:underline" href={`/admin/users?${search.toString()}`}>
+    <Link className="ui-button ui-button--secondary" href={`/admin/users?${search.toString()}`}>
       {direction === "previous" ? "Previous" : "Next"}
     </Link>
   );

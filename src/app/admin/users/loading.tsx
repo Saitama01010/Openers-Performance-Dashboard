@@ -1,10 +1,5 @@
-export default function AdminUsersLoading() {
-  return (
-    <section className="mx-auto max-w-7xl px-6 py-6">
-      <div className="rounded-lg border border-border bg-surface p-5 text-sm text-muted">
-        Loading users and access controls...
-      </div>
-    </section>
-  );
-}
+import { DashboardPageSkeleton } from "@/components/dashboard/dashboard-primitives";
 
+export default function AdminUsersLoading() {
+  return <DashboardPageSkeleton label="Loading users and access controls" />;
+}

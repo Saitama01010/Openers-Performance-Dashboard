@@ -1,5 +1,7 @@
 "use client";
 
+import { DashboardErrorState } from "@/components/dashboard/dashboard-error-state";
+
 export default function AdminTeamsError({
   reset,
 }: {
@@ -7,14 +9,10 @@ export default function AdminTeamsError({
   reset: () => void;
 }) {
   return (
-    <section className="mx-auto max-w-7xl px-6 py-6">
-      <div className="rounded-lg border border-danger/40 bg-danger/10 p-5 text-sm text-danger">
-        <p>Teams failed to load.</p>
-        <button className="mt-3 rounded-md border border-danger px-3 py-2 font-medium" onClick={reset}>
-          Try again
-        </button>
-      </div>
-    </section>
+    <DashboardErrorState
+      description="The teams workspace could not be loaded. No membership changes were made."
+      reset={reset}
+      title="Teams unavailable"
+    />
   );
 }
-

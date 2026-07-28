@@ -6,6 +6,19 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
 } from "@/admin/policy";
 import { getCurrentUser } from "@/auth/session";
+import {
+  PageHeader,
+  StatusBadge,
+  TableScroll,
+} from "@/components/dashboard/dashboard-primitives";
+
+function PermissionBadge({ allowed }: { allowed: boolean }) {
+  return (
+    <StatusBadge tone={allowed ? "success" : "neutral"}>
+      {allowed ? "Allow" : "Deny"}
+    </StatusBadge>
+  );
+}
 
 export default async function AdminPermissionsPage() {
   const actor = await getCurrentUser();
@@ -14,46 +27,71 @@ export default async function AdminPermissionsPage() {
   if (actor.role !== "admin") redirect("/dashboard");
 
   return (
-    <section className="mx-auto max-w-7xl space-y-6 px-6 py-6">
-      <section className="rounded-lg border border-border bg-surface p-5">
-        <p className="text-sm text-muted">Admin only</p>
-        <h2 className="text-xl font-semibold">Role and Permissions</h2>
-        <p className="mt-2 text-sm text-muted">
-          Role defaults are seeded into the database. User-specific allow/deny overrides are managed on each user detail page.
-        </p>
-      </section>
-      <section className="grid gap-4 lg:grid-cols-2">
+    <div className="dashboard-page">
+      <PageHeader
+        description="Review seeded role defaults. User-specific allow or deny overrides remain available on each user record."
+        eyebrow="Admin only"
+        title="Roles and permissions"
+      />
+
+      <div className="permission-grid">
         {PERMISSION_GROUPS.map((group) => (
-          <article className="rounded-lg border border-border bg-surface p-5" key={group.name}>
-            <h3 className="font-semibold">{group.name}</h3>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-muted">
+          <article className="ui-card ui-card--padded" key={group.name}>
+            <h2 className="ui-card__title">{group.name}</h2>
+            <TableScroll label={`${group.name} role permissions`}>
+              <table className="ui-table">
+                <caption>{group.name} permission defaults by role</caption>
+                <thead>
                   <tr>
-                    <th className="py-2">Permission</th>
-                    <th className="py-2">Admin</th>
-                    <th className="py-2">Manager</th>
-                    <th className="py-2">Agent</th>
-                    <th className="py-2">Restricted</th>
+                    <th scope="col">Permission</th>
+                    <th scope="col">Admin</th>
+                    <th scope="col">Manager</th>
+                    <th scope="col">Agent</th>
+                    <th scope="col">Restriction</th>
                   </tr>
                 </thead>
                 <tbody>
                   {group.permissions.map((permission) => (
-                    <tr className="border-t border-border" key={permission}>
-                      <td className="py-2 font-mono text-xs">{permission}</td>
-                      <td className="py-2">{ROLE_DEFAULT_PERMISSIONS.admin.includes(permission) ? "Allow" : "Deny"}</td>
-                      <td className="py-2">{ROLE_DEFAULT_PERMISSIONS.manager.includes(permission) ? "Allow" : "Deny"}</td>
-                      <td className="py-2">{ROLE_DEFAULT_PERMISSIONS.agent.includes(permission) ? "Allow" : "Deny"}</td>
-                      <td className="py-2">{ADMIN_ONLY_PERMISSIONS.has(permission) ? "Admin only" : "-"}</td>
+                    <tr key={permission}>
+                      <th className="permission-name" scope="row">
+                        {permission}
+                      </th>
+                      <td>
+                        <PermissionBadge
+                          allowed={ROLE_DEFAULT_PERMISSIONS.admin.includes(
+                            permission,
+                          )}
+                        />
+                      </td>
+                      <td>
+                        <PermissionBadge
+                          allowed={ROLE_DEFAULT_PERMISSIONS.manager.includes(
+                            permission,
+                          )}
+                        />
+                      </td>
+                      <td>
+                        <PermissionBadge
+                          allowed={ROLE_DEFAULT_PERMISSIONS.agent.includes(
+                            permission,
+                          )}
+                        />
+                      </td>
+                      <td>
+                        {ADMIN_ONLY_PERMISSIONS.has(permission) ? (
+                          <StatusBadge tone="warning">Admin only</StatusBadge>
+                        ) : (
+                          <span aria-label="No additional restriction">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
           </article>
         ))}
-      </section>
-    </section>
+      </div>
+    </div>
   );
 }
-

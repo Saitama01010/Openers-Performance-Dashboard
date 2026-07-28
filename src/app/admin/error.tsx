@@ -2,7 +2,7 @@
 
 import { DashboardErrorState } from "@/components/dashboard/dashboard-error-state";
 
-export default function AdminUsersError({
+export default function AdminError({
   reset,
 }: {
   error: Error & { digest?: string };
@@ -10,9 +10,9 @@ export default function AdminUsersError({
 }) {
   return (
     <DashboardErrorState
-      description="Users and access controls could not be loaded. No account changes were made."
+      description="The administration workspace could not be loaded. Retry the request without changing any account or access data."
       reset={reset}
-      title="Users and access unavailable"
+      title="Administration unavailable"
     />
   );
 }

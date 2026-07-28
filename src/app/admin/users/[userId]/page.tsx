@@ -19,6 +19,17 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
 } from "@/admin/policy";
 import { getCurrentUser } from "@/auth/session";
+import {
+  ConfirmSubmitButton,
+  SubmitButton,
+} from "@/components/dashboard/action-controls";
+import {
+  EmptyTableRow,
+  PageHeader,
+  StatusBadge,
+  StatusBanner,
+  TableScroll,
+} from "@/components/dashboard/dashboard-primitives";
 
 export const dynamic = "force-dynamic";
 
@@ -64,22 +75,32 @@ export default async function AdminUserDetailPage({
   const roleDefaults = new Set(ROLE_DEFAULT_PERMISSIONS[details.profile.role]);
 
   return (
-    <section className="mx-auto max-w-7xl space-y-6 px-6 py-6">
-      <Link className="text-sm font-medium text-primary hover:underline" href="/admin/users">
-        Back to Users & Access
-      </Link>
+    <div className="dashboard-page">
+      <PageHeader
+        actions={
+          <Link className="ui-button ui-button--secondary" href="/admin/users">
+            Back to users
+          </Link>
+        }
+        description="Review identity, permissions, account state, team history, and dialer mappings."
+        eyebrow="Account details"
+        title={details.profile.name}
+      />
       <StatusMessage error={query.error} ok={query.ok} warning={query.warning} />
 
-      <section className="rounded-lg border border-border bg-surface p-5">
+      <section aria-labelledby="account-summary-heading" className="ui-card ui-card--padded">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm text-muted">Account details</p>
-            <h2 className="text-xl font-semibold">{details.profile.name}</h2>
+            <h2 className="ui-card__title" id="account-summary-heading">
+              Account summary
+            </h2>
+            <p className="ui-card__subtitle">{details.profile.email}</p>
           </div>
-          <div className="text-right text-sm text-muted">
-            <p>{details.profile.email}</p>
-            <p className="capitalize">{details.profile.accountStatus}</p>
-          </div>
+          <StatusBadge
+            tone={details.profile.accountStatus === "active" ? "success" : "danger"}
+          >
+            {details.profile.accountStatus}
+          </StatusBadge>
         </div>
         <dl className="mt-5 grid gap-4 text-sm md:grid-cols-4">
           <Fact label="Role" value={details.profile.role} />
@@ -93,15 +114,17 @@ export default async function AdminUserDetailPage({
         </dl>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface p-5">
-        <h2 className="text-lg font-semibold">Edit user</h2>
+      <section aria-labelledby="edit-user-heading" className="ui-card ui-card--padded">
+        <h2 className="ui-card__title" id="edit-user-heading">
+          Edit user
+        </h2>
         <form action={updateAction} className="mt-4 grid gap-4 md:grid-cols-2">
-          <TextField defaultValue={details.profile.name} label="Full name" name="name" required />
-          <TextField defaultValue={details.profile.email} label="Login email" name="email" required type="email" />
-          <label className="text-sm font-medium">
+          <TextField autoComplete="name" defaultValue={details.profile.name} label="Full name" name="name" required />
+          <TextField autoComplete="email" defaultValue={details.profile.email} label="Login email" name="email" required type="email" />
+          <label className="ui-label">
             Role
             <select
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+              className="ui-select"
               defaultValue={details.profile.role}
               name="role"
             >
@@ -110,10 +133,10 @@ export default async function AdminUserDetailPage({
               <option value="admin">Admin</option>
             </select>
           </label>
-          <label className="text-sm font-medium">
+          <label className="ui-label">
             Team
             <select
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+              className="ui-select"
               defaultValue={details.activeMembership?.teamId ?? ""}
               name="teamId"
             >
@@ -125,14 +148,16 @@ export default async function AdminUserDetailPage({
               ))}
             </select>
           </label>
-          <div className="md:col-span-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-            Role demotion, team movement, and permission changes are audited. The final active admin cannot be demoted.
+          <div className="md:col-span-2">
+            <StatusBanner tone="warning">
+              Role demotion, team movement, and permission changes are audited. The final active admin cannot be demoted.
+            </StatusBanner>
           </div>
           <section className="md:col-span-2">
             <h3 className="font-semibold">Permission overrides</h3>
             <div className="mt-3 grid gap-4 lg:grid-cols-2">
               {PERMISSION_GROUPS.map((group) => (
-                <fieldset className="rounded-md border border-border p-3" key={group.name}>
+                <fieldset className="ui-fieldset" key={group.name}>
                   <legend className="px-1 text-sm font-semibold">{group.name}</legend>
                   <div className="mt-2 space-y-2">
                     {group.permissions.map((permission) => {
@@ -145,11 +170,12 @@ export default async function AdminUserDetailPage({
                           <span>
                             <span className="font-medium">{permission}</span>
                             <span className="ml-2 text-muted">
-                              default {roleDefault ? "allow" : "deny"} · effective {effective ? "allow" : "deny"}
+                              default {roleDefault ? "allow" : "deny"}; effective {effective ? "allow" : "deny"}
                             </span>
                           </span>
                           <select
-                            className="rounded-md border border-border bg-background px-2 py-1"
+                            aria-label={`${permission} override`}
+                            className="ui-select"
                             defaultValue={
                               override === undefined ? "inherit" : override ? "allow" : "deny"
                             }
@@ -168,81 +194,111 @@ export default async function AdminUserDetailPage({
             </div>
           </section>
           <div className="md:col-span-2">
-            <button className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <SubmitButton pendingLabel="Saving user changes">
               Save user changes
-            </button>
+            </SubmitButton>
           </div>
         </form>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-3">
+      <section className="admin-action-grid admin-action-grid--three">
         <ActionPanel title="Account status">
           <form action={statusAction} className="space-y-3">
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" name="status">
-              <option value="active">Activate</option>
-              <option value="deactivated">Deactivate</option>
-              <option value="revoked">Revoke access</option>
-            </select>
-            <p className="text-sm text-danger">
-              Deactivation and revocation immediately stop existing sessions. Revocation also revokes outstanding invitations and reset tokens.
-            </p>
-            <label className="flex items-center gap-2 text-sm">
-              <input name="confirmStatusChange" type="checkbox" />
-              I understand this account access change.
+            <label className="ui-label">
+              New account status
+              <select className="ui-select" name="status">
+                <option value="active">Activate</option>
+                <option value="deactivated">Deactivate</option>
+                <option value="revoked">Revoke access</option>
+              </select>
             </label>
-            <button className="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white">
+            <StatusBanner tone="warning">
+              Deactivation and revocation immediately stop existing sessions. Revocation also revokes outstanding invitations and reset tokens.
+            </StatusBanner>
+            <input name="confirmStatusChange" type="hidden" value="true" />
+            <ConfirmSubmitButton
+              confirmLabel="Apply status change"
+              description="This may immediately end sessions and remove account access. Review the selected status before continuing."
+              pendingLabel="Applying account status"
+              title="Change this account status?"
+            >
               Apply status change
-            </button>
+            </ConfirmSubmitButton>
           </form>
         </ActionPanel>
 
         <ActionPanel title="Invitation">
           <form action={inviteAction} className="space-y-3">
-            <button className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground" name="invitationAction" value="send">
+            <SubmitButton
+              name="invitationAction"
+              pendingLabel="Sending invitation"
+              value="send"
+            >
               Send or resend invitation
-            </button>
-            <button className="rounded-md border border-danger px-3 py-2 text-sm font-semibold text-danger" name="invitationAction" value="revoke">
+            </SubmitButton>
+            <ConfirmSubmitButton
+              confirmLabel="Revoke invitation"
+              description="The outstanding invitation link will stop working immediately."
+              name="invitationAction"
+              pendingLabel="Revoking invitation"
+              title="Revoke this invitation?"
+              value="revoke"
+            >
               Revoke invitation
-            </button>
+            </ConfirmSubmitButton>
           </form>
         </ActionPanel>
 
         <ActionPanel title="Password and sessions">
           <form action={resetAction} className="space-y-3">
-            <label className="flex items-center gap-2 text-sm">
+            <label className="ui-checkbox-label">
               <input name="revokeSessions" type="checkbox" defaultChecked />
               Revoke sessions immediately
             </label>
-            <button className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground">
+            <ConfirmSubmitButton
+              confirmLabel="Force reset"
+              description="The user will be required to create a new password. Selected active sessions will be revoked."
+              pendingLabel="Forcing password reset"
+              title="Force a password reset?"
+              variant="primary"
+            >
               Force password reset
-            </button>
+            </ConfirmSubmitButton>
           </form>
           <form action={sessionsAction} className="mt-4 space-y-3 border-t border-border pt-4">
-            <label className="flex items-center gap-2 text-sm">
+            <label className="ui-checkbox-label">
               <input name="includeCurrentSession" type="checkbox" />
               Include my current session when this is my account
             </label>
-            <button className="rounded-md border border-danger px-3 py-2 text-sm font-semibold text-danger">
+            <ConfirmSubmitButton
+              confirmLabel="Revoke sessions"
+              description="All selected sessions for this account will be ended immediately."
+              pendingLabel="Revoking sessions"
+              title="Revoke all sessions?"
+            >
               Revoke all sessions
-            </button>
+            </ConfirmSubmitButton>
           </form>
         </ActionPanel>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Dialer mappings</h2>
+      <section aria-labelledby="dialer-mappings-heading" className="ui-card">
+        <div className="ui-card__header">
+          <h2 className="ui-card__title" id="dialer-mappings-heading">
+            Dialer mappings
+          </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted">
+        <TableScroll label="Dialer mappings">
+          <table className="ui-table">
+            <caption>Dialer identity mappings for this user</caption>
+            <thead>
               <tr>
-                <th className="px-4 py-3">Dialer name</th>
-                <th className="px-4 py-3">Normalized</th>
-                <th className="px-4 py-3">Primary</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Actions</th>
+                <th scope="col">Dialer name</th>
+                <th scope="col">Normalized</th>
+                <th scope="col">Primary</th>
+                <th scope="col">Status</th>
+                <th scope="col">Created</th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -250,8 +306,18 @@ export default async function AdminUserDetailPage({
                 <tr className="border-t border-border" key={mapping.id}>
                   <td className="px-4 py-3">{mapping.sourceAgentName}</td>
                   <td className="px-4 py-3">{mapping.normalizedAgentName}</td>
-                  <td className="px-4 py-3">{mapping.isPrimary ? "Yes" : "No"}</td>
-                  <td className="px-4 py-3">{mapping.active ? "Active" : "Inactive"}</td>
+                  <td className="px-4 py-3">
+                    {mapping.isPrimary ? (
+                      <StatusBadge tone="info">Primary</StatusBadge>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge tone={mapping.active ? "success" : "neutral"}>
+                      {mapping.active ? "Active" : "Inactive"}
+                    </StatusBadge>
+                  </td>
                   <td className="px-4 py-3">{fmt(mapping.createdAt)}</td>
                   <td className="px-4 py-3">
                     {mapping.active ? (
@@ -259,19 +325,21 @@ export default async function AdminUserDetailPage({
                         {!mapping.isPrimary ? (
                           <form action={primaryMappingAction}>
                             <input name="mappingId" type="hidden" value={mapping.id} />
-                            <button className="text-primary hover:underline">Make primary</button>
+                            <SubmitButton pendingLabel="Setting primary" variant="secondary">
+                              Make primary
+                            </SubmitButton>
                           </form>
                         ) : null}
-                        <details>
-                          <summary className="cursor-pointer text-primary hover:underline">
+                        <details className="ui-details ui-details--compact">
+                          <summary>
                             Edit
                           </summary>
                           <form action={editMappingAction} className="mt-2 flex min-w-64 flex-col gap-2 rounded-md border border-border bg-background p-3">
                             <input name="mappingId" type="hidden" value={mapping.id} />
-                            <label className="text-xs font-medium text-muted">
+                            <label className="ui-label">
                               Dialer display name
                               <input
-                                className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-foreground"
+                                className="ui-input"
                                 defaultValue={mapping.sourceAgentName}
                                 name="sourceAgentName"
                                 required
@@ -281,10 +349,10 @@ export default async function AdminUserDetailPage({
                               Normalized currently: {mapping.normalizedAgentName}
                             </p>
                             <div className="flex gap-3">
-                              <button className="text-primary hover:underline">
+                              <SubmitButton pendingLabel="Saving mapping" variant="secondary">
                                 Save
-                              </button>
-                              <Link className="text-muted hover:underline" href={`/admin/users/${userId}`}>
+                              </SubmitButton>
+                              <Link className="ui-link" href={`/admin/users/${userId}`}>
                                 Cancel
                               </Link>
                             </div>
@@ -292,7 +360,14 @@ export default async function AdminUserDetailPage({
                         </details>
                         <form action={deactivateMappingAction}>
                           <input name="mappingId" type="hidden" value={mapping.id} />
-                          <button className="text-danger hover:underline">Deactivate</button>
+                          <ConfirmSubmitButton
+                            confirmLabel="Deactivate mapping"
+                            description={`${mapping.sourceAgentName} will stop resolving to this account for future previews.`}
+                            pendingLabel="Deactivating mapping"
+                            title="Deactivate this mapping?"
+                          >
+                            Deactivate
+                          </ConfirmSubmitButton>
                         </form>
                       </div>
                     ) : (
@@ -301,34 +376,44 @@ export default async function AdminUserDetailPage({
                   </td>
                 </tr>
               ))}
+              {details.mappings.length === 0 ? (
+                <EmptyTableRow
+                  colSpan={6}
+                  description="Add a dialer name to match future import rows to this user."
+                  title="No dialer mappings"
+                />
+              ) : null}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
         <form action={addMappingAction} className="grid gap-3 border-t border-border p-4 md:grid-cols-[1fr_auto_auto]">
           <TextField label="New dialer name" name="sourceAgentName" required />
-          <label className="flex items-end gap-2 pb-2 text-sm">
+          <label className="ui-checkbox-label self-center">
             <input name="makePrimary" type="checkbox" />
             Make primary
           </label>
-          <button className="self-end rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          <SubmitButton className="self-end" pendingLabel="Adding mapping">
             Add mapping
-          </button>
+          </SubmitButton>
         </form>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Team membership history</h2>
+      <section aria-labelledby="membership-history-heading" className="ui-card">
+        <div className="ui-card__header">
+          <h2 className="ui-card__title" id="membership-history-heading">
+            Team membership history
+          </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted">
+        <TableScroll label="Team membership history">
+          <table className="ui-table">
+            <caption>Historical team memberships for this user</caption>
+            <thead>
               <tr>
-                <th className="px-4 py-3">Team</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Started</th>
-                <th className="px-4 py-3">Ended</th>
-                <th className="px-4 py-3">Status</th>
+                <th scope="col">Team</th>
+                <th scope="col">Role</th>
+                <th scope="col">Started</th>
+                <th scope="col">Ended</th>
+                <th scope="col">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -338,25 +423,39 @@ export default async function AdminUserDetailPage({
                   <td className="px-4 py-3">{membership.role}</td>
                   <td className="px-4 py-3">{fmt(membership.startedAt)}</td>
                   <td className="px-4 py-3">{fmt(membership.endedAt)}</td>
-                  <td className="px-4 py-3">{membership.active ? "Active" : "Historical"}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge tone={membership.active ? "success" : "neutral"}>
+                      {membership.active ? "Active" : "Historical"}
+                    </StatusBadge>
+                  </td>
                 </tr>
               ))}
+              {details.memberships.length === 0 ? (
+                <EmptyTableRow
+                  colSpan={5}
+                  description="Team assignments will be recorded here."
+                  title="No membership history"
+                />
+              ) : null}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Audit history</h2>
+      <section aria-labelledby="user-audit-heading" className="ui-card">
+        <div className="ui-card__header">
+          <h2 className="ui-card__title" id="user-audit-heading">
+            Audit history
+          </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted">
+        <TableScroll label="User audit history">
+          <table className="ui-table">
+            <caption>Administrative events for this user</caption>
+            <thead>
               <tr>
-                <th className="px-4 py-3">Action</th>
-                <th className="px-4 py-3">When</th>
-                <th className="px-4 py-3">Metadata</th>
+                <th scope="col">Action</th>
+                <th scope="col">When</th>
+                <th scope="col">Metadata</th>
               </tr>
             </thead>
             <tbody>
@@ -364,14 +463,21 @@ export default async function AdminUserDetailPage({
                 <tr className="border-t border-border" key={audit.id}>
                   <td className="px-4 py-3">{audit.action}</td>
                   <td className="px-4 py-3">{fmt(audit.createdAt)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{jsonPreview(audit.metadata)}</td>
+                  <td className="audit-metadata">{jsonPreview(audit.metadata)}</td>
                 </tr>
               ))}
+              {details.audits.length === 0 ? (
+                <EmptyTableRow
+                  colSpan={3}
+                  description="Audited changes to this account will appear here."
+                  title="No audit history"
+                />
+              ) : null}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </section>
-    </section>
+    </div>
   );
 }
 
@@ -386,23 +492,21 @@ function StatusMessage({
 }) {
   if (error) {
     return (
-      <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+      <StatusBanner tone="danger">
         {adminErrorMessage(error)}
-      </p>
+      </StatusBanner>
     );
   }
   if (warning === "email") {
     return (
-      <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+      <StatusBanner tone="warning">
         Invitation delivery could not be completed. Please try again.
-      </p>
+      </StatusBanner>
     );
   }
   if (ok) {
     return (
-      <p className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-        Action completed.
-      </p>
+      <StatusBanner tone="success">Action completed.</StatusBanner>
     );
   }
   return null;
@@ -418,12 +522,14 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 function TextField({
+  autoComplete,
   defaultValue,
   label,
   name,
   required,
   type = "text",
 }: {
+  autoComplete?: string;
   defaultValue?: string;
   label: string;
   name: string;
@@ -431,10 +537,12 @@ function TextField({
   type?: string;
 }) {
   return (
-    <label className="text-sm font-medium">
-      {label}
+    <label className="ui-label">
+      {label}{" "}
+      {required ? <span className="ui-required">(required)</span> : null}
       <input
-        className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+        autoComplete={autoComplete}
+        className="ui-input"
         defaultValue={defaultValue}
         name={name}
         required={required}
@@ -452,8 +560,8 @@ function ActionPanel({
   title: string;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-surface p-5">
-      <h2 className="font-semibold">{title}</h2>
+    <section className="ui-card ui-card--padded">
+      <h2 className="ui-card__title">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>
   );

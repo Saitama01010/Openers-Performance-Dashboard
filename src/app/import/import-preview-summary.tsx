@@ -2,6 +2,13 @@
 
 import { Fragment, useMemo, useState } from "react";
 
+import { SubmitButton } from "@/components/dashboard/action-controls";
+import {
+  EmptyTableRow,
+  StatusBadge,
+  StatusBanner,
+  TableScroll,
+} from "@/components/dashboard/dashboard-primitives";
 import { confirmImportAction } from "@/import/actions";
 import {
   formatDurationSeconds,
@@ -75,16 +82,18 @@ const summaryCards = [
   ["uniqueOutOfScopeAgents", "Unique Out-of-Scope Agents"],
 ] as const;
 
-function mappingStatusClass(status: AgentMappingStatus) {
+function mappingStatusTone(
+  status: AgentMappingStatus,
+): "danger" | "neutral" | "success" | "warning" {
   if (status === "mapped") {
-    return "border-primary/40 text-primary";
+    return "success";
   }
 
   if (status === "unmapped") {
-    return "border-danger/40 text-danger";
+    return "warning";
   }
 
-  return "border-border text-muted";
+  return status === "invalid_mapping" ? "danger" : "neutral";
 }
 
 function sortValue(agent: AgentPreviewSummary, key: SortKey) {
@@ -230,22 +239,25 @@ function AgentDetails({ agent }: { agent: AgentPreviewSummary }) {
         <summary className="cursor-pointer text-sm font-semibold">
           Hourly drill-down
         </summary>
-        <div className="mt-3 overflow-x-auto">
-          <table className="min-w-full border-collapse text-left text-xs">
-            <thead className="border-b border-border text-muted">
+        <TableScroll label={`${agent.dialerAgentName} hourly drill-down`}>
+          <table className="ui-table">
+            <caption>
+              Hourly validation rows for {agent.dialerAgentName}
+            </caption>
+            <thead>
               <tr>
-                <th className="whitespace-nowrap px-2 py-2">Date</th>
-                <th className="whitespace-nowrap px-2 py-2">Hour</th>
-                <th className="whitespace-nowrap px-2 py-2">Calls</th>
+                <th scope="col">Date</th>
+                <th scope="col">Hour</th>
+                <th scope="col">Calls</th>
                 {durationLabels.map(({ key, label }) => (
-                  <th className="whitespace-nowrap px-2 py-2" key={key}>
+                  <th key={key} scope="col">
                     {label}
                   </th>
                 ))}
-                <th className="whitespace-nowrap px-2 py-2">
+                <th scope="col">
                   Row Classification
                 </th>
-                <th className="whitespace-nowrap px-2 py-2">
+                <th scope="col">
                   Validation Message
                 </th>
               </tr>
@@ -281,7 +293,7 @@ function AgentDetails({ agent }: { agent: AgentPreviewSummary }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </details>
     </div>
   );
@@ -339,10 +351,15 @@ export function ImportPreviewSummary({
   }, [direction, filter, preview.agents, sort]);
 
   return (
-    <section className="mt-6 rounded-lg border border-border bg-surface p-5">
+    <section
+      aria-labelledby="preview-summary-heading"
+      className="ui-card ui-card--padded import-preview"
+    >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="font-semibold">Preview summary</h2>
+          <h2 className="ui-card__title" id="preview-summary-heading">
+            Preview summary
+          </h2>
           <p className="mt-1 text-sm text-muted">
             File: <span className="font-medium text-foreground">{fileName}</span>
           </p>
@@ -351,23 +368,19 @@ export function ImportPreviewSummary({
           </p>
         </div>
         {preview.duplicateFile ? (
-          <span className="rounded-md border border-danger/40 px-2 py-1 text-xs font-semibold text-danger">
-            Duplicate file blocked
-          </span>
+          <StatusBadge tone="danger">Duplicate file blocked</StatusBadge>
         ) : (
-          <span className="rounded-md border border-border px-2 py-1 text-xs font-semibold text-muted">
-            Not a duplicate
-          </span>
+          <StatusBadge tone="success">Ready for validation</StatusBadge>
         )}
       </div>
 
       {preview.missingHeaders.length > 0 ? (
-        <div className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+        <StatusBanner tone="danger">
           Missing required headers: {preview.missingHeaders.join(", ")}
-        </div>
+        </StatusBanner>
       ) : null}
 
-      <div className="mt-4 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+      <StatusBanner tone="info">
         This import will save {formatNumber(mappedRowsToImport)} mapped rows and
         skip {formatNumber(unresolvedRowsToSkip)} unresolved or unauthorized
         rows.
@@ -379,7 +392,7 @@ export function ImportPreviewSummary({
             {" "}invalid rows.
           </span>
         ) : null}
-      </div>
+      </StatusBanner>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {summaryCards.map(([key, label]) => (
@@ -415,29 +428,30 @@ export function ImportPreviewSummary({
 
       <div className="mt-4 rounded-md border border-border p-3">
         <p className="text-xs uppercase text-muted">Company/File Totals</p>
-        <div className="mt-3 overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
-            <thead className="border-b border-border text-muted">
+        <TableScroll label="Company and file totals">
+          <table className="ui-table">
+            <caption>Totals calculated from this CSV preview</caption>
+            <thead>
               <tr>
-                <th className="whitespace-nowrap px-2 py-2">Calls</th>
+                <th scope="col">Calls</th>
                 {durationLabels.map(({ key, label }) => (
-                  <th className="whitespace-nowrap px-2 py-2" key={key}>
+                  <th key={key} scope="col">
                     {label}
                   </th>
                 ))}
-                <th className="whitespace-nowrap px-2 py-2">
+                <th scope="col">
                   Included Valid Rows
                 </th>
-                <th className="whitespace-nowrap px-2 py-2">
+                <th scope="col">
                   Excluded Invalid Rows
                 </th>
-                <th className="whitespace-nowrap px-2 py-2">
+                <th scope="col">
                   Mapped Valid Rows
                 </th>
-                <th className="whitespace-nowrap px-2 py-2">
+                <th scope="col">
                   Unmapped Valid Rows
                 </th>
-                <th className="whitespace-nowrap px-2 py-2">
+                <th scope="col">
                   Out-of-Scope Valid Rows
                 </th>
               </tr>
@@ -472,14 +486,14 @@ export function ImportPreviewSummary({
               </tr>
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="text-sm font-medium">
+      <div className="import-preview__controls">
+        <label className="ui-label">
           Filter
           <select
-            className="mt-1 block rounded-md border border-border bg-background px-3 py-2 text-sm"
+            className="ui-select"
             onChange={(event) => setFilter(event.target.value as FilterKey)}
             value={filter}
           >
@@ -490,10 +504,10 @@ export function ImportPreviewSummary({
             <option value="invalid_rows">Agents with invalid rows</option>
           </select>
         </label>
-        <label className="text-sm font-medium">
+        <label className="ui-label">
           Sort by
           <select
-            className="mt-1 block rounded-md border border-border bg-background px-3 py-2 text-sm"
+            className="ui-select"
             onChange={(event) => setSort(event.target.value as SortKey)}
             value={sort}
           >
@@ -505,7 +519,8 @@ export function ImportPreviewSummary({
           </select>
         </label>
         <button
-          className="rounded-md border border-border px-3 py-2 text-sm font-semibold"
+          aria-label={`Sort ${direction === "asc" ? "descending" : "ascending"}`}
+          className="ui-button ui-button--secondary"
           onClick={() =>
             setDirection((current) => (current === "asc" ? "desc" : "asc"))
           }
@@ -513,29 +528,34 @@ export function ImportPreviewSummary({
         >
           {direction === "asc" ? "Ascending" : "Descending"}
         </button>
+        <p aria-live="polite" className="ui-helper" role="status">
+          Showing {formatNumber(filteredAgents.length)} of{" "}
+          {formatNumber(preview.agents.length)} agents
+        </p>
       </div>
 
-      <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full border-collapse text-left text-xs">
-          <thead className="border-b border-border text-muted">
+      <TableScroll label="Agent import preview">
+        <table className="ui-table">
+          <caption>Agent mapping and import status</caption>
+          <thead>
             <tr>
-              <th className="min-w-44 px-2 py-2">Dialer Agent Name</th>
-              <th className="whitespace-nowrap px-2 py-2">Mapping Status</th>
-              <th className="min-w-36 px-2 py-2">Dashboard User</th>
-              <th className="min-w-36 px-2 py-2">Team</th>
-              <th className="whitespace-nowrap px-2 py-2">CSV Row Count</th>
-              <th className="min-w-44 px-2 py-2">Date Range</th>
-              <th className="whitespace-nowrap px-2 py-2">Calls</th>
+              <th scope="col">Dialer Agent Name</th>
+              <th scope="col">Mapping Status</th>
+              <th scope="col">Dashboard User</th>
+              <th scope="col">Team</th>
+              <th scope="col">CSV Row Count</th>
+              <th scope="col">Date Range</th>
+              <th scope="col">Calls</th>
               {durationLabels.map(({ key, label }) => (
-                <th className="whitespace-nowrap px-2 py-2" key={key}>
+                <th key={key} scope="col">
                   {label}
                 </th>
               ))}
-              <th className="whitespace-nowrap px-2 py-2">New Rows</th>
-              <th className="whitespace-nowrap px-2 py-2">Changed Rows</th>
-              <th className="whitespace-nowrap px-2 py-2">Unchanged Rows</th>
-              <th className="whitespace-nowrap px-2 py-2">Invalid Rows</th>
-              <th className="min-w-40 px-2 py-2">Import Status</th>
+              <th scope="col">New Rows</th>
+              <th scope="col">Changed Rows</th>
+              <th scope="col">Unchanged Rows</th>
+              <th scope="col">Invalid Rows</th>
+              <th scope="col">Import Status</th>
             </tr>
           </thead>
           <tbody>
@@ -546,11 +566,9 @@ export function ImportPreviewSummary({
                     {agent.dialerAgentName}
                   </td>
                   <td className="whitespace-nowrap px-2 py-3">
-                    <span
-                      className={`rounded-md border px-2 py-1 text-xs font-semibold ${mappingStatusClass(agent.mappingStatus)}`}
-                    >
+                    <StatusBadge tone={mappingStatusTone(agent.mappingStatus)}>
                       {mappingStatusLabels[agent.mappingStatus]}
-                    </span>
+                    </StatusBadge>
                   </td>
                   <td className="px-2 py-3">
                     {agent.dashboardUserName ?? "N/A"}
@@ -596,17 +614,23 @@ export function ImportPreviewSummary({
                 </tr>
               </Fragment>
             ))}
+            {filteredAgents.length === 0 ? (
+              <EmptyTableRow
+                colSpan={22}
+                description="Choose another filter to review this preview."
+                title="No agents match this filter"
+              />
+            ) : null}
           </tbody>
         </table>
-      </div>
+      </TableScroll>
 
       <form action={confirmImportAction} className="mt-5">
         <input name="batchId" type="hidden" value={batchId} />
         {partialAcknowledgementRequired ? (
-          <div className="mb-4 rounded-md border border-primary/30 bg-primary/10 p-3 text-sm">
-            <label className="flex items-start gap-2 font-medium">
+          <StatusBanner tone="warning">
+            <label className="ui-checkbox-label">
               <input
-                className="mt-1"
                 name="allowPartialImport"
                 required
                 type="checkbox"
@@ -625,14 +649,14 @@ export function ImportPreviewSummary({
               {" "}unchanged, and {formatNumber(preview.fileSummary.invalidRows)}
               {" "}invalid.
             </p>
-          </div>
+          </StatusBanner>
         ) : null}
-        <button
-          className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-50"
+        <SubmitButton
           disabled={disabledReasons.length > 0}
+          pendingLabel="Importing mapped rows"
         >
           Import {formatNumber(mappedRowsToImport)} mapped rows
-        </button>
+        </SubmitButton>
       </form>
     </section>
   );

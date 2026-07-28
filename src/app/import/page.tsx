@@ -86,14 +86,22 @@ export default async function ImportPage({
         ) : null}
 
         {params.confirmError ? (
-          <p className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+          <p
+            autoFocus
+            className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+            role="alert"
+            tabIndex={-1}
+          >
             {confirmErrorMessages[params.confirmError] ??
               confirmErrorMessages.confirm_failed}
           </p>
         ) : null}
 
         {params.confirmed ? (
-          <p className="mt-4 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
+          <p
+            className="mt-4 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
+            role="status"
+          >
             Import confirmed.
           </p>
         ) : null}
@@ -108,7 +116,7 @@ export default async function ImportPage({
               className="mt-5 rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-background opacity-50"
               disabled
             >
-              Confirm import
+              Publishing unavailable
             </button>
           </section>
         ) : null}

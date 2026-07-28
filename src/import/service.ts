@@ -453,6 +453,16 @@ export async function confirmDialerImportBatch(input: {
         agent.mappingStatus === "invalid_mapping" ||
         agent.invalidRowCount > 0,
     ).length;
+    const publicationWarnings = preview.agents.flatMap((agent) =>
+      agent.warningMessage
+        ? [
+            {
+              agentName: agent.dialerAgentName,
+              message: agent.warningMessage,
+            },
+          ]
+        : [],
+    );
     const confirmationSummary = {
       importedNewRows: preview.summary.new,
       updatedRows: preview.summary.changed,
@@ -461,6 +471,9 @@ export async function confirmDialerImportBatch(input: {
       skippedOutOfScopeRows: preview.summary.out_of_scope,
       invalidRows: preview.summary.invalid,
       unresolvedAgentCount,
+      warningsPresent: publicationWarnings.length > 0,
+      warningAgentCount: publicationWarnings.length,
+      warnings: publicationWarnings,
       confirmedById: input.actor.id,
       confirmedAt: confirmedAt.toISOString(),
     };

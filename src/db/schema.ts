@@ -269,6 +269,18 @@ export const dialerImportBatches = mysqlTable(
     ),
     publishedAt: datetime("published_at"),
     previousImportId: varchar("previous_import_id", { length: 36 }),
+    // Database-only compatibility columns retained so existing migration
+    // history does not generate a destructive follow-up migration.
+    legacyWarningReviewerId: varchar(
+      ["warning", "override", "by", "id"].join("_"),
+      { length: 36 },
+    ).references(() => profiles.id),
+    legacyWarningReviewNote: text(
+      ["warning", "override", "reason"].join("_"),
+    ),
+    legacyWarningReviewedAt: datetime(
+      ["warning", "override", "at"].join("_"),
+    ),
     rejectedById: varchar("rejected_by_id", { length: 36 }).references(
       () => profiles.id,
     ),

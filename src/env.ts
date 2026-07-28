@@ -20,6 +20,26 @@ const optionalEncryptionKey = z.preprocess((value) => {
   return normalized.length === 0 ? undefined : normalized;
 }, z.string().optional());
 
+const optionalSheetPrivateKey = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().replaceAll("\\n", "\n");
+  return normalized.length === 0 ? undefined : normalized;
+}, z.string().optional());
+
+const timezone = z
+  .string()
+  .trim()
+  .min(1)
+  .default("Africa/Cairo")
+  .refine((value) => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+      return true;
+    } catch {
+      return false;
+    }
+  }, "GOOGLE_TRANSFERS_SHEET_TIMEZONE must be a valid IANA timezone.");
+
 const envSchema = z
   .object({
     DATABASE_URL: z.string().url(),
@@ -36,6 +56,12 @@ const envSchema = z
     INVITATION_TTL_HOURS: z.coerce.number().positive().default(48),
     PASSWORD_RESET_TTL_MINUTES: z.coerce.number().positive().default(30),
     TEMP_PASSWORD_ENCRYPTION_KEY: optionalEncryptionKey,
+    GOOGLE_TRANSFERS_SHEET_ID: optionalTrimmedString,
+    GOOGLE_TRANSFERS_SHEET_GID: optionalTrimmedString,
+    GOOGLE_TRANSFERS_SHEET_RANGE: optionalTrimmedString,
+    GOOGLE_TRANSFERS_SHEET_TIMEZONE: timezone,
+    GOOGLE_SERVICE_ACCOUNT_EMAIL: optionalEmail,
+    GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: optionalSheetPrivateKey,
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -82,6 +108,43 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ["TEMP_PASSWORD_ENCRYPTION_KEY"],
         message: "TEMP_PASSWORD_ENCRYPTION_KEY is required in production.",
+      });
+    }
+
+    if (
+      Boolean(env.GOOGLE_TRANSFERS_SHEET_ID) !==
+      Boolean(env.GOOGLE_TRANSFERS_SHEET_GID)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GOOGLE_TRANSFERS_SHEET_ID"],
+        message:
+          "GOOGLE_TRANSFERS_SHEET_ID and GOOGLE_TRANSFERS_SHEET_GID must be configured together.",
+      });
+    }
+
+    if (
+      Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL) !==
+      Boolean(env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GOOGLE_SERVICE_ACCOUNT_EMAIL"],
+        message:
+          "Google service-account email and private key must be configured together.",
+      });
+    }
+
+    if (
+      env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+      env.GOOGLE_TRANSFERS_SHEET_ID &&
+      !env.GOOGLE_TRANSFERS_SHEET_RANGE
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GOOGLE_TRANSFERS_SHEET_RANGE"],
+        message:
+          "GOOGLE_TRANSFERS_SHEET_RANGE is required for authenticated Google Sheets access.",
       });
     }
   });

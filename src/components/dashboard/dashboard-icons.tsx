@@ -11,6 +11,7 @@ export type DashboardIconName =
   | "dashboard"
   | "freshness"
   | "import"
+  | "leaderboard"
   | "menu"
   | "pause"
   | "performance"
@@ -83,6 +84,13 @@ export function DashboardIcon({
         <path d="M12 3v12" />
         <path d="m7 10 5 5 5-5" />
         <path d="M5 21h14" />
+      </>
+    ),
+    leaderboard: (
+      <>
+        <path d="M8 21h8M12 17v4" />
+        <path d="M7 4h10v4a5 5 0 0 1-10 0z" />
+        <path d="M7 6H4v1a4 4 0 0 0 4 4M17 6h3v1a4 4 0 0 1-4 4" />
       </>
     ),
     menu: (

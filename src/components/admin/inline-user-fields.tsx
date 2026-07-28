@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-type TextField = "email" | "dialerName";
+type TextField = "email" | "dialerName" | "shift";
 
 type PatchResult = {
   field?: TextField | "teamId";
@@ -197,6 +197,23 @@ export function InlineDialerNameEditor({
       label={`Primary dialer name for user ${userId}`}
       userId={userId}
       value={dialerName ?? ""}
+    />
+  );
+}
+
+export function InlineShiftEditor({
+  shift,
+  userId,
+}: {
+  shift: string | null;
+  userId: string;
+}) {
+  return (
+    <InlineTextEditor
+      field="shift"
+      label={`Shift for user ${userId}`}
+      userId={userId}
+      value={shift ?? ""}
     />
   );
 }

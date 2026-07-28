@@ -1,11 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useRef, useState } from "react";
 
+import {
+  toggleAllUserSelection,
+  toggleUserSelection,
+} from "@/admin/user-selection";
 import {
   InlineDialerNameEditor,
   InlineEmailEditor,
+  InlineShiftEditor,
   InlineTeamSelect,
   type InlineTeamOption,
 } from "@/components/admin/inline-user-fields";
@@ -20,9 +26,8 @@ type UserRow = {
   role: string;
   teamId: string | null;
   teamName: string | null;
+  shift: string | null;
   accountStatus: string;
-  invitationStatus: string;
-  lastLoginAt: string | null;
 };
 
 type InvitationResult = {
@@ -33,29 +38,43 @@ type InvitationResult = {
   outcomes: { userId: string; status: string; reason?: string }[];
 };
 
+type Feedback =
+  | { tone: "success" | "error"; message: string }
+  | null;
+
 export function AdminUserTable({
   activeTeams,
+  currentUserId,
   users,
 }: {
   activeTeams: InlineTeamOption[];
+  currentUserId: string;
   users: UserRow[];
 }) {
+  const router = useRouter();
+  const deleteDialog = useRef<HTMLDialogElement>(null);
+  const [rows, setRows] = useState(users);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<InvitationResult | null>(null);
-
-  function toggle(id: string) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const [busyAction, setBusyAction] = useState<"invite" | "delete" | null>(
+    null,
+  );
+  const [invitationResult, setInvitationResult] =
+    useState<InvitationResult | null>(null);
+  const [feedback, setFeedback] = useState<Feedback>(null);
+  const selectableIds = useMemo(
+    () => rows.filter((user) => user.id !== currentUserId).map((user) => user.id),
+    [currentUserId, rows],
+  );
+  const allSelected =
+    selectableIds.length > 0 &&
+    selectableIds.every((userId) => selected.has(userId));
+  const someSelected = selected.size > 0 && !allSelected;
+  const busy = busyAction !== null;
 
   async function sendInvitations() {
-    setBusy(true);
-    setResult(null);
+    setBusyAction("invite");
+    setInvitationResult(null);
+    setFeedback(null);
     try {
       const response = await fetch("/api/admin/users/invitations", {
         method: "POST",
@@ -68,9 +87,9 @@ export function AdminUserTable({
       if (!response.ok) {
         throw new Error(payload.error ?? "Invitations failed.");
       }
-      setResult(payload);
+      setInvitationResult(payload);
     } catch (cause) {
-      setResult({
+      setInvitationResult({
         selected: selected.size,
         sent: 0,
         skipped: 0,
@@ -85,45 +104,113 @@ export function AdminUserTable({
         ],
       });
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
-  const allSelected =
-    users.length > 0 && users.every((user) => selected.has(user.id));
+  async function deleteSelectedUsers() {
+    if (busy || selected.size === 0) return;
+
+    setBusyAction("delete");
+    setFeedback(null);
+    try {
+      const response = await fetch("/api/admin/users/bulk-delete", {
+        method: "DELETE",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: Array.from(selected) }),
+      });
+      const payload = (await response.json()) as {
+        deletedIds?: string[];
+        error?: string;
+      };
+      if (!response.ok || !payload.deletedIds) {
+        throw new Error(payload.error ?? "User deletion failed.");
+      }
+
+      const deleted = new Set(payload.deletedIds);
+      setRows((current) => current.filter((user) => !deleted.has(user.id)));
+      setSelected(new Set());
+      setInvitationResult(null);
+      setFeedback({
+        tone: "success",
+        message: `${deleted.size} ${deleted.size === 1 ? "user was" : "users were"} permanently deleted.`,
+      });
+      deleteDialog.current?.close();
+      router.refresh();
+    } catch (cause) {
+      setFeedback({
+        tone: "error",
+        message:
+          cause instanceof Error ? cause.message : "User deletion failed.",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+        <span className="text-sm font-semibold" aria-live="polite">
+          {selected.size} selected
+        </span>
         <button
           className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           disabled={selected.size === 0 || busy}
           onClick={sendInvitations}
           type="button"
         >
-          {busy ? "Sending…" : `Send invitation (${selected.size})`}
+          {busyAction === "invite"
+            ? "Sending…"
+            : `Send invitation (${selected.size})`}
         </button>
+        {selected.size > 0 ? (
+          <button
+            className="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            disabled={busy}
+            onClick={() => {
+              setFeedback(null);
+              deleteDialog.current?.showModal();
+            }}
+            type="button"
+          >
+            Delete Selected Users
+          </button>
+        ) : null}
         <p className="text-sm text-muted">
-          Each selected user receives a separate expiring link.
+          The signed-in administrator is protected from selection.
         </p>
       </div>
-      {result ? (
+      {feedback ? (
+        <div
+          className={
+            feedback.tone === "success"
+              ? "border-b border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary"
+              : "border-b border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger"
+          }
+          role={feedback.tone === "error" ? "alert" : "status"}
+        >
+          {feedback.message}
+        </div>
+      ) : null}
+      {invitationResult ? (
         <div
           aria-live="polite"
           className="border-b border-border bg-background/50 px-4 py-3 text-sm"
-          role={result.failed > 0 ? "alert" : "status"}
+          role={invitationResult.failed > 0 ? "alert" : "status"}
         >
           <p className="font-medium">
-            Selected {result.selected} · Sent {result.sent} · Skipped{" "}
-            {result.skipped} · Failed {result.failed}
+            Selected {invitationResult.selected} · Sent {invitationResult.sent} ·
+            Skipped {invitationResult.skipped} · Failed {invitationResult.failed}
           </p>
-          {result.outcomes.some((outcome) => outcome.reason) ? (
+          {invitationResult.outcomes.some((outcome) => outcome.reason) ? (
             <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
-              {result.outcomes
+              {invitationResult.outcomes
                 .filter((outcome) => outcome.reason)
                 .map((outcome, index) => (
                   <li key={`${outcome.userId}-${index}`}>
-                    {users.find((user) => user.id === outcome.userId)?.name ??
+                    {rows.find((user) => user.id === outcome.userId)?.name ??
                       "Invitation"}
                     : {outcome.reason}
                   </li>
@@ -136,57 +223,58 @@ export function AdminUserTable({
         <table className="w-full text-sm">
           <thead className="text-left text-muted">
             <tr>
-              <th className="px-4 py-3">
-                <span className="flex min-w-48 items-center gap-3">
+              <th className="px-4 py-3" scope="col">
+                <input
+                  aria-label="Select all users on this page"
+                  checked={allSelected}
+                  ref={(element) => {
+                    if (element) element.indeterminate = someSelected;
+                  }}
+                  onChange={() =>
+                    setSelected((current) =>
+                      toggleAllUserSelection(current, selectableIds),
+                    )
+                  }
+                  type="checkbox"
+                />
+              </th>
+              <th className="px-4 py-3" scope="col">Real Name</th>
+              <th className="px-4 py-3" scope="col">Email</th>
+              <th className="px-4 py-3" scope="col">American Name</th>
+              <th className="px-4 py-3" scope="col">Role</th>
+              <th className="px-4 py-3" scope="col">Team</th>
+              <th className="px-4 py-3" scope="col">Shift</th>
+              <th className="px-4 py-3" scope="col">Status</th>
+              <th className="px-4 py-3" scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((user) => (
+              <tr className="border-t border-border align-top" key={user.id}>
+                <td className="px-4 py-3">
                   <input
-                    aria-label="Select all users on this page"
-                    checked={allSelected}
+                    aria-label={`Select ${user.name}`}
+                    checked={selected.has(user.id)}
+                    disabled={user.id === currentUserId || busy}
                     onChange={() =>
-                      setSelected(
-                        allSelected
-                          ? new Set()
-                          : new Set(users.map((user) => user.id)),
+                      setSelected((current) =>
+                        toggleUserSelection(current, user.id),
                       )
                     }
                     type="checkbox"
                   />
-                  <span>Full name</span>
-                </span>
-              </th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Dialer name</th>
-              <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Team</th>
-              <th className="px-4 py-3">Account</th>
-              <th className="px-4 py-3">Invitation</th>
-              <th className="px-4 py-3">Last login</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr className="border-t border-border align-top" key={user.id}>
-                <td className="px-4 py-3">
-                  <span className="flex items-center gap-3">
-                    <input
-                      aria-label={`Select ${user.name}`}
-                      checked={selected.has(user.id)}
-                      onChange={() => toggle(user.id)}
-                      type="checkbox"
-                    />
-                    <Link
-                      className="font-medium text-primary hover:underline"
-                      href={`/admin/users/${user.id}`}
-                    >
-                      {user.name}
-                    </Link>
-                  </span>
                 </td>
+                <th className="px-4 py-3 text-left" scope="row">
+                  <Link
+                    className="font-medium text-primary hover:underline"
+                    href={`/admin/users/${user.id}`}
+                  >
+                    {user.name}
+                  </Link>
+                </th>
                 <td className="px-4 py-3">
                   {user.email ? (
-                    <InlineEmailEditor
-                      email={user.email}
-                      userId={user.id}
-                    />
+                    <InlineEmailEditor email={user.email} userId={user.id} />
                   ) : (
                     "—"
                   )}
@@ -211,25 +299,67 @@ export function AdminUserTable({
                   )}
                 </td>
                 <td className="px-4 py-3">
+                  <InlineShiftEditor shift={user.shift} userId={user.id} />
+                </td>
+                <td className="px-4 py-3">
                   <span className="inline-flex rounded-full border border-border bg-background px-2 py-0.5 text-xs capitalize">
                     {statusLabel(user.accountStatus)}
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="inline-flex rounded-full border border-border bg-background px-2 py-0.5 text-xs capitalize">
-                    {statusLabel(user.invitationStatus)}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  {user.lastLoginAt
-                    ? new Date(user.lastLoginAt).toLocaleString("en-US")
-                    : "Never"}
+                  <Link
+                    className="font-medium text-primary hover:underline"
+                    href={`/admin/users/${user.id}`}
+                  >
+                    View
+                  </Link>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </TableScroll>
+
+      <dialog
+        className="m-auto w-[min(34rem,calc(100%-2rem))] rounded-lg border border-danger/40 bg-surface p-0 text-foreground shadow-2xl backdrop:bg-black/70"
+        ref={deleteDialog}
+      >
+        <div className="p-5">
+          <h2 className="text-lg font-semibold">Delete selected users?</h2>
+          <p className="mt-2 text-sm text-muted">
+            {selected.size} {selected.size === 1 ? "user is" : "users are"}{" "}
+            selected. Account deletion is permanent and cannot be undone.
+          </p>
+          <p className="mt-3 text-sm text-muted">
+            Login credentials and active sessions will be removed. Historical
+            performance, imports, calls, transfers, deals, team attribution,
+            and audit records will remain.
+          </p>
+          {feedback?.tone === "error" ? (
+            <p className="mt-3 text-sm text-danger" role="alert">
+              {feedback.message}
+            </p>
+          ) : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              className="rounded-md border border-border px-3 py-2 text-sm font-medium"
+              disabled={busy}
+              onClick={() => deleteDialog.current?.close()}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              disabled={busy}
+              onClick={deleteSelectedUsers}
+              type="button"
+            >
+              {busyAction === "delete" ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      </dialog>
     </>
   );
 }

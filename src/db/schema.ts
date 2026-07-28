@@ -98,6 +98,7 @@ export const profiles = mysqlTable(
     id: varchar("id", { length: 36 }).primaryKey(),
     email: varchar("email", { length: 255 }),
     name: varchar("name", { length: 255 }).notNull(),
+    shift: varchar("shift", { length: 80 }),
     role: roleEnum.notNull(),
     passwordHash: varchar("password_hash", { length: 255 }),
     passwordState: passwordStateEnum.notNull().default("permanent"),

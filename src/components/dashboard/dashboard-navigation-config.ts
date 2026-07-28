@@ -4,6 +4,7 @@ import type { DashboardNavItem } from "@/components/dashboard/dashboard-navigati
 const primaryItems: DashboardNavItem[] = [
   { href: "/dashboard", icon: "dashboard", label: "Overview" },
   { href: "/performance", icon: "performance", label: "Performance" },
+  { href: "/leaderboard", icon: "leaderboard", label: "LeaderBoard" },
   { href: "/agents", icon: "agent", label: "Agents" },
   {
     href: "/teams/performance",
@@ -36,6 +37,7 @@ export function navigationForRole(role: Role, userId: string) {
       ? [
           primaryItems[0],
           primaryItems[1],
+          primaryItems[2],
           {
             href: `/agents/${userId}`,
             icon: "agent" as const,

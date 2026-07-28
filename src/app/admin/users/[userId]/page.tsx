@@ -79,13 +79,14 @@ export default async function AdminUserDetailPage({
           <h1 className="text-xl font-semibold">{details.profile.name}</h1>
         </div>
         <dl className="mt-5 grid gap-4 text-sm md:grid-cols-3 lg:grid-cols-4">
-          <Fact label="Full name" value={details.profile.name} />
+          <Fact label="Real Name" value={details.profile.name} />
           <Fact label="Email" value={details.profile.email ?? "—"} />
           <Fact label="Role" value={roleLabel(details.profile.role)} />
           <Fact
             label="Current team"
             value={details.activeMembership?.teamName ?? "No team"}
           />
+          <Fact label="Shift" value={details.profile.shift ?? "Unassigned"} />
           <Fact
             label="Account status"
             value={statusLabel(details.profile.accountStatus)}
@@ -108,7 +109,7 @@ export default async function AdminUserDetailPage({
             value={String(details.activeSessionCount)}
           />
           <Fact
-            label="Current dialer mapping"
+            label="American Name"
             value={currentDialer?.sourceAgentName ?? "No primary mapping"}
           />
           <Fact label="Created" value={fmt(details.profile.createdAt)} />

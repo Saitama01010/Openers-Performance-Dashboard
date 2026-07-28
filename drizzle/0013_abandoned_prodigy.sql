@@ -1,0 +1,1 @@
+ALTER TABLE `profiles` ADD `shift` varchar(80);

@@ -13,6 +13,7 @@ describe("dashboard shell navigation by role", () => {
     expect(destinations("agent")).toEqual([
       "/dashboard",
       "/performance",
+      "/leaderboard",
       "/agents/profile-1",
     ]);
   });
@@ -21,6 +22,7 @@ describe("dashboard shell navigation by role", () => {
     expect(destinations("manager")).toEqual([
       "/dashboard",
       "/performance",
+      "/leaderboard",
       "/agents",
       "/teams/performance",
       "/import",
@@ -31,8 +33,15 @@ describe("dashboard shell navigation by role", () => {
     const adminDestinations = destinations("admin");
 
     expect(adminDestinations).toContain("/import");
+    expect(adminDestinations).toContain("/leaderboard");
     expect(adminDestinations).toContain("/admin/users");
     expect(adminDestinations).toContain("/admin/permissions");
     expect(adminDestinations).toContain("/admin/audit");
+  });
+
+  it("shows the complete LeaderBoard route to every authenticated role", () => {
+    for (const role of ["admin", "manager", "agent"] as const) {
+      expect(destinations(role)).toContain("/leaderboard");
+    }
   });
 });

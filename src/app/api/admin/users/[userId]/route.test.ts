@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   updateUserEmail: vi.fn(),
   updateUserPrimaryDialerName: vi.fn(),
+  updateUserShift: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
@@ -24,6 +25,7 @@ vi.mock("@/admin/data", () => ({
   permanentlyDeleteUser: mocks.permanentlyDeleteUser,
   updateUserEmail: mocks.updateUserEmail,
   updateUserPrimaryDialerName: mocks.updateUserPrimaryDialerName,
+  updateUserShift: mocks.updateUserShift,
 }));
 
 import { DELETE, PATCH } from "@/app/api/admin/users/[userId]/route";
@@ -71,6 +73,11 @@ describe("admin user inline API", () => {
       teamName: "Team Two",
       changed: true,
     });
+    mocks.updateUserShift.mockResolvedValue({
+      field: "shift",
+      value: "Evening",
+      changed: true,
+    });
   });
 
   it("allows an administrator to update only the requested email field", async () => {
@@ -94,9 +101,13 @@ describe("admin user inline API", () => {
     );
   });
 
-  it("dispatches dialer-name and team changes to their granular mutations", async () => {
+  it("dispatches dialer-name, shift, and team changes to granular mutations", async () => {
     await PATCH(
       patchRequest({ field: "dialerName", value: "New Dialer" }),
+      context,
+    );
+    await PATCH(
+      patchRequest({ field: "shift", value: "Evening" }),
       context,
     );
     await PATCH(
@@ -111,6 +122,10 @@ describe("admin user inline API", () => {
     expect(mocks.moveUserToTeam).toHaveBeenCalledWith(expect.anything(), {
       userId: "user-1",
       teamId: "team-2",
+    });
+    expect(mocks.updateUserShift).toHaveBeenCalledWith(expect.anything(), {
+      userId: "user-1",
+      shift: "Evening",
     });
   });
 

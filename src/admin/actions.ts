@@ -139,6 +139,7 @@ export async function createUserAction(formData: FormData) {
       role: readRole(formData),
       teamId: formString(formData, "teamId") || undefined,
       dialerName: formString(formData, "dialerName"),
+      shift: formString(formData, "shift"),
       dialerAliases: splitAliases(formString(formData, "dialerAliases")),
       permissionOverrides: readPermissionOverrides(formData),
     });
@@ -161,6 +162,7 @@ export async function updateUserAction(userId: string, formData: FormData) {
       email: formString(formData, "email"),
       role: readRole(formData),
       teamId: formString(formData, "teamId") || undefined,
+      shift: formString(formData, "shift"),
       permissionOverrides: readPermissionOverrides(formData),
     });
     revalidatePath(`/admin/users/${userId}`);

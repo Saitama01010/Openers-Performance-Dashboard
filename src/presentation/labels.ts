@@ -87,6 +87,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.created": "User account created",
   "user.deactivated": "User account deactivated",
   "user.deleted": "User permanently deleted",
+  "user.shift_updated": "User shift updated",
   "user.email_updated": "Login email updated",
   "user.imported": "User imported through CSV",
   "user.invitation_email_failed": "Invitation email failed",

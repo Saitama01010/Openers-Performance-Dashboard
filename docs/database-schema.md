@@ -2,6 +2,10 @@
 
 Drizzle schema lives in `src/db/schema.ts`; versioned SQL migrations live in `drizzle/`.
 
+The `profiles.shift` field is a nullable `varchar(80)`. It is optional for
+existing and newly created users and is updated through the same
+administrator-only inline profile API as email, American Name, and team.
+
 Foundational tables currently cover profiles, teams, historical team
 memberships, roles, permissions, user permission overrides, hashed sessions,
 invitation tokens, reset tokens, rate-limit counters, source mappings,

@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import {
   moveUserToTeam,
   permanentlyDeleteUser,
+  updateUserShift,
   updateUserEmail,
   updateUserPrimaryDialerName,
 } from "@/admin/data";
@@ -14,7 +15,7 @@ const HEADERS = {
   Pragma: "no-cache",
 } as const;
 
-const SUPPORTED_FIELDS = new Set(["email", "dialerName", "teamId"]);
+const SUPPORTED_FIELDS = new Set(["email", "dialerName", "teamId", "shift"]);
 const SAFE_ERRORS = new Set([
   "Another user already owns this dialer name.",
   "Another user already owns this email address.",
@@ -22,6 +23,7 @@ const SAFE_ERRORS = new Set([
   "Dialer name must be 255 characters or fewer.",
   "Enter a valid email address.",
   "Select an active team.",
+  "Shift must be 80 characters or fewer.",
   "Team can only be changed for agents and managers.",
   "Team was not found.",
   "Untrusted request origin.",
@@ -30,7 +32,7 @@ const SAFE_ERRORS = new Set([
   "The final active admin cannot be changed.",
 ]);
 
-type InlineField = "email" | "dialerName" | "teamId";
+type InlineField = "email" | "dialerName" | "teamId" | "shift";
 
 function errorResponse(error: unknown, fallback: string) {
   const message =
@@ -113,7 +115,9 @@ export async function PATCH(
               userId,
               dialerName: value,
             })
-          : await moveUserToTeam(actor, { userId, teamId: value });
+          : field === "shift"
+            ? await updateUserShift(actor, { userId, shift: value })
+            : await moveUserToTeam(actor, { userId, teamId: value });
 
     if (result.changed) {
       revalidateAdminUserPaths(userId);

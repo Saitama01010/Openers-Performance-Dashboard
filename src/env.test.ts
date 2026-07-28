@@ -76,4 +76,28 @@ describe("environment validation", () => {
       }),
     ).toThrow(/base64-encoded 32-byte key/);
   });
+
+  it("validates the optional transfer Sheet configuration", async () => {
+    const { parseEnv } = await import("@/env");
+    const env = parseEnv({
+      ...baseEnv,
+      GOOGLE_TRANSFERS_SHEET_ID: "sheet-id",
+      GOOGLE_TRANSFERS_SHEET_GID: "1437961980",
+      GOOGLE_TRANSFERS_SHEET_TIMEZONE: "Africa/Cairo",
+    });
+    expect(env.GOOGLE_TRANSFERS_SHEET_TIMEZONE).toBe("Africa/Cairo");
+
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        GOOGLE_TRANSFERS_SHEET_ID: "sheet-id",
+      }),
+    ).toThrow(/must be configured together/);
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        GOOGLE_TRANSFERS_SHEET_TIMEZONE: "Mars/Olympus",
+      }),
+    ).toThrow(/valid IANA timezone/);
+  });
 });

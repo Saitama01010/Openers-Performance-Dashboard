@@ -38,6 +38,7 @@ import {
   validatePermissionOverrides,
   type PermissionOverrideInput,
 } from "@/admin/policy";
+import { parseBulkUserIds } from "@/admin/bulk-user-deletion";
 import { getDb } from "@/db";
 import {
   accountInvitationTokens,
@@ -93,6 +94,7 @@ export type CreateUserInput = {
   role: Role;
   teamId?: string;
   dialerName?: string;
+  shift?: string;
   dialerAliases: string[];
   permissionOverrides: PermissionOverrideInput[];
   importBatchId?: string;
@@ -104,6 +106,7 @@ export type UpdateUserInput = {
   email: string;
   role: Role;
   teamId?: string;
+  shift?: string;
   permissionOverrides: PermissionOverrideInput[];
 };
 
@@ -124,6 +127,11 @@ export type InlineUserUpdateResult =
       value: string;
       teamName: string;
       changed: boolean;
+    }
+  | {
+      field: "shift";
+      value: string;
+      changed: boolean;
     };
 
 function assertAdmin(actor: Actor) {
@@ -142,6 +150,14 @@ function normalizeDialerDisplayName(value: string) {
 
 function normalizeDialerIdentity(value: string) {
   return normalizeDialerDisplayName(value).toLowerCase();
+}
+
+function normalizeShift(value?: string) {
+  const shift = trimText(value ?? "");
+  if (shift.length > 80) {
+    throw new Error("Shift must be 80 characters or fewer.");
+  }
+  return shift || null;
 }
 
 function isDuplicateEntryError(error: unknown): boolean {
@@ -470,6 +486,7 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
         id: profiles.id,
         email: profiles.email,
         name: profiles.name,
+        shift: profiles.shift,
         role: profiles.role,
         accountStatus: profiles.accountStatus,
         passwordState: profiles.passwordState,
@@ -714,6 +731,7 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
 
   const name = trimText(input.name);
   const email = normalizeEmail(input.email);
+  const shift = normalizeShift(input.shift);
 
   if (name.length < 2) throw new Error("Full name is required.");
   if (!email.includes("@")) throw new Error("A valid email is required.");
@@ -763,6 +781,7 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
       id: profileId,
       email,
       name,
+      shift,
       role: input.role,
       active: true,
       passwordHash,
@@ -820,6 +839,7 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
           id: profileId,
           email,
           name,
+          shift,
           role: input.role,
           accountStatus: "active",
           teamId: input.teamId ?? null,
@@ -963,78 +983,99 @@ export async function bulkSendInvitations(actor: Actor, userIds: string[]) {
   return outcomes;
 }
 
-export async function permanentlyDeleteUser(
+export async function permanentlyDeleteUsers(
   actor: Actor,
-  input: { userId: string },
+  input: { userIds: unknown },
 ) {
   assertAdmin(actor);
-  if (actor.id === input.userId) {
+  const userIds = parseBulkUserIds(input.userIds);
+
+  if (userIds.includes(actor.id.toLowerCase())) {
     throw new Error("You cannot permanently delete your own account.");
   }
 
-  await getDb().transaction(async (tx) => {
+  return getDb().transaction(async (tx) => {
     const rows = await tx
       .select()
       .from(profiles)
-      .where(eq(profiles.id, input.userId))
-      .limit(1)
+      .where(inArray(profiles.id, userIds))
       .for("update");
-    const profile = rows[0];
 
-    if (!profile || profile.accountStatus === "deleted") {
-      throw new Error("User was not found.");
+    if (
+      rows.length !== userIds.length ||
+      rows.some((profile) => profile.accountStatus === "deleted")
+    ) {
+      throw new Error("One or more selected users were not found.");
     }
 
     const activeAdminCount = await getActiveAdminCountForUpdate(tx);
-    assertCanRemoveAdmin({
-      targetRole: profile.role,
-      targetStatus: profile.accountStatus,
-      activeAdminCount,
-      nextStatus: "revoked",
-    });
+    const selectedActiveAdminCount = rows.filter(
+      (profile) =>
+        profile.role === "admin" &&
+        profile.accountStatus === "active" &&
+        profile.active,
+    ).length;
+    if (
+      selectedActiveAdminCount > 0 &&
+      activeAdminCount - selectedActiveAdminCount < 1
+    ) {
+      throw new Error("The final active admin cannot be changed.");
+    }
 
     const now = new Date();
     const mappingRows = await tx
-      .select({ sourceAgentName: sourceUserMappings.sourceAgentName })
+      .select({
+        profileId: sourceUserMappings.profileId,
+        sourceAgentName: sourceUserMappings.sourceAgentName,
+      })
       .from(sourceUserMappings)
       .where(
         and(
-          eq(sourceUserMappings.profileId, input.userId),
+          inArray(sourceUserMappings.profileId, userIds),
           eq(sourceUserMappings.isPrimary, true),
+          eq(sourceUserMappings.active, true),
         ),
-      )
-      .limit(1);
+      );
     const membershipRows = await tx
-      .select({ teamName: teams.name })
+      .select({
+        profileId: teamMemberships.profileId,
+        teamName: teams.name,
+      })
       .from(teamMemberships)
       .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
       .where(
         and(
-          eq(teamMemberships.profileId, input.userId),
+          inArray(teamMemberships.profileId, userIds),
+          eq(teamMemberships.active, true),
           isNull(teamMemberships.endedAt),
         ),
-      )
-      .limit(1);
+      );
+    const mappingByProfile = new Map(
+      mappingRows.map((row) => [row.profileId, row.sourceAgentName]),
+    );
+    const teamByProfile = new Map(
+      membershipRows.map((row) => [row.profileId, row.teamName]),
+    );
 
     await tx
       .delete(emailDeliveryAttempts)
-      .where(eq(emailDeliveryAttempts.profileId, input.userId));
+      .where(inArray(emailDeliveryAttempts.profileId, userIds));
     await tx
       .delete(accountInvitationTokens)
-      .where(eq(accountInvitationTokens.profileId, input.userId));
+      .where(inArray(accountInvitationTokens.profileId, userIds));
     await tx
       .delete(passwordResetTokens)
-      .where(eq(passwordResetTokens.profileId, input.userId));
-    await tx.delete(sessions).where(eq(sessions.profileId, input.userId));
+      .where(inArray(passwordResetTokens.profileId, userIds));
+    await tx.delete(sessions).where(inArray(sessions.profileId, userIds));
     await tx
       .delete(userPermissionOverrides)
-      .where(eq(userPermissionOverrides.profileId, input.userId));
+      .where(inArray(userPermissionOverrides.profileId, userIds));
     await tx
       .update(teamMemberships)
       .set({ active: false, endedAt: now })
       .where(
         and(
-          eq(teamMemberships.profileId, input.userId),
+          inArray(teamMemberships.profileId, userIds),
           isNull(teamMemberships.endedAt),
         ),
       );
@@ -1050,7 +1091,7 @@ export async function permanentlyDeleteUser(
       })
       .where(
         and(
-          eq(sourceUserMappings.profileId, input.userId),
+          inArray(sourceUserMappings.profileId, userIds),
           eq(sourceUserMappings.active, true),
         ),
       );
@@ -1068,25 +1109,47 @@ export async function permanentlyDeleteUser(
         accessRevokedAt: now,
         deletedAt: now,
       })
-      .where(eq(profiles.id, input.userId));
-    await tx.insert(auditLogs).values({
-      id: newId(),
-      actorProfileId: actor.id,
-      action: "user.deleted",
-      entityType: "profile",
-      entityId: input.userId,
-      metadata: {
-        historicalIdentity: {
-          displayName: profile.name,
-          dialerName: mappingRows[0]?.sourceAgentName ?? null,
-          team: membershipRows[0]?.teamName ?? null,
-          role: profile.role,
-          deletedAt: now.toISOString(),
-          status: "Deleted user",
+      .where(inArray(profiles.id, userIds));
+    await tx.insert(auditLogs).values(
+      rows.map((profile) => ({
+        id: newId(),
+        actorProfileId: actor.id,
+        action: "user.deleted",
+        entityType: "profile",
+        entityId: profile.id,
+        metadata: {
+          historicalIdentity: {
+            displayName: profile.name,
+            dialerName: mappingByProfile.get(profile.id) ?? null,
+            team: teamByProfile.get(profile.id) ?? null,
+            shift: profile.shift,
+            role: profile.role,
+            deletedAt: now.toISOString(),
+            status: "Deleted user",
+          },
         },
-      },
-    });
+      })),
+    );
+
+    return { deletedIds: userIds };
   });
+}
+
+export async function permanentlyDeleteUser(
+  actor: Actor,
+  input: { userId: string },
+) {
+  try {
+    return await permanentlyDeleteUsers(actor, { userIds: [input.userId] });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "One or more selected users were not found."
+    ) {
+      throw new Error("User was not found.");
+    }
+    throw error;
+  }
 }
 
 export async function getAdminUserDetails(actor: Actor, userId: string) {
@@ -1285,6 +1348,54 @@ export async function updateUserEmail(
     throw error;
   }
 }
+
+export async function updateUserShift(
+  actor: Actor,
+  input: { userId: string; shift: string },
+): Promise<Extract<InlineUserUpdateResult, { field: "shift" }>> {
+  assertAdmin(actor);
+  const shift = normalizeShift(input.shift);
+
+  return getDb().transaction(async (tx) => {
+    const profileRows = await tx
+      .select({
+        id: profiles.id,
+        shift: profiles.shift,
+        accountStatus: profiles.accountStatus,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, input.userId))
+      .limit(1)
+      .for("update");
+    const profile = profileRows[0];
+
+    if (!profile || profile.accountStatus === "deleted") {
+      throw new Error("User was not found.");
+    }
+    if (profile.shift === shift) {
+      return { field: "shift", value: shift ?? "", changed: false };
+    }
+
+    await tx
+      .update(profiles)
+      .set({ shift })
+      .where(eq(profiles.id, input.userId));
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: actor.id,
+      action: "user.shift_updated",
+      entityType: "profile",
+      entityId: input.userId,
+      metadata: {
+        before: { shift: profile.shift },
+        after: { shift },
+      },
+    });
+
+    return { field: "shift", value: shift ?? "", changed: true };
+  });
+}
+
 
 export async function updateUserPrimaryDialerName(
   actor: Actor,
@@ -1574,6 +1685,7 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
 
   const name = trimText(input.name);
   const email = normalizeEmail(input.email);
+  const shift = normalizeShift(input.shift);
 
   if (name.length < 2) throw new Error("Full name is required.");
   if (!email.includes("@")) throw new Error("A valid email is required.");
@@ -1634,7 +1746,7 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
 
     await tx
       .update(profiles)
-      .set({ name, email, role: input.role })
+      .set({ name, email, role: input.role, shift })
       .where(eq(profiles.id, input.userId));
 
     await tx
@@ -1683,7 +1795,14 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
       entityId: input.userId,
       metadata: {
         before: safeProfileState(profile),
-        after: { id: input.userId, email, name, role: input.role, teamId: input.teamId ?? null },
+        after: {
+          id: input.userId,
+          email,
+          name,
+          role: input.role,
+          shift,
+          teamId: input.teamId ?? null,
+        },
       },
     });
     await tx.insert(auditLogs).values({

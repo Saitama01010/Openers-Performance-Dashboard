@@ -169,6 +169,7 @@ export default async function AdminUsersPage({
             activeTeams={referenceData.teams
               .filter((team) => team.active)
               .map((team) => ({ id: team.id, name: team.name }))}
+            currentUserId={actor.id}
             users={users.map((user) => ({
               id: user.id,
               name: user.name,
@@ -177,9 +178,8 @@ export default async function AdminUsersPage({
               role: user.role,
               teamId: user.team?.teamId ?? null,
               teamName: user.team?.teamName ?? null,
+              shift: user.shift,
               accountStatus: user.accountStatus,
-              invitationStatus: user.invitationStatus,
-              lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
             }))}
           />
         )}
@@ -192,7 +192,7 @@ export default async function AdminUsersPage({
       <section className="rounded-lg border border-border bg-surface p-5">
         <h2 className="text-lg font-semibold">Create user</h2>
         <form action={createUserAction} className="mt-4 grid gap-4 md:grid-cols-2">
-          <TextField label="Full name" name="name" required />
+          <TextField label="Real Name" name="name" required />
           <TextField label="Login email" name="email" required type="email" />
           <label className="text-sm font-medium">
             Role
@@ -213,7 +213,8 @@ export default async function AdminUsersPage({
               ))}
             </select>
           </label>
-          <TextField defaultValue={params.dialerName ?? ""} label="Dialer agent name" name="dialerName" required />
+          <TextField defaultValue={params.dialerName ?? ""} label="American Name" name="dialerName" required />
+          <TextField label="Shift" name="shift" />
           <label className="text-sm font-medium">
             Additional dialer aliases
             <textarea

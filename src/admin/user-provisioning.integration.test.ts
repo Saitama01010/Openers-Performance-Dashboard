@@ -7,6 +7,7 @@ import {
   createAdminUser,
   listAdminUsers,
   permanentlyDeleteUser,
+  permanentlyDeleteUsers,
   regenerateTemporaryPassword,
   revealTemporaryPassword,
 } from "@/admin/data";
@@ -329,5 +330,43 @@ describe("admin user provisioning integration", () => {
     await expect(
       permanentlyDeleteUser(actor(actorId), { userId: actorId }),
     ).rejects.toThrow("You cannot permanently delete your own account.");
+  });
+
+  it("bulk deletes multiple users in one authorized operation", async () => {
+    const adminId = await createActorProfile("admin");
+    const teamId = await createTeam();
+    const first = await createAdminUser(actor(adminId), {
+      name: "Bulk One",
+      email: "bulk.one@example.test",
+      role: "agent",
+      teamId,
+      shift: "Morning",
+      dialerName: "Bulk Dialer One",
+      dialerAliases: [],
+      permissionOverrides: [],
+    });
+    const second = await createAdminUser(actor(adminId), {
+      name: "Bulk Two",
+      email: "bulk.two@example.test",
+      role: "agent",
+      teamId,
+      shift: "",
+      dialerName: "Bulk Dialer Two",
+      dialerAliases: [],
+      permissionOverrides: [],
+    });
+    profileIds.push(first.profileId, second.profileId);
+
+    const result = await permanentlyDeleteUsers(actor(adminId), {
+      userIds: [first.profileId, second.profileId, first.profileId],
+    });
+
+    expect(result.deletedIds).toEqual([first.profileId, second.profileId]);
+    const deleted = await getDb()
+      .select({ id: profiles.id, status: profiles.accountStatus })
+      .from(profiles)
+      .where(inArray(profiles.id, result.deletedIds));
+    expect(deleted).toHaveLength(2);
+    expect(deleted.every((row) => row.status === "deleted")).toBe(true);
   });
 });

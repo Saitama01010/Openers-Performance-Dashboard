@@ -9,6 +9,8 @@ import {
   InlineTeamSelect,
   type InlineTeamOption,
 } from "@/components/admin/inline-user-fields";
+import { TableScroll } from "@/components/dashboard/dashboard-primitives";
+import { roleLabel, statusLabel } from "@/presentation/labels";
 
 type UserRow = {
   id: string;
@@ -30,10 +32,6 @@ type InvitationResult = {
   failed: number;
   outcomes: { userId: string; status: string; reason?: string }[];
 };
-
-function readableStatus(value: string) {
-  return value.replaceAll("_", " ");
-}
 
 export function AdminUserTable({
   activeTeams,
@@ -110,7 +108,11 @@ export function AdminUserTable({
         </p>
       </div>
       {result ? (
-        <div className="border-b border-border bg-background/50 px-4 py-3 text-sm">
+        <div
+          aria-live="polite"
+          className="border-b border-border bg-background/50 px-4 py-3 text-sm"
+          role={result.failed > 0 ? "alert" : "status"}
+        >
           <p className="font-medium">
             Selected {result.selected} · Sent {result.sent} · Skipped{" "}
             {result.skipped} · Failed {result.failed}
@@ -130,7 +132,7 @@ export function AdminUserTable({
           ) : null}
         </div>
       ) : null}
-      <div className="overflow-x-auto">
+      <TableScroll label="Users and access">
         <table className="w-full text-sm">
           <thead className="text-left text-muted">
             <tr>
@@ -195,7 +197,7 @@ export function AdminUserTable({
                     userId={user.id}
                   />
                 </td>
-                <td className="px-4 py-3 capitalize">{user.role}</td>
+                <td className="px-4 py-3">{roleLabel(user.role)}</td>
                 <td className="px-4 py-3">
                   {user.role === "agent" || user.role === "manager" ? (
                     <InlineTeamSelect
@@ -210,12 +212,12 @@ export function AdminUserTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="inline-flex rounded-full border border-border bg-background px-2 py-0.5 text-xs capitalize">
-                    {readableStatus(user.accountStatus)}
+                    {statusLabel(user.accountStatus)}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   <span className="inline-flex rounded-full border border-border bg-background px-2 py-0.5 text-xs capitalize">
-                    {readableStatus(user.invitationStatus)}
+                    {statusLabel(user.invitationStatus)}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -227,7 +229,7 @@ export function AdminUserTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </TableScroll>
     </>
   );
 }

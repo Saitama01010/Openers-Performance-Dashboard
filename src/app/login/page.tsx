@@ -1,77 +1,80 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { loginAction } from "@/auth/actions";
 import { getCurrentUser } from "@/auth/session";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { SubmitButton } from "@/components/dashboard/action-controls";
+import { StatusBanner } from "@/components/dashboard/dashboard-primitives";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; setup?: string; reset?: string }>;
+  searchParams: Promise<{ error?: string; reset?: string; setup?: string }>;
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
 
-  if (user) {
-    redirect("/dashboard");
-  }
+  if (user) redirect("/dashboard");
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10 text-foreground">
-      <section className="w-full max-w-sm rounded-lg border border-border bg-surface p-6">
-        <h1 className="text-xl font-semibold">Openers Dashboard</h1>
-        <p className="mt-2 text-sm text-muted">
-          Sign in with a seeded local user to review performance.
-        </p>
+    <AuthShell
+      description="Use your assigned account to open the role-scoped workspace."
+      footer={
+        <Link className="ui-link" href="/forgot-password">
+          Forgot your password?
+        </Link>
+      }
+      title="Sign in"
+    >
+      <div className="auth-card__messages">
         {params.error ? (
-          <p className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-            Invalid email or password.
-          </p>
+          <StatusBanner tone="danger">
+            The email or password did not match an active account. Check both
+            fields and try again.
+          </StatusBanner>
         ) : null}
         {params.setup === "complete" ? (
-          <p className="mt-4 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-            Account setup complete. Sign in with your new password.
-          </p>
+          <StatusBanner tone="success">
+            Your account is ready. Sign in with the password you created.
+          </StatusBanner>
         ) : null}
         {params.reset === "complete" ? (
-          <p className="mt-4 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-            Password changed. Sign in again on all devices.
-          </p>
+          <StatusBanner tone="success">
+            Your password changed. Sign in again on every device.
+          </StatusBanner>
         ) : null}
-        <form action={loginAction} className="mt-6 space-y-4">
-          <label className="block text-sm font-medium">
-            Email
-            <input
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-            />
-          </label>
-          <label className="block text-sm font-medium">
-            Password
-            <input
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          <button className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground">
-            Sign in
-          </button>
-        </form>
-        <Link
-          className="mt-4 block text-center text-sm font-medium text-primary underline-offset-4 hover:underline"
-          href="/forgot-password"
+      </div>
+      <form action={loginAction} className="auth-form">
+        <label className="ui-label">
+          Email
+          <input
+            autoComplete="email"
+            className="ui-input"
+            name="email"
+            required
+            type="email"
+          />
+        </label>
+        <label className="ui-label">
+          Password
+          <input
+            autoComplete="current-password"
+            className="ui-input"
+            name="password"
+            required
+            type="password"
+          />
+        </label>
+        <SubmitButton
+          className="auth-form__submit"
+          pendingLabel="Signing in"
         >
-          Forgot password?
-        </Link>
-      </section>
-    </main>
+          Sign in
+        </SubmitButton>
+      </form>
+    </AuthShell>
   );
 }

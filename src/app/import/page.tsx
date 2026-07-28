@@ -60,9 +60,9 @@ export default async function ImportPage({
     <DashboardShell user={user}>
       <div className="dashboard-page">
         <PageHeader
-          description="Upload a dialer CSV, review every mapped and skipped row, then confirm the import."
-          eyebrow="Dialer CSV workflow"
-          title="Import preview"
+          description="Upload an agent activity CSV, review mapped and skipped rows, then publish the validated draft."
+          eyebrow="Data operations"
+          title="Import agent activity"
         />
 
         <section aria-labelledby="upload-heading" className="ui-card ui-card--padded">
@@ -79,7 +79,7 @@ export default async function ImportPage({
           </div>
           <form action={previewImportAction}>
             <label className="ui-label mt-4">
-              Reporting date
+              Expected reporting date
               <input
                 className="ui-input"
                 name="reportingDate"
@@ -93,7 +93,7 @@ export default async function ImportPage({
             <FileUploadField
               accept=".csv,text/csv"
               helperText="Choose a CSV export from your dialer. The filename appears here before preview."
-              label="Dialer CSV"
+              label="Agent activity CSV"
               name="file"
               required
             />

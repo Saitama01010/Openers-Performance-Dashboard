@@ -4,6 +4,10 @@ import { useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { deleteImportAction } from "@/import/actions";
+import {
+  importStatusLabel,
+  importTypeLabel,
+} from "@/presentation/labels";
 import type { ImportDeletionAssessment } from "@/import/delete-service";
 import type { ActiveImportLifecycleOptions } from "@/import/active-lifecycle";
 
@@ -167,11 +171,11 @@ export function ImportDeleteForm({
           </div>
           <div>
             <dt className="text-xs uppercase text-muted">Import type</dt>
-            <dd>{importType.replaceAll("_", " ")}</dd>
+            <dd>{importTypeLabel(importType)}</dd>
           </div>
           <div>
             <dt className="text-xs uppercase text-muted">Status</dt>
-            <dd>{status.replaceAll("_", " ")}</dd>
+            <dd>{importStatusLabel(status)}</dd>
           </div>
           <div>
             <dt className="text-xs uppercase text-muted">Parsed metric rows</dt>

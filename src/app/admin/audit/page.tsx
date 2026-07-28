@@ -1,13 +1,48 @@
 import { redirect } from "next/navigation";
 
-import { listAuditLogs } from "@/admin/data";
 import { formatAuditEvent } from "@/admin/audit-format";
+import { listAuditLogs } from "@/admin/data";
 import { getCurrentUser } from "@/auth/session";
+import {
+  EmptyTableRow,
+  PageHeader,
+  TableScroll,
+} from "@/components/dashboard/dashboard-primitives";
+import { humanizeIdentifier } from "@/presentation/labels";
 
 export const dynamic = "force-dynamic";
 
-function fmt(value: Date | null | undefined) {
-  return value ? value.toLocaleString("en-US") : "-";
+function formatDate(value: Date | null | undefined) {
+  return value ? value.toLocaleString("en-US") : "Not recorded";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function namedTarget(metadata: unknown) {
+  if (!isRecord(metadata)) return null;
+
+  for (const key of [
+    "name",
+    "userName",
+    "teamName",
+    "fileName",
+    "sourceAgentName",
+  ]) {
+    const candidate = metadata[key];
+    if (typeof candidate === "string" && candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function formatTarget(entityType: string, metadata: unknown) {
+  const type = humanizeIdentifier(entityType);
+  const name = namedTarget(metadata);
+  return name ? `${type}: ${name}` : type;
 }
 
 export default async function AdminAuditPage() {
@@ -20,54 +55,87 @@ export default async function AdminAuditPage() {
 
   return (
     <section className="dashboard-page">
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <p className="text-sm text-muted">Admin only</p>
-          <h2 className="text-xl font-semibold">Audit Log</h2>
+      <PageHeader
+        description="Review human-readable administrative and import events. Technical evidence remains available on demand."
+        eyebrow="Administration"
+        title="Audit log"
+      />
+      <section className="ui-card">
+        <div className="ui-card__header">
+          <div>
+            <h2 className="ui-card__title">Recorded events</h2>
+            <p className="ui-card__subtitle">
+              Newest activity appears first.
+            </p>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted">
+        <TableScroll label="Audit log">
+          <table className="ui-table">
+            <caption>Administrative and import audit events</caption>
+            <thead>
               <tr>
-                <th className="px-4 py-3">When</th>
-                <th className="px-4 py-3">Actor</th>
-                <th className="px-4 py-3">Action</th>
-                <th className="px-4 py-3">Target</th>
-                <th className="px-4 py-3">Description</th>
+                <th scope="col">When</th>
+                <th scope="col">Actor</th>
+                <th scope="col">Action</th>
+                <th scope="col">Target</th>
+                <th scope="col">Description</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
-                const formatted = formatAuditEvent(row.action, row.metadata);
-                return (
-                  <tr className="border-t border-border align-top" key={row.id}>
-                    <td className="px-4 py-3">{fmt(row.createdAt)}</td>
-                    <td className="px-4 py-3">{row.actorName ?? row.actorProfileId ?? "system"}</td>
-                    <td className="px-4 py-3">{formatted.title}</td>
-                    <td className="px-4 py-3">{row.entityType}:{row.entityId ?? "-"}</td>
-                    <td className="px-4 py-3">
-                      {formatted.details.join(" ") || "No additional details."}
-                      {formatted.technicalDetails &&
-                      typeof formatted.technicalDetails === "object" &&
-                      Object.keys(formatted.technicalDetails).length > 0 ? (
-                        <details className="mt-2">
-                          <summary className="cursor-pointer text-xs text-muted">
-                            Technical details
-                          </summary>
-                          <pre className="mt-2 max-w-xl overflow-auto whitespace-pre-wrap text-xs text-muted">
-                            {JSON.stringify(formatted.technicalDetails, null, 2)}
-                          </pre>
-                        </details>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
+              {rows.length === 0 ? (
+                <EmptyTableRow
+                  colSpan={5}
+                  description="Administrative and import actions will appear here after they are recorded."
+                  title="No audit events have been recorded"
+                />
+              ) : (
+                rows.map((row) => {
+                  const formatted = formatAuditEvent(
+                    row.action,
+                    row.metadata,
+                  );
+                  const technicalEvidence = {
+                    ...(isRecord(formatted.technicalDetails)
+                      ? formatted.technicalDetails
+                      : {}),
+                    ...(row.actorProfileId
+                      ? { actorProfileId: row.actorProfileId }
+                      : {}),
+                    ...(row.entityId ? { entityId: row.entityId } : {}),
+                  };
+                  return (
+                    <tr key={row.id}>
+                      <td>{formatDate(row.createdAt)}</td>
+                      <td>
+                        {row.actorName ??
+                          (row.actorProfileId ? "User account" : "System")}
+                      </td>
+                      <td>{formatted.title}</td>
+                      <td>
+                        <span className="audit-target">
+                          {formatTarget(row.entityType, row.metadata)}
+                        </span>
+                      </td>
+                      <td className="audit-description">
+                        {formatted.details.join(" ") ||
+                          "No additional details were recorded."}
+                        {Object.keys(technicalEvidence).length > 0 ? (
+                          <details className="ui-details ui-details--compact mt-2">
+                            <summary>Technical details</summary>
+                            <pre className="audit-technical-details">
+                              {JSON.stringify(technicalEvidence, null, 2)}
+                            </pre>
+                          </details>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </section>
     </section>
   );
 }
-

@@ -3,29 +3,16 @@ import { notFound, redirect } from "next/navigation";
 
 import { formatAuditEvent } from "@/admin/audit-format";
 import { getAdminUserDetails } from "@/admin/data";
-import { adminErrorMessage } from "@/admin/messages";
+import { adminErrorMessage, adminSuccessMessage } from "@/admin/messages";
 import { getCurrentUser } from "@/auth/session";
 import { DeleteUserDialog } from "@/components/admin/delete-user-dialog";
 import { TemporaryPasswordControls } from "@/components/admin/temporary-password-controls";
+import { roleLabel, statusLabel } from "@/presentation/labels";
 
 export const dynamic = "force-dynamic";
 
 function fmt(value: Date | null | undefined) {
   return value ? value.toLocaleString("en-US") : "Never";
-}
-
-function readable(value: string) {
-  return value
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function membershipRole(role: "admin" | "manager" | "agent") {
-  return role === "manager"
-    ? "Team Manager"
-    : role === "admin"
-      ? "Administrator"
-      : "Agent";
 }
 
 function invitationRecordStatus(invitation: {
@@ -37,7 +24,7 @@ function invitationRecordStatus(invitation: {
   if (invitation.usedAt) return "Accepted";
   if (invitation.revokedAt) return "Revoked";
   if (invitation.expiresAt.getTime() <= Date.now()) return "Expired";
-  return readable(invitation.deliveryStatus);
+  return statusLabel(invitation.deliveryStatus);
 }
 
 function resetRecordStatus(reset: {
@@ -78,7 +65,7 @@ export default async function AdminUserDetailPage({
         className="text-sm font-medium text-primary hover:underline"
         href="/admin/users"
       >
-        Back to Users & Access
+        Back to users & access
       </Link>
       <StatusMessage
         error={query.error}
@@ -94,23 +81,23 @@ export default async function AdminUserDetailPage({
         <dl className="mt-5 grid gap-4 text-sm md:grid-cols-3 lg:grid-cols-4">
           <Fact label="Full name" value={details.profile.name} />
           <Fact label="Email" value={details.profile.email ?? "—"} />
-          <Fact label="Role" value={readable(details.profile.role)} />
+          <Fact label="Role" value={roleLabel(details.profile.role)} />
           <Fact
             label="Current team"
             value={details.activeMembership?.teamName ?? "No team"}
           />
           <Fact
             label="Account status"
-            value={readable(details.profile.accountStatus)}
+            value={statusLabel(details.profile.accountStatus)}
           />
           <Fact
             label="Invitation status"
-            value={readable(details.invitationStatus)}
+            value={statusLabel(details.invitationStatus)}
           />
           <Fact label="Last login" value={fmt(details.profile.lastLoginAt)} />
           <Fact
             label="Password state"
-            value={readable(details.profile.passwordState)}
+            value={statusLabel(details.profile.passwordState)}
           />
           <Fact
             label="Password changed"
@@ -234,7 +221,7 @@ export default async function AdminUserDetailPage({
                 <tr className="border-t border-border" key={membership.id}>
                   <td className="px-4 py-3">{membership.teamName}</td>
                   <td className="px-4 py-3">
-                    {membershipRole(membership.role)}
+                    {roleLabel(membership.role)}
                   </td>
                   <td className="px-4 py-3">{fmt(membership.startedAt)}</td>
                   <td className="px-4 py-3">
@@ -385,7 +372,7 @@ function StatusMessage({
   if (ok) {
     return (
       <p className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-        Action completed.
+        {adminSuccessMessage(ok)}
       </p>
     );
   }

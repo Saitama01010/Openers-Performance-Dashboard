@@ -1,21 +1,29 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createTeamAction } from "@/admin/actions";
 import { listTeams } from "@/admin/data";
-import { adminErrorMessage } from "@/admin/messages";
+import { adminErrorMessage, adminSuccessMessage } from "@/admin/messages";
 import { getCurrentUser } from "@/auth/session";
 import { InlineTeamSelect } from "@/components/admin/inline-user-fields";
+import { SubmitButton } from "@/components/dashboard/action-controls";
+import {
+  EmptyTableRow,
+  PageHeader,
+  StatusBanner,
+  TableScroll,
+} from "@/components/dashboard/dashboard-primitives";
 
 export const dynamic = "force-dynamic";
 
-function fmt(value: Date | null | undefined) {
-  return value ? value.toLocaleString("en-US") : "—";
+function formatDate(value: Date | null | undefined) {
+  return value ? value.toLocaleString("en-US") : "Not recorded";
 }
 
 export default async function AdminTeamsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ok?: string; error?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string }>;
 }) {
   const actor = await getCurrentUser();
   const params = await searchParams;
@@ -35,57 +43,81 @@ export default async function AdminTeamsPage({
   );
 
   return (
-    <section className="mx-auto max-w-7xl space-y-6 px-6 py-6">
-      <StatusMessage error={params.error} ok={params.ok} />
+    <section className="dashboard-page">
+      <PageHeader
+        actions={
+          <Link
+            className="ui-button ui-button--secondary"
+            href="/teams/performance"
+          >
+            View team performance
+          </Link>
+        }
+        description="Create reporting teams and maintain active manager and agent assignments."
+        eyebrow="Administration"
+        title="Teams"
+      />
 
-      <section className="rounded-lg border border-border bg-surface p-5">
-        <p className="text-sm text-muted">Admin only</p>
-        <h2 className="text-xl font-semibold">Create a new team</h2>
-        <form action={createTeamAction} className="mt-4 flex flex-wrap gap-3">
-          <label className="min-w-72 flex-1 text-sm font-medium">
+      {params.error ? (
+        <StatusBanner tone="danger">
+          {adminErrorMessage(params.error)}
+        </StatusBanner>
+      ) : null}
+      {params.ok ? (
+        <StatusBanner tone="success">
+          {adminSuccessMessage(params.ok)}
+        </StatusBanner>
+      ) : null}
+
+      <section className="ui-card ui-card--padded">
+        <h2 className="ui-card__title">Create a team</h2>
+        <p className="ui-card__subtitle">
+          New teams become available for active user assignments.
+        </p>
+        <form action={createTeamAction} className="compact-action-form">
+          <label className="ui-label compact-action-form__field">
             Team name
-            <input
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
-              name="name"
-              required
-            />
+            <input className="ui-input" name="name" required />
           </label>
-          <button className="self-end rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          <SubmitButton pendingLabel="Creating team">
             Create team
-          </button>
+          </SubmitButton>
         </form>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Current members</h2>
+      <section className="ui-card mt-4">
+        <div className="ui-card__header">
+          <div>
+            <h2 className="ui-card__title">Current members</h2>
+            <p className="ui-card__subtitle">
+              Reassign active managers and agents from the table.
+            </p>
+          </div>
         </div>
-        {members.length === 0 ? (
-          <p className="p-5 text-sm text-muted">No current team members.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted">
-                <tr>
-                  <th className="px-4 py-3">Member</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Team</th>
-                  <th className="px-4 py-3">Started</th>
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((member) => (
-                  <tr
-                    className="border-t border-border align-top"
-                    key={member.id}
-                  >
-                    <td className="px-4 py-3 font-medium">
-                      {member.profileName}
-                    </td>
-                    <td className="px-4 py-3 capitalize">
-                      {member.membershipRole}
-                    </td>
-                    <td className="px-4 py-3">
+        <TableScroll label="Current team members">
+          <table className="ui-table">
+            <caption>Current team memberships and reassignment controls</caption>
+            <thead>
+              <tr>
+                <th scope="col">Member</th>
+                <th scope="col">Role</th>
+                <th scope="col">Team</th>
+                <th scope="col">Started</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.length === 0 ? (
+                <EmptyTableRow
+                  colSpan={4}
+                  description="Assign an active manager or agent from user administration."
+                  title="No current team members"
+                />
+              ) : (
+                members.map((member) => (
+                  <tr key={member.id}>
+                    <th scope="row">{member.profileName}</th>
+                    <td className="capitalize">{member.membershipRole}</td>
+                    <td>
                       {member.profileRole === "agent" ||
                       member.profileRole === "manager" ? (
                         <InlineTeamSelect
@@ -98,32 +130,14 @@ export default async function AdminTeamsPage({
                         member.teamName
                       )}
                     </td>
-                    <td className="px-4 py-3">{fmt(member.startedAt)}</td>
+                    <td>{formatDate(member.startedAt)}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))
+              )}
+            </tbody>
+          </table>
+        </TableScroll>
       </section>
     </section>
   );
-}
-
-function StatusMessage({ error, ok }: { error?: string; ok?: string }) {
-  if (error) {
-    return (
-      <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-        {adminErrorMessage(error)}
-      </p>
-    );
-  }
-  if (ok) {
-    return (
-      <p className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-        Action completed.
-      </p>
-    );
-  }
-  return null;
 }

@@ -14,13 +14,13 @@ describe("admin audit formatting", () => {
 
     expect(event.title).toBe("User details updated");
     expect(event.details).toEqual([
-      "Role changed from Agent to Team Manager",
+      "Role changed from Agent to Team manager",
     ]);
   });
 
   it("tolerates malformed and unknown records", () => {
     expect(formatAuditEvent("legacy.odd_event", "broken")).toMatchObject({
-      title: "Legacy Odd Event",
+      title: "Legacy odd event",
       details: [],
     });
   });

@@ -4,6 +4,10 @@ import { useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { deactivateImportAction } from "@/import/actions";
+import {
+  importStatusLabel,
+  importTypeLabel,
+} from "@/presentation/labels";
 import type { ActiveImportLifecycleOptions } from "@/import/active-lifecycle";
 
 type ImportIdentity = {
@@ -166,11 +170,11 @@ export function ImportIdentityDetails({
       </div>
       <div>
         <dt className="text-xs uppercase text-muted">Import type</dt>
-        <dd>{importType.replaceAll("_", " ")}</dd>
+        <dd>{importTypeLabel(importType)}</dd>
       </div>
       <div>
         <dt className="text-xs uppercase text-muted">Current status</dt>
-        <dd>{status.replaceAll("_", " ")}</dd>
+        <dd>{importStatusLabel(status)}</dd>
       </div>
       <div>
         <dt className="text-xs uppercase text-muted">Parsed rows</dt>

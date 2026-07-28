@@ -12,7 +12,7 @@ import {
   listAdminUsers,
   type InvitationStatus,
 } from "@/admin/data";
-import { adminErrorMessage } from "@/admin/messages";
+import { adminErrorMessage, adminSuccessMessage } from "@/admin/messages";
 import {
   OVERRIDABLE_PERMISSION_GROUPS,
   PERMISSION_PRESENTATION,
@@ -22,6 +22,8 @@ import { getCurrentUser } from "@/auth/session";
 import { AdminUserTable } from "@/components/admin/admin-user-table";
 import { UserImportWizard } from "@/components/admin/user-import-wizard";
 import { SubmitButton } from "@/components/dashboard/action-controls";
+import { PageHeader } from "@/components/dashboard/dashboard-primitives";
+import { importStatusLabel } from "@/presentation/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -83,20 +85,27 @@ export default async function AdminUsersPage({
 
   return (
     <section className="dashboard-page space-y-6">
-      <StatusMessage error={params.error} ok={params.ok} warning={params.warning} />
-
-      <section className="rounded-lg border border-border bg-surface p-5" id="create-user">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-muted">Admin only</p>
-            <h2 className="text-xl font-semibold">Users & Access</h2>
-          </div>
+      <PageHeader
+        actions={
           <Link
-            className="rounded-md border border-border px-3 py-2 text-sm font-medium"
+            className="ui-button ui-button--secondary"
             href="/admin/teams"
           >
             Manage teams
           </Link>
+        }
+        description="Search accounts, manage access, and resolve dialer mappings without leaving the administration workspace."
+        eyebrow="Administration"
+        title="Users & access"
+      />
+      <StatusMessage error={params.error} ok={params.ok} warning={params.warning} />
+
+      <section className="rounded-lg border border-border bg-surface p-5" id="create-user">
+        <div>
+          <h2 className="text-base font-semibold">Find accounts</h2>
+          <p className="mt-1 text-sm text-muted">
+            Filter by identity, access state, invitation, or team.
+          </p>
         </div>
 
         <form className="mt-5 grid gap-3 md:grid-cols-6">
@@ -229,7 +238,7 @@ export default async function AdminUsersPage({
 
       <section className="rounded-lg border border-border bg-surface">
         <div className="border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Unmapped Dialer Names</h2>
+          <h2 className="font-semibold">Unmatched dialer names</h2>
         </div>
         {unmappedNames.length === 0 ? (
           <p className="p-5 text-sm text-muted">No unmapped names are present in open import previews.</p>
@@ -242,7 +251,7 @@ export default async function AdminUsersPage({
                   <th className="px-4 py-3">Normalized</th>
                   <th className="px-4 py-3">Affected rows</th>
                   <th className="px-4 py-3">File</th>
-                  <th className="px-4 py-3">Batch status</th>
+                  <th className="px-4 py-3">Import status</th>
                   <th className="px-4 py-3">Uploaded</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
@@ -255,7 +264,9 @@ export default async function AdminUsersPage({
                     <td className="px-4 py-3">{name.affectedRowCount}</td>
                     <td className="px-4 py-3">{name.files[0]?.fileName ?? "-"}</td>
                     <td className="px-4 py-3">
-                      {name.files[0]?.batchStatus.replaceAll("_", " ") ?? "-"}
+                      {name.files[0]
+                        ? importStatusLabel(name.files[0].batchStatus)
+                        : "-"}
                     </td>
                     <td className="px-4 py-3">
                       {name.files[0] ? fmt(name.files[0].uploadedAt) : "-"}
@@ -343,7 +354,7 @@ function StatusMessage({
   if (ok) {
     return (
       <p className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-        Action completed.
+        {adminSuccessMessage(ok)}
       </p>
     );
   }

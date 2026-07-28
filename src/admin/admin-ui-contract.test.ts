@@ -15,7 +15,7 @@ describe("simplified admin interface contract", () => {
       page.indexOf("</thead>"),
     );
 
-    expect(page).toContain("Create a new team");
+    expect(page).toContain("Create a team");
     expect(page).toContain("Current members");
     expect(page).not.toContain("Team administration");
     expect(page).not.toContain("Rename");

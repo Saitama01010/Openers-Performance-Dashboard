@@ -19,14 +19,18 @@ export function isNavigationItemActive(pathname: string, href: string) {
 }
 
 export function DashboardNavigation({
+  label = "Dashboard navigation",
   items,
+  onNavigate,
 }: {
+  label?: string;
   items: DashboardNavItem[];
+  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Dashboard navigation" className="dashboard-nav">
+    <nav aria-label={label} className="dashboard-nav">
       {items.map((item) => {
         const active = isNavigationItemActive(pathname, item.href);
 
@@ -37,6 +41,7 @@ export function DashboardNavigation({
             data-active={active || undefined}
             href={item.href}
             key={item.href}
+            onClick={onNavigate}
           >
             <DashboardIcon className="dashboard-nav__icon" name={item.icon} />
             <span>{item.label}</span>

@@ -10,6 +10,11 @@ import {
   TableScroll,
 } from "@/components/dashboard/dashboard-primitives";
 import { listImportHistory } from "@/import/service";
+import {
+  humanizeIdentifier,
+  importStatusLabel,
+  importTypeLabel,
+} from "@/presentation/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +67,7 @@ export default async function AdminImportsPage({
     <section className="dashboard-page">
       <PageHeader
         actions={
-          <Link className="ui-button" href="/import">
+          <Link className="ui-button ui-button--primary" href="/import">
             Upload CSV
           </Link>
         }
@@ -86,7 +91,7 @@ export default async function AdminImportsPage({
       ) : null}
       {params.error ? (
         <StatusBanner tone="danger">
-          Import deletion failed: {params.error.replaceAll("_", " ")}.
+          Import deletion failed: {humanizeIdentifier(params.error)}.
         </StatusBanner>
       ) : null}
 
@@ -132,7 +137,7 @@ export default async function AdminImportsPage({
                         {row.fileSizeBytes.toLocaleString("en-US")} stored bytes
                       </span>
                     </td>
-                    <td>{row.importType.replaceAll("_", " ")}</td>
+                    <td>{importTypeLabel(row.importType)}</td>
                     <td>
                       {reportingPeriod(
                         row.reportingStartDate,
@@ -151,7 +156,7 @@ export default async function AdminImportsPage({
                     <td className="font-mono">{row.unmatchedAgentCount}</td>
                     <td>
                       <StatusBadge tone={statusTone(row.status)}>
-                        {row.status.replaceAll("_", " ")}
+                        {importStatusLabel(row.status)}
                       </StatusBadge>
                     </td>
                     <td>{fmt(row.publishedAt)}</td>

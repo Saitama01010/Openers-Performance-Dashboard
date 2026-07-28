@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import {
   ADMIN_ONLY_PERMISSIONS,
+  PERMISSION_DESCRIPTIONS,
   PERMISSION_GROUPS,
   ROLE_DEFAULT_PERMISSIONS,
 } from "@/admin/policy";
@@ -15,7 +16,7 @@ import {
 function PermissionBadge({ allowed }: { allowed: boolean }) {
   return (
     <StatusBadge tone={allowed ? "success" : "neutral"}>
-      {allowed ? "Allow" : "Deny"}
+      {allowed ? "Allowed" : "Not allowed"}
     </StatusBadge>
   );
 }
@@ -30,7 +31,7 @@ export default async function AdminPermissionsPage() {
     <div className="dashboard-page">
       <PageHeader
         description="Review seeded role defaults. User-specific allow or deny overrides remain available on each user record."
-        eyebrow="Admin only"
+        eyebrow="Administration"
         title="Roles and permissions"
       />
 
@@ -53,8 +54,11 @@ export default async function AdminPermissionsPage() {
                 <tbody>
                   {group.permissions.map((permission) => (
                     <tr key={permission}>
-                      <th className="permission-name" scope="row">
-                        {permission}
+                      <th scope="row">
+                        <span className="permission-label">
+                          {PERMISSION_DESCRIPTIONS[permission]}
+                        </span>
+                        <span className="permission-name">{permission}</span>
                       </th>
                       <td>
                         <PermissionBadge

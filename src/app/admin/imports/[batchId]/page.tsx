@@ -21,6 +21,12 @@ import {
 import { formatDurationSeconds, formatNumber } from "@/import/format";
 import { getImportDetails } from "@/import/service";
 import { getActiveImportLifecycleOptions } from "@/import/active-lifecycle";
+import {
+  humanizeIdentifier,
+  importStatusLabel,
+  matchingStatusLabel,
+  validationStatusLabel,
+} from "@/presentation/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +110,10 @@ export default async function AdminImportDetailPage({
               "validation_failed",
               "ready_to_publish",
             ].includes(batch.status) ? (
-              <Link className="ui-button" href={`/import?preview=${batch.id}`}>
+              <Link
+                className="ui-button ui-button--primary"
+                href={`/import?preview=${batch.id}`}
+              >
                 Review draft
               </Link>
             ) : null}
@@ -117,7 +126,8 @@ export default async function AdminImportDetailPage({
 
       {query.error ? (
         <StatusBanner tone="danger">
-          The requested version change failed: {query.error.replaceAll("_", " ")}.
+          The requested version change failed:{" "}
+          {humanizeIdentifier(query.error)}.
         </StatusBanner>
       ) : null}
       {query.rolledBack ? (
@@ -142,7 +152,7 @@ export default async function AdminImportDetailPage({
           <div>
             <p className="text-xs uppercase text-muted">Status</p>
             <StatusBadge tone={isFullyActive ? "success" : "neutral"}>
-              {batch.status.replaceAll("_", " ")}
+              {importStatusLabel(batch.status)}
             </StatusBadge>
           </div>
           <div>
@@ -255,8 +265,8 @@ export default async function AdminImportDetailPage({
                   <tr key={row.rowNumber}>
                     <td className="font-mono">{row.rowNumber}</td>
                     <td>{row.sourceAgentName}</td>
-                    <td>{row.matchingStatus.replaceAll("_", " ")}</td>
-                    <td>{row.validationStatus}</td>
+                    <td>{matchingStatusLabel(row.matchingStatus)}</td>
+                    <td>{validationStatusLabel(row.validationStatus)}</td>
                     <td>
                       {[
                         ...(row.validationMessages ?? []),
@@ -358,7 +368,7 @@ export default async function AdminImportDetailPage({
                   <td className="font-mono">
                     {formatDurationSeconds(version.totalWrapSeconds).hms}
                   </td>
-                  <td>{version.status.replaceAll("_", " ")}</td>
+                  <td>{importStatusLabel(version.status)}</td>
                   <td>
                     {version.activeVersionId === version.id ? "Active" : "No"}
                   </td>

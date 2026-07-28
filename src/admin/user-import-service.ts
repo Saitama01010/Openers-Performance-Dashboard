@@ -193,9 +193,10 @@ export async function confirmUserImport(input: {
 
     try {
       const created = await createAdminUser(input.actor, {
-        name: row.username,
-        dialerName: row.dialerName,
+        name: row.realName,
+        dialerName: row.americanName,
         dialerAliases: [],
+        shift: row.shift,
         email: row.email,
         role: assignment.role,
         teamId: assignment.teamId,

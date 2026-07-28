@@ -3,21 +3,21 @@ import { parse } from "csv-parse/sync";
 export const MAX_USER_CSV_BYTES = 1024 * 1024;
 export const MAX_USER_CSV_ROWS = 500;
 
-export const USER_CSV_HEADER_ALIASES = {
-  username: ["username", "user name", "name"],
-  dialerName: ["dialer name", "dialer", "dialer username"],
-  email: ["email", "email address"],
-  role: ["role", "user role"],
-  team: ["team", "team name"],
+export const USER_CSV_HEADERS = {
+  realName: "Real Name",
+  americanName: "American Name",
+  shift: "Shift",
+  email: "Email",
 } as const;
 
-type CanonicalHeader = keyof typeof USER_CSV_HEADER_ALIASES;
+type CanonicalHeader = keyof typeof USER_CSV_HEADERS;
 export type ImportRole = "admin" | "manager" | "agent";
 
 export type UserImportPreviewRow = {
   rowNumber: number;
-  username: string;
-  dialerName: string;
+  realName: string;
+  americanName: string;
+  shift: string;
   email: string;
   role: ImportRole | null;
   teamId: string | null;
@@ -34,20 +34,12 @@ export type UserImportPreview = {
   fatalErrors: string[];
 };
 
-const ROLE_ALIASES: Record<string, ImportRole> = {
-  admin: "admin",
-  administrator: "admin",
-  manager: "manager",
-  "team manager": "manager",
-  agent: "agent",
-};
-
 function normalizedCell(value: unknown) {
-  return String(value ?? "").trim().replace(/\s+/g, " ");
+  return String(value ?? "").trim();
 }
 
 function normalizedKey(value: string) {
-  return normalizedCell(value).toLowerCase();
+  return normalizedCell(value).replace(/\s+/g, " ").toLowerCase();
 }
 
 function isEmail(value: string) {
@@ -59,10 +51,10 @@ export function hasSpreadsheetFormulaRisk(value: string) {
 }
 
 function canonicalHeader(value: string): CanonicalHeader | null {
-  const normalized = normalizedKey(value.replace(/^\uFEFF/, ""));
+  const normalized = normalizedCell(value.replace(/^\uFEFF/, "")).toLowerCase();
 
-  for (const [canonical, aliases] of Object.entries(USER_CSV_HEADER_ALIASES)) {
-    if ((aliases as readonly string[]).includes(normalized)) {
+  for (const [canonical, label] of Object.entries(USER_CSV_HEADERS)) {
+    if (label.toLowerCase() === normalized) {
       return canonical as CanonicalHeader;
     }
   }
@@ -113,15 +105,19 @@ export function parseUserImportCsv(input: {
       return;
     }
     if (headerIndexes.has(canonical)) {
-      fatalErrors.push(`Multiple columns map to ${canonical}.`);
+      fatalErrors.push(
+        `Multiple columns map to ${USER_CSV_HEADERS[canonical]}.`,
+      );
       return;
     }
     headerIndexes.set(canonical, index);
   });
 
-  for (const required of ["username", "dialerName", "email"] as const) {
+  for (const required of Object.keys(USER_CSV_HEADERS) as CanonicalHeader[]) {
     if (!headerIndexes.has(required)) {
-      fatalErrors.push(`Missing required CSV header: ${required}.`);
+      fatalErrors.push(
+        `Missing required CSV header: ${USER_CSV_HEADERS[required]}.`,
+      );
     }
   }
 
@@ -136,45 +132,46 @@ export function parseUserImportCsv(input: {
   const existingEmails = new Set(
     Array.from(input.existingEmails ?? [], normalizedKey),
   );
-  const existingDialerNames = new Set(
+  const existingAmericanNames = new Set(
     Array.from(input.existingDialerNames ?? [], normalizedKey),
   );
-  const teamsByName = new Map<string, { id: string; name: string; active: boolean }>();
-  for (const team of input.teams ?? []) {
-    teamsByName.set(normalizedKey(team.name), team);
-  }
-
   const emailCounts = new Map<string, number>();
-  const dialerCounts = new Map<string, number>();
+  const americanNameCounts = new Map<string, number>();
   const exactCounts = new Map<string, number>();
   const normalizedRows = records.map((record, index) => {
     const value = (header: CanonicalHeader) =>
       normalizedCell(record[headerIndexes.get(header) ?? -1]);
-    const username = value("username");
-    const dialerName = value("dialerName");
+    const realName = value("realName");
+    const americanName = value("americanName");
+    const shift = value("shift");
     const email = value("email").toLowerCase();
-    const roleInput = value("role");
-    const teamInput = value("team");
     const empty = record.every((cell) => normalizedCell(cell).length === 0);
     const emailKey = normalizedKey(email);
-    const dialerKey = normalizedKey(dialerName);
-    const exactKey = [normalizedKey(username), dialerKey, emailKey].join("|");
+    const americanNameKey = normalizedKey(americanName);
+    const exactKey = [
+      normalizedKey(realName),
+      americanNameKey,
+      normalizedKey(shift),
+      emailKey,
+    ].join("|");
 
     if (!empty) {
       emailCounts.set(emailKey, (emailCounts.get(emailKey) ?? 0) + 1);
-      dialerCounts.set(dialerKey, (dialerCounts.get(dialerKey) ?? 0) + 1);
+      americanNameCounts.set(
+        americanNameKey,
+        (americanNameCounts.get(americanNameKey) ?? 0) + 1,
+      );
       exactCounts.set(exactKey, (exactCounts.get(exactKey) ?? 0) + 1);
     }
 
     return {
       rowNumber: index + 2,
-      username,
-      dialerName,
+      realName,
+      americanName,
+      shift,
       email,
-      roleInput,
-      teamInput,
       emailKey,
-      dialerKey,
+      americanNameKey,
       exactKey,
       empty,
     };
@@ -191,12 +188,13 @@ export function parseUserImportCsv(input: {
 
     const errors: string[] = [];
     const warnings: string[] = [];
-    if (!row.username) errors.push("Username is required.");
-    if (!row.dialerName) errors.push("Dialer name is required.");
+    if (!row.realName) errors.push("Real Name is required.");
+    if (!row.americanName) errors.push("American Name is required.");
+    if (!row.shift) errors.push("Shift is required.");
     if (!row.email) errors.push("Email is required.");
     else if (!isEmail(row.email)) errors.push("Email format is invalid.");
     if (
-      [row.username, row.dialerName, row.email, row.roleInput, row.teamInput].some(
+      [row.realName, row.americanName, row.shift, row.email].some(
         hasSpreadsheetFormulaRisk,
       )
     ) {
@@ -205,8 +203,8 @@ export function parseUserImportCsv(input: {
     if ((emailCounts.get(row.emailKey) ?? 0) > 1) {
       errors.push("Email is duplicated inside this CSV.");
     }
-    if ((dialerCounts.get(row.dialerKey) ?? 0) > 1) {
-      errors.push("Dialer name is duplicated inside this CSV.");
+    if ((americanNameCounts.get(row.americanNameKey) ?? 0) > 1) {
+      errors.push("American Name is duplicated inside this CSV.");
     }
     if ((exactCounts.get(row.exactKey) ?? 0) > 1) {
       errors.push("This row is duplicated inside the CSV.");
@@ -214,31 +212,22 @@ export function parseUserImportCsv(input: {
     if (existingEmails.has(row.emailKey)) {
       errors.push("A user with this email already exists.");
     }
-    if (existingDialerNames.has(row.dialerKey)) {
-      errors.push("This dialer name is already assigned.");
+    if (existingAmericanNames.has(row.americanNameKey)) {
+      errors.push("This American Name is already assigned.");
     }
 
-    const role = row.roleInput
-      ? ROLE_ALIASES[normalizedKey(row.roleInput)] ?? null
-      : null;
-    if (row.roleInput && !role) errors.push(`Unknown role: ${row.roleInput}.`);
-    if (!row.roleInput) warnings.push("Assign a role before import.");
-
-    const team = row.teamInput
-      ? teamsByName.get(normalizedKey(row.teamInput)) ?? null
-      : null;
-    if (row.teamInput && !team) errors.push(`Unknown team: ${row.teamInput}.`);
-    if (team && !team.active) errors.push(`Team ${team.name} is inactive.`);
-    if (!row.teamInput) warnings.push("Assign a team before import.");
+    warnings.push("Assign a role before import.");
+    warnings.push("Assign a team before import.");
 
     rows.push({
       rowNumber: row.rowNumber,
-      username: row.username,
-      dialerName: row.dialerName,
+      realName: row.realName,
+      americanName: row.americanName,
+      shift: row.shift,
       email: row.email,
-      role,
-      teamId: team?.id ?? null,
-      teamName: team?.name ?? null,
+      role: null,
+      teamId: null,
+      teamName: null,
       errors,
       warnings,
       validForAssignment: errors.length === 0,

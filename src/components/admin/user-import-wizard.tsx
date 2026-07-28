@@ -8,8 +8,9 @@ type Role = "admin" | "manager" | "agent";
 type Team = { id: string; name: string; active: boolean };
 type PreviewRow = {
   rowNumber: number;
-  username: string;
-  dialerName: string;
+  realName: string;
+  americanName: string;
+  shift: string;
   email: string;
   role: Role | null;
   teamId: string | null;
@@ -142,10 +143,34 @@ export function UserImportWizard({ teams }: { teams: Team[] }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm text-muted">Admin only</p>
-          <h2 className="text-lg font-semibold">Import users from CSV</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">Import users from CSV</h2>
+            <span className="group relative inline-flex">
+              <button
+                aria-describedby="csv-header-requirements-tooltip"
+                aria-label="CSV header requirements"
+                className="flex size-5 items-center justify-center rounded-full border border-border bg-background text-xs font-semibold text-muted transition-colors hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                type="button"
+              >
+                ?
+              </button>
+              <span
+                className="pointer-events-none invisible absolute left-0 top-full z-20 mt-2 w-80 rounded-md border border-border bg-surface p-3 text-xs font-normal text-foreground opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+                id="csv-header-requirements-tooltip"
+                role="tooltip"
+              >
+                Required CSV headers: Real Name, American Name, Shift, Email.
+                The header names are not case-sensitive, but all four columns
+                must be included.
+                <span className="mt-2 block font-mono">
+                  Example: Real Name,American Name,Shift,Email
+                </span>
+              </span>
+            </span>
+          </div>
           <p className="mt-1 text-sm text-muted">
-            Up to 500 rows and 1 MB. Required headers: Username, Dialer name,
-            Email.
+            Up to 500 rows and 1 MB. Required headers: Real Name, American Name,
+            Shift, Email.
           </p>
         </div>
         <ol className="flex flex-wrap gap-2 text-xs" aria-label="Import steps">
@@ -213,13 +238,16 @@ export function UserImportWizard({ teams }: { teams: Team[] }) {
               ))}
             </ul>
           ) : (
-            <button
-              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
-              onClick={() => setStep(2)}
-              type="button"
-            >
-              Assign roles and teams
-            </button>
+            <>
+              <ValidationPreviewTable preview={preview} />
+              <button
+                className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+                onClick={() => setStep(2)}
+                type="button"
+              >
+                Assign roles and teams
+              </button>
+            </>
           )}
         </div>
       ) : null}
@@ -351,8 +379,9 @@ export function UserImportWizard({ teams }: { teams: Team[] }) {
             <table className="w-full text-sm">
               <thead className="text-left text-muted">
                 <tr>
-                  <th className="px-3 py-2">Username</th>
-                  <th className="px-3 py-2">Dialer name</th>
+                  <th className="px-3 py-2">Real Name</th>
+                  <th className="px-3 py-2">American Name</th>
+                  <th className="px-3 py-2">Shift</th>
                   <th className="px-3 py-2">Email</th>
                   <th className="px-3 py-2">Role</th>
                   <th className="px-3 py-2">Team</th>
@@ -368,8 +397,9 @@ export function UserImportWizard({ teams }: { teams: Team[] }) {
                   );
                   return (
                     <tr className="border-t border-border align-top" key={outcome.rowNumber}>
-                      <td className="px-3 py-2">{row?.username}</td>
-                      <td className="px-3 py-2">{row?.dialerName}</td>
+                      <td className="px-3 py-2">{row?.realName}</td>
+                      <td className="px-3 py-2">{row?.americanName}</td>
+                      <td className="px-3 py-2">{row?.shift}</td>
                       <td className="px-3 py-2">{row?.email}</td>
                       <td className="px-3 py-2 capitalize">{assignment?.role ?? "—"}</td>
                       <td className="px-3 py-2">
@@ -412,6 +442,48 @@ function Summary({ label, value }: { label: string; value: number }) {
   );
 }
 
+function ValidationPreviewTable({ preview }: { preview: Preview }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left text-muted">
+          <tr>
+            <th className="px-3 py-2">Row number</th>
+            <th className="px-3 py-2">Real Name</th>
+            <th className="px-3 py-2">American Name</th>
+            <th className="px-3 py-2">Shift</th>
+            <th className="px-3 py-2">Email</th>
+            <th className="px-3 py-2">Validation status</th>
+            <th className="px-3 py-2">Validation message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {preview.rows.map((row) => (
+            <tr className="border-t border-border align-top" key={row.rowNumber}>
+              <td className="px-3 py-2">{row.rowNumber}</td>
+              <td className="px-3 py-2">{row.realName || "—"}</td>
+              <td className="px-3 py-2">{row.americanName || "—"}</td>
+              <td className="px-3 py-2">{row.shift || "—"}</td>
+              <td className="px-3 py-2">{row.email || "—"}</td>
+              <td
+                className={`px-3 py-2 ${
+                  row.validForAssignment ? "text-primary" : "text-danger"
+                }`}
+              >
+                {row.validForAssignment ? "Valid for assignment" : "Blocked"}
+              </td>
+              <td className="max-w-80 px-3 py-2 text-muted">
+                {[...row.errors, ...row.warnings].join(" ") ||
+                  "No validation issues."}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AssignmentTable({
   assignments,
   preview,
@@ -439,8 +511,9 @@ function AssignmentTable({
         <thead className="text-left text-muted">
           <tr>
             <th className="px-3 py-2">Select</th>
-            <th className="px-3 py-2">Username</th>
-            <th className="px-3 py-2">Dialer name</th>
+            <th className="px-3 py-2">Real Name</th>
+            <th className="px-3 py-2">American Name</th>
+            <th className="px-3 py-2">Shift</th>
             <th className="px-3 py-2">Email</th>
             <th className="px-3 py-2">Role</th>
             <th className="px-3 py-2">Team</th>
@@ -456,7 +529,7 @@ function AssignmentTable({
               <tr className="border-t border-border align-top" key={row.rowNumber}>
                 <td className="px-3 py-2">
                   <input
-                    aria-label={`Select ${row.username || `row ${row.rowNumber}`}`}
+                    aria-label={`Select ${row.realName || `row ${row.rowNumber}`}`}
                     checked={assignment.selected}
                     disabled={!row.validForAssignment}
                     onChange={(event) =>
@@ -465,12 +538,13 @@ function AssignmentTable({
                     type="checkbox"
                   />
                 </td>
-                <td className="px-3 py-2">{row.username || "—"}</td>
-                <td className="px-3 py-2">{row.dialerName || "—"}</td>
+                <td className="px-3 py-2">{row.realName || "—"}</td>
+                <td className="px-3 py-2">{row.americanName || "—"}</td>
+                <td className="px-3 py-2">{row.shift || "—"}</td>
                 <td className="px-3 py-2">{row.email || "—"}</td>
                 <td className="px-3 py-2">
                   <select
-                    aria-label={`Role for ${row.username}`}
+                    aria-label={`Role for ${row.realName}`}
                     className="rounded-md border border-border bg-background px-2 py-1"
                     disabled={!row.validForAssignment}
                     onChange={(event) =>
@@ -488,7 +562,7 @@ function AssignmentTable({
                 </td>
                 <td className="px-3 py-2">
                   <select
-                    aria-label={`Team for ${row.username}`}
+                    aria-label={`Team for ${row.realName}`}
                     className="rounded-md border border-border bg-background px-2 py-1"
                     disabled={!row.validForAssignment}
                     onChange={(event) =>

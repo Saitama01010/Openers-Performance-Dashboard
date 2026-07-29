@@ -32,7 +32,7 @@ export default async function LeaderboardPage({
     <DashboardShell user={user}>
       <section className="dashboard-page">
         <PageHeader
-          description="Rank openers by successfully attributed closed deals, with transfer count reserved only as an optional tie-breaker."
+          description="Rank openers by valid transfers from the latest Xfers sheet data, matched automatically by American Name."
           eyebrow="Performance"
           title="LeaderBoard"
         />

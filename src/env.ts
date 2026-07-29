@@ -20,11 +20,22 @@ const optionalEncryptionKey = z.preprocess((value) => {
   return normalized.length === 0 ? undefined : normalized;
 }, z.string().optional());
 
-const optionalSheetPrivateKey = z.preprocess((value) => {
+const optionalAppsScriptUrl = z.preprocess((value) => {
   if (typeof value !== "string") return value;
-  const normalized = value.trim().replaceAll("\\n", "\n");
+  const normalized = value.trim();
   return normalized.length === 0 ? undefined : normalized;
-}, z.string().optional());
+}, z
+  .string()
+  .url()
+  .refine((value) => {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.hostname === "script.google.com" &&
+      /^\/macros\/s\/[^/]+\/exec$/.test(url.pathname)
+    );
+  }, "GOOGLE_TRANSFERS_APPS_SCRIPT_URL must be an HTTPS Google Apps Script /exec URL.")
+  .optional());
 
 const timezone = z
   .string()
@@ -38,7 +49,7 @@ const timezone = z
     } catch {
       return false;
     }
-  }, "GOOGLE_TRANSFERS_SHEET_TIMEZONE must be a valid IANA timezone.");
+  }, "GOOGLE_SHEETS_TIMEZONE must be a valid IANA timezone.");
 
 const envSchema = z
   .object({
@@ -56,12 +67,9 @@ const envSchema = z
     INVITATION_TTL_HOURS: z.coerce.number().positive().default(48),
     PASSWORD_RESET_TTL_MINUTES: z.coerce.number().positive().default(30),
     TEMP_PASSWORD_ENCRYPTION_KEY: optionalEncryptionKey,
-    GOOGLE_TRANSFERS_SHEET_ID: optionalTrimmedString,
-    GOOGLE_TRANSFERS_SHEET_GID: optionalTrimmedString,
-    GOOGLE_TRANSFERS_SHEET_RANGE: optionalTrimmedString,
-    GOOGLE_TRANSFERS_SHEET_TIMEZONE: timezone,
-    GOOGLE_SERVICE_ACCOUNT_EMAIL: optionalEmail,
-    GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: optionalSheetPrivateKey,
+    GOOGLE_TRANSFERS_APPS_SCRIPT_URL: optionalAppsScriptUrl,
+    LEADERBOARD_API_SECRET: optionalTrimmedString,
+    GOOGLE_SHEETS_TIMEZONE: timezone,
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -112,39 +120,14 @@ const envSchema = z
     }
 
     if (
-      Boolean(env.GOOGLE_TRANSFERS_SHEET_ID) !==
-      Boolean(env.GOOGLE_TRANSFERS_SHEET_GID)
+      Boolean(env.GOOGLE_TRANSFERS_APPS_SCRIPT_URL) !==
+      Boolean(env.LEADERBOARD_API_SECRET)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["GOOGLE_TRANSFERS_SHEET_ID"],
+        path: ["GOOGLE_TRANSFERS_APPS_SCRIPT_URL"],
         message:
-          "GOOGLE_TRANSFERS_SHEET_ID and GOOGLE_TRANSFERS_SHEET_GID must be configured together.",
-      });
-    }
-
-    if (
-      Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL) !==
-      Boolean(env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["GOOGLE_SERVICE_ACCOUNT_EMAIL"],
-        message:
-          "Google service-account email and private key must be configured together.",
-      });
-    }
-
-    if (
-      env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-      env.GOOGLE_TRANSFERS_SHEET_ID &&
-      !env.GOOGLE_TRANSFERS_SHEET_RANGE
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["GOOGLE_TRANSFERS_SHEET_RANGE"],
-        message:
-          "GOOGLE_TRANSFERS_SHEET_RANGE is required for authenticated Google Sheets access.",
+          "GOOGLE_TRANSFERS_APPS_SCRIPT_URL and LEADERBOARD_API_SECRET must be configured together.",
       });
     }
   });

@@ -1,19 +1,29 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 let parseOpener: typeof import("@/sheets/transfers").parseOpener;
 let normalizeAmericanName: typeof import("@/sheets/transfers").normalizeAmericanName;
-let parseTransferCsv: typeof import("@/sheets/transfers").parseTransferCsv;
+let parseTransferRows: typeof import("@/sheets/transfers").parseTransferRows;
+let parseAppsScriptTransferResponse: typeof import("@/sheets/transfers").parseAppsScriptTransferResponse;
+let GoogleAppsScriptTransfersProvider: typeof import("@/sheets/transfers").GoogleAppsScriptTransfersProvider;
 let parseSheetTimestamp: typeof import("@/sheets/timestamp").parseSheetTimestamp;
 let matchTransfersToUsers: typeof import("@/leaderboard/matching").matchTransfersToUsers;
 
 beforeAll(async () => {
-  ({ parseOpener, normalizeAmericanName, parseTransferCsv } = await import(
-    "@/sheets/transfers"
-  ));
+  ({
+    parseOpener,
+    normalizeAmericanName,
+    parseTransferRows,
+    parseAppsScriptTransferResponse,
+    GoogleAppsScriptTransfersProvider,
+  } = await import("@/sheets/transfers"));
   ({ parseSheetTimestamp } = await import("@/sheets/timestamp"));
   ({ matchTransfersToUsers } = await import("@/leaderboard/matching"));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("transfer timestamp parsing", () => {
@@ -52,7 +62,240 @@ describe("transfer timestamp parsing", () => {
   });
 });
 
-describe("transfer parsing and matching", () => {
+describe("Google Apps Script transfer parsing", () => {
+  it("parses the deployed Apps Script headers-and-rows envelope", () => {
+    const result = parseAppsScriptTransferResponse(
+      JSON.stringify({
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [
+          [
+            "2026-07-28T18:47:27.547Z",
+            "Amira Ayman-Gia Monroe",
+            "Customer",
+            "Phone",
+          ],
+        ],
+        rowCount: 1,
+        generatedAt: "2026-07-29T10:30:00.000Z",
+      }),
+      { timeZone: "Africa/Cairo" },
+    );
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]).toMatchObject({
+      sourceRowId: "Xfers:2",
+      rawTimestamp: "2026-07-28T18:47:27.547Z",
+      sheetRealName: "Amira Ayman",
+      sheetAmericanName: "Gia Monroe",
+      customerName: "Customer",
+      phoneNumber: "Phone",
+    });
+  });
+
+  it("keeps a valid zero-row response connected but empty", () => {
+    const result = parseAppsScriptTransferResponse(
+      JSON.stringify({
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [],
+        rowCount: 0,
+        generatedAt: "2026-07-29T10:30:00.000Z",
+      }),
+      { timeZone: "Africa/Cairo" },
+    );
+
+    expect(result).toEqual({ records: [], diagnostics: [] });
+  });
+
+  it("matches headers without case, whitespace, BOM, or column-order sensitivity", () => {
+    const result = parseAppsScriptTransferResponse(
+      JSON.stringify({
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          " phone NUMBER ",
+          "CUSTOMER NAME",
+          " \uFEFFtimestamp ",
+          " opener",
+        ],
+        rows: [
+          [
+            "Phone",
+            "Customer",
+            "2026-07-28T18:47:27.547Z",
+            "Amira Ayman-Gia Monroe",
+          ],
+        ],
+        rowCount: 1,
+      }),
+      { timeZone: "Africa/Cairo" },
+    );
+
+    expect(result.records[0]).toMatchObject({
+      rawTimestamp: "2026-07-28T18:47:27.547Z",
+      sheetAmericanName: "Gia Monroe",
+      customerName: "Customer",
+      phoneNumber: "Phone",
+    });
+  });
+
+  it("treats missing trailing row cells as empty values", () => {
+    const result = parseAppsScriptTransferResponse(
+      JSON.stringify({
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [
+          [
+            "2026-07-28T18:47:27.547Z",
+            "Amira Ayman-Gia Monroe",
+          ],
+        ],
+        rowCount: 1,
+      }),
+      { timeZone: "Africa/Cairo" },
+    );
+
+    expect(result.records[0]).toMatchObject({
+      customerName: "",
+      phoneNumber: "",
+    });
+  });
+
+  it.each([
+    {
+      label: "one required header is missing",
+      payload: {
+        ok: true,
+        worksheet: "Xfers",
+        headers: ["Timestamp", "Opener", "Customer Name"],
+        rows: [],
+      },
+      message: "Phone Number",
+    },
+    {
+      label: "headers are empty",
+      payload: {
+        ok: true,
+        worksheet: "Xfers",
+        headers: [],
+        rows: [],
+      },
+      message: "Timestamp, Opener, Customer Name, Phone Number",
+    },
+    {
+      label: "the worksheet is unexpected",
+      payload: {
+        ok: true,
+        worksheet: "Closed",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [],
+      },
+      message: 'unexpected worksheet "Closed"',
+    },
+    {
+      label: "ok is false",
+      payload: {
+        ok: false,
+        worksheet: "Xfers",
+        headers: [],
+        rows: [],
+      },
+      message: "request was rejected",
+    },
+  ])("rejects the response when $label", ({ payload, message }) => {
+    expect(() =>
+      parseAppsScriptTransferResponse(JSON.stringify(payload), {
+        timeZone: "UTC",
+      }),
+    ).toThrow(message);
+  });
+
+  it.each([
+    {
+      label: "headers contain a non-string",
+      payload: {
+        ok: true,
+        worksheet: "Xfers",
+        headers: ["Timestamp", 7],
+        rows: [],
+      },
+    },
+    {
+      label: "rows are not a matrix",
+      payload: {
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [{ Timestamp: "2026-07-28T18:47:27.547Z" }],
+      },
+    },
+    {
+      label: "rowCount does not match rows",
+      payload: {
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [],
+        rowCount: 1,
+      },
+    },
+    {
+      label: "generatedAt is not a string",
+      payload: {
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [],
+        generatedAt: 123,
+      },
+    },
+  ])("rejects malformed envelope data when $label", ({ payload }) => {
+    expect(() =>
+      parseAppsScriptTransferResponse(JSON.stringify(payload), {
+        timeZone: "UTC",
+      }),
+    ).toThrow("headers-and-rows response has an invalid shape");
+  });
+
   it.each([
     "Amira Ayman-Gia Monroe",
     "Amira Ayman - Gia Monroe",
@@ -74,36 +317,88 @@ describe("transfer parsing and matching", () => {
     );
   });
 
-  it("trims BOM and header whitespace without guessing missing columns", () => {
-    const result = parseTransferCsv(
-      "\uFEFF Timestamp , Opener,Customer Name , Phone Number \n2026-07-28T18:47:27.547Z,Amira Ayman-Gia Monroe,Customer,123",
-      { gid: "7", timeZone: "Africa/Cairo" },
-    );
-    expect(result.records).toHaveLength(1);
-    expect(result.records[0]).toMatchObject({
-      sourceRowId: "7:2",
-      sheetRealName: "Amira Ayman",
-      sheetAmericanName: "Gia Monroe",
+  it("accepts object rows and supported response envelopes", () => {
+    const content = JSON.stringify({
+      success: true,
+      data: [
+        {
+          " Timestamp ": "2026-07-28T18:47:27.547Z",
+          Opener: "Amira Ayman-Gia Monroe",
+          "Customer Name": "Customer",
+          "Phone Number": 123,
+        },
+      ],
+    });
+    const result = parseAppsScriptTransferResponse(content, {
+      timeZone: "Africa/Cairo",
     });
 
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]).toMatchObject({
+      sourceRowId: "Xfers:2",
+      sheetRealName: "Amira Ayman",
+      sheetAmericanName: "Gia Monroe",
+      phoneNumber: "123",
+    });
+  });
+
+  it("accepts header-and-row matrices and rejects missing or duplicate headers", () => {
+    const result = parseTransferRows(
+      [
+        ["\uFEFF timestamp ", " OPENER", "Customer Name ", "phone number"],
+        [
+          "2026-07-28T18:47:27.547Z",
+          "Amira Ayman-Gia Monroe",
+          "Customer",
+          "123",
+        ],
+      ],
+      { timeZone: "Africa/Cairo" },
+    );
+    expect(result.records).toHaveLength(1);
+
     expect(() =>
-      parseTransferCsv("Timestamp,Opener\nx,y", {
-        gid: "7",
-        timeZone: "UTC",
-      }),
+      parseTransferRows(
+        [
+          ["Timestamp", "Opener"],
+          ["x", "y"],
+        ],
+        { timeZone: "UTC" },
+      ),
     ).toThrow("Customer Name, Phone Number");
     expect(() =>
-      parseTransferCsv(
-        "Timestamp,Opener,Customer Name,Phone Number,Opener\nx,a-b,c,d,e-f",
-        { gid: "7", timeZone: "UTC" },
+      parseTransferRows(
+        [
+          [
+            "Timestamp",
+            "Opener",
+            "Customer Name",
+            "Phone Number",
+            "Opener",
+          ],
+        ],
+        { timeZone: "UTC" },
       ),
     ).toThrow("required header more than once: Opener");
   });
 
-  it("keeps invalid timestamps diagnostic without crashing the import", () => {
-    const result = parseTransferCsv(
-      "Timestamp,Opener,Customer Name,Phone Number\nbad,Amira-Gia Monroe,A,1\n2026-05-01 20:34:33,Amira-Gia Monroe,B,2",
-      { gid: "7", timeZone: "Africa/Cairo" },
+  it("keeps invalid timestamps diagnostic without crashing ingestion", () => {
+    const result = parseTransferRows(
+      [
+        {
+          Timestamp: "bad",
+          Opener: "Amira-Gia Monroe",
+          "Customer Name": "A",
+          "Phone Number": "1",
+        },
+        {
+          Timestamp: "2026-05-01 20:34:33",
+          Opener: "Amira-Gia Monroe",
+          "Customer Name": "B",
+          "Phone Number": "2",
+        },
+      ],
+      { timeZone: "Africa/Cairo" },
     );
     expect(result.records).toHaveLength(2);
     expect(result.records[0].occurredAt).toBeNull();
@@ -112,9 +407,58 @@ describe("transfer parsing and matching", () => {
     ]);
   });
 
+  it("uses a fresh server-side POST and sends the secret only in its JSON body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new GoogleAppsScriptTransfersProvider({
+      endpointUrl:
+        "https://script.google.com/macros/s/deployment-id/exec",
+      secret: "server-secret",
+      timeZone: "Africa/Cairo",
+    });
+
+    await expect(provider.listTransfers()).resolves.toEqual({
+      records: [],
+      diagnostics: [],
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).not.toContain("server-secret");
+    expect(options).toMatchObject({
+      method: "POST",
+      cache: "no-store",
+      redirect: "follow",
+      body: JSON.stringify({ secret: "server-secret" }),
+    });
+  });
+
+  it("rejects malformed, failed, and non-JSON endpoint responses", () => {
+    expect(() =>
+      parseAppsScriptTransferResponse("not-json", { timeZone: "UTC" }),
+    ).toThrow("not valid JSON");
+    expect(() =>
+      parseAppsScriptTransferResponse(
+        JSON.stringify({ success: false, error: "secret details" }),
+        { timeZone: "UTC" },
+      ),
+    ).toThrow("request was rejected");
+    expect(() =>
+      parseAppsScriptTransferResponse(JSON.stringify({ success: true }), {
+        timeZone: "UTC",
+      }),
+    ).toThrow("does not contain transfer rows");
+  });
+});
+
+describe("transfer matching", () => {
   it("matches only by normalized American Name and never overwrites Real Name", () => {
     const transfer = {
-      sourceRowId: "7:2",
+      sourceRowId: "Xfers:2",
       rawTimestamp: "",
       occurredAt: null,
       sheetRealName: "Wrong Real Name",
@@ -139,7 +483,7 @@ describe("transfer parsing and matching", () => {
 
   it("reports unmatched and ambiguous names without guessing", () => {
     const transfer = {
-      sourceRowId: "7:8",
+      sourceRowId: "Xfers:8",
       rawTimestamp: "",
       occurredAt: null,
       sheetRealName: "Sheet Name",

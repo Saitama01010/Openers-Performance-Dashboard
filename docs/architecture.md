@@ -10,7 +10,11 @@ Current vertical slices:
   atomic publication, administrator rollback/restore/deactivation,
   transactionally resolved active deletion, and permission-gated cleanup.
 - Role-scoped operational totals with fail-closed manager scope.
+- Server-only Google Apps Script transfer ingestion with validated Xfers rows,
+  exact American Name matching, and fresh LeaderBoard rankings.
 
-Planned slices remain Google Sheets ingestion, transfer and closed-deal analytics, leaderboards, commissions, and metric flags. Those integrations are not represented as verified until real source Sheets are available.
+Planned slices remain closed-deal analytics, commissions, and metric flags.
+Those integrations are not represented as verified until their real sources
+and attribution rules are available.
 
 The deployment target is a Hostinger Node.js Web App. The code does not depend on Vercel infrastructure.

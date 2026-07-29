@@ -81,13 +81,31 @@ export function LeaderboardView({ data }: { data: LeaderboardData }) {
               className="mt-4 text-lg font-semibold"
               id="leaderboard-unconfigured"
             >
-              LeaderBoard is awaiting closed-deals data
+              LeaderBoard is awaiting transfer data
             </h2>
             <p className="mt-2 text-sm text-muted">{data.message}</p>
             <p className="mt-2 text-sm text-muted">
-              Rankings will appear only after the real closed-deals source and
-              attribution rules are connected. Transfer volume is not being
-              shown as closed deals.
+              Rankings will appear after the server-only Google Apps Script
+              connection is configured.
+            </p>
+          </div>
+        </section>
+      ) : data.status === "source_error" ? (
+        <section
+          aria-labelledby="leaderboard-source-error"
+          className="ui-card ui-card--padded mt-4"
+          role="alert"
+        >
+          <div className="mx-auto max-w-2xl py-10 text-center">
+            <h2
+              className="text-lg font-semibold"
+              id="leaderboard-source-error"
+            >
+              Transfer source needs attention
+            </h2>
+            <p className="mt-2 text-sm text-muted">{data.message}</p>
+            <p className="mt-2 text-sm text-muted">
+              Verify the Xfers response format, then retry this page.
             </p>
           </div>
         </section>
@@ -96,7 +114,8 @@ export function LeaderboardView({ data }: { data: LeaderboardData }) {
           <div className="py-10 text-center">
             <h2 className="text-lg font-semibold">No ranking data found</h2>
             <p className="mt-2 text-sm text-muted">
-              No attributed closed deals match the selected filters.
+              No valid transfers matched an active user and the selected
+              filters.
             </p>
           </div>
         </section>
@@ -104,14 +123,14 @@ export function LeaderboardView({ data }: { data: LeaderboardData }) {
         <section className="ui-card mt-4">
           <div className="hidden overflow-x-auto md:block">
             <table className="ui-table">
-              <caption>Closed-deal ranking for all authenticated users</caption>
+              <caption>Transfer ranking for all authenticated users</caption>
               <thead>
                 <tr>
                   <th scope="col">Rank</th>
                   <th scope="col">Real Name</th>
                   <th scope="col">American Name</th>
                   <th scope="col">Team</th>
-                  <th scope="col">Closed Deals</th>
+                  <th scope="col">Transfers</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,7 +140,7 @@ export function LeaderboardView({ data }: { data: LeaderboardData }) {
                     <th scope="row">{row.realName}</th>
                     <td>{row.americanName}</td>
                     <td>{row.teamName ?? "Unassigned"}</td>
-                    <td className="numeric">{row.closedDeals}</td>
+                    <td className="numeric">{row.transferCount}</td>
                   </tr>
                 ))}
               </tbody>
@@ -142,8 +161,10 @@ export function LeaderboardView({ data }: { data: LeaderboardData }) {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-semibold">{row.closedDeals}</p>
-                    <p className="text-xs text-muted">Closed Deals</p>
+                    <p className="text-2xl font-semibold">
+                      {row.transferCount}
+                    </p>
+                    <p className="text-xs text-muted">Transfers</p>
                   </div>
                 </div>
               </li>

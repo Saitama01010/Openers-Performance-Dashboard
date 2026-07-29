@@ -30,6 +30,15 @@ function partsInTimezone(date: Date, timeZone: string) {
   };
 }
 
+export function dateKeyInTimeZone(date: Date, timeZone: string) {
+  const parts = partsInTimezone(date, timeZone);
+  return [
+    String(parts.year).padStart(4, "0"),
+    String(parts.month).padStart(2, "0"),
+    String(parts.day).padStart(2, "0"),
+  ].join("-");
+}
+
 function localDateTimeToUtc(input: {
   year: number;
   month: number;

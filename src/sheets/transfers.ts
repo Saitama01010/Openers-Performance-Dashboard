@@ -1,7 +1,7 @@
 import "server-only";
 
-import { createHash, createSign } from "node:crypto";
-import { parse } from "csv-parse/sync";
+import { createHash } from "node:crypto";
+import { z } from "zod";
 
 import type {
   TransferDiagnostic,
@@ -17,26 +17,62 @@ const REQUIRED_HEADERS = [
   "Customer Name",
   "Phone Number",
 ] as const;
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+const MAX_ROWS = 100_000;
+
+const rowCollectionSchema = z.array(z.unknown()).max(MAX_ROWS);
+const matrixRowsSchema = z
+  .array(z.array(z.unknown()))
+  .max(MAX_ROWS);
+const appsScriptMatrixPayloadSchema = z
+  .object({
+    ok: z.literal(true),
+    worksheet: z.literal("Xfers"),
+    headers: z.array(z.string()),
+    rows: matrixRowsSchema,
+    rowCount: z.number().int().nonnegative().optional(),
+    generatedAt: z.string().optional(),
+  })
+  .passthrough()
+  .superRefine((payload, ctx) => {
+    if (
+      payload.rowCount !== undefined &&
+      payload.rowCount !== payload.rows.length
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rowCount"],
+        message: "rowCount must match the number of transfer rows.",
+      });
+    }
+  });
+const appsScriptPayloadSchema = z.union([
+  rowCollectionSchema,
+  z
+    .object({
+      success: z.boolean().optional(),
+      ok: z.boolean().optional(),
+      data: rowCollectionSchema.optional(),
+      rows: rowCollectionSchema.optional(),
+      transfers: rowCollectionSchema.optional(),
+    })
+    .passthrough(),
+]);
 
 export type TransferSheetConfig = {
-  sheetId: string;
-  gid: string;
-  range?: string;
+  endpointUrl: string;
+  secret: string;
   timeZone: string;
-  serviceAccountEmail?: string;
-  serviceAccountPrivateKey?: string;
 };
 
 export class TransferSheetConfigurationError extends Error {}
 
-let cachedServiceAccountToken:
-  | { email: string; token: string; expiresAt: number }
-  | null = null;
-
 function normalizeHeader(value: unknown) {
   return String(value ?? "")
+    .trim()
     .replace(/^\uFEFF/, "")
-    .trim();
+    .trim()
+    .toLocaleLowerCase("en-US");
 }
 
 export function parseOpener(value: string) {
@@ -60,62 +96,167 @@ export function normalizeAmericanName(value: string) {
     .trim();
 }
 
-export function parseTransferCsv(
-  content: string,
-  config: Pick<TransferSheetConfig, "gid" | "timeZone">,
-): TransferReadResult {
-  let rows: string[][];
-  try {
-    rows = parse(content, {
-      bom: true,
-      relax_column_count: true,
-      skip_empty_lines: false,
-    }) as string[][];
-  } catch {
-    throw new TransferSheetConfigurationError(
-      "The transfer Sheet response is not valid CSV.",
-    );
-  }
-
-  const headers = (rows.shift() ?? []).map(normalizeHeader);
+function headerIndexes(headers: readonly unknown[]) {
   const indexByHeader = new Map<string, number>();
-  headers.forEach((header, index) => {
+  const requiredByNormalizedHeader = new Map(
+    REQUIRED_HEADERS.map((header) => [normalizeHeader(header), header]),
+  );
+
+  headers.forEach((rawHeader, index) => {
+    const header = normalizeHeader(rawHeader);
     if (!header) return;
-    if (indexByHeader.has(header) && REQUIRED_HEADERS.includes(
-      header as (typeof REQUIRED_HEADERS)[number],
-    )) {
+    if (
+      indexByHeader.has(header) &&
+      requiredByNormalizedHeader.has(header)
+    ) {
       throw new TransferSheetConfigurationError(
-        `Transfer Sheet contains the required header more than once: ${header}.`,
+        `Transfer source contains the required header more than once: ${requiredByNormalizedHeader.get(header)}.`,
       );
     }
     if (!indexByHeader.has(header)) indexByHeader.set(header, index);
   });
+
   const missing = REQUIRED_HEADERS.filter(
-    (header) => !indexByHeader.has(header),
+    (header) => !indexByHeader.has(normalizeHeader(header)),
   );
   if (missing.length > 0) {
     throw new TransferSheetConfigurationError(
-      `Transfer Sheet is missing required headers: ${missing.join(", ")}.`,
+      `Transfer source is missing required headers: ${missing.join(", ")}.`,
     );
   }
 
+  return indexByHeader;
+}
+
+function cellText(value: unknown, header: string) {
+  if (value === null || value === undefined) return "";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value).trim();
+  }
+  throw new TransferSheetConfigurationError(
+    `Transfer source contains an invalid ${header} value.`,
+  );
+}
+
+type NormalizedSourceRow = {
+  rowNumber: number;
+  timestamp: string;
+  opener: string;
+  customerName: string;
+  phoneNumber: string;
+};
+
+function normalizeMatrixRows(rows: readonly unknown[]) {
+  const matrix = rows as unknown[][];
+  if (matrix.length === 0) return [];
+  const indexes = headerIndexes(matrix[0]);
+  const value = (
+    row: readonly unknown[],
+    header: (typeof REQUIRED_HEADERS)[number],
+  ) => cellText(row[indexes.get(normalizeHeader(header)) ?? -1], header);
+
+  return matrix.slice(1).map(
+    (row, index): NormalizedSourceRow => ({
+      rowNumber: index + 2,
+      timestamp: value(row, "Timestamp"),
+      opener: value(row, "Opener"),
+      customerName: value(row, "Customer Name"),
+      phoneNumber: value(row, "Phone Number"),
+    }),
+  );
+}
+
+function normalizeObjectRows(rows: readonly unknown[]) {
+  if (rows.length === 0) return [];
+  const objects = rows as Record<string, unknown>[];
+  const normalizedRows = objects.map((row) => {
+    const values = new Map<string, unknown>();
+    for (const [rawHeader, value] of Object.entries(row)) {
+      const header = normalizeHeader(rawHeader);
+      if (!header) continue;
+      if (
+        values.has(header) &&
+        REQUIRED_HEADERS.some(
+          (requiredHeader) => normalizeHeader(requiredHeader) === header,
+        )
+      ) {
+        const requiredHeader = REQUIRED_HEADERS.find(
+          (candidate) => normalizeHeader(candidate) === header,
+        );
+        throw new TransferSheetConfigurationError(
+          `Transfer source contains the required header more than once: ${requiredHeader}.`,
+        );
+      }
+      values.set(header, value);
+    }
+    return values;
+  });
+  headerIndexes(
+    Array.from(
+      new Set(normalizedRows.flatMap((row) => Array.from(row.keys()))),
+    ),
+  );
+
+  const value = (
+    row: Map<string, unknown>,
+    header: (typeof REQUIRED_HEADERS)[number],
+  ) => cellText(row.get(normalizeHeader(header)), header);
+
+  return normalizedRows.map(
+    (row, index): NormalizedSourceRow => ({
+      rowNumber: index + 2,
+      timestamp: value(row, "Timestamp"),
+      opener: value(row, "Opener"),
+      customerName: value(row, "Customer Name"),
+      phoneNumber: value(row, "Phone Number"),
+    }),
+  );
+}
+
+function normalizeRows(rows: readonly unknown[]) {
+  if (rows.length === 0) return [];
+  if (rows.every(Array.isArray)) return normalizeMatrixRows(rows);
+  if (
+    rows.every(
+      (row) =>
+        typeof row === "object" && row !== null && !Array.isArray(row),
+    )
+  ) {
+    return normalizeObjectRows(rows);
+  }
+  throw new TransferSheetConfigurationError(
+    "The Google Apps Script response contains an invalid row collection.",
+  );
+}
+
+export function parseTransferRows(
+  rows: readonly unknown[],
+  config: Pick<TransferSheetConfig, "timeZone">,
+): TransferReadResult {
+  const normalizedRows = normalizeRows(rows);
   const records: TransferRecord[] = [];
   const diagnostics: TransferDiagnostic[] = [];
   const seen = new Set<string>();
-  const value = (row: string[], header: (typeof REQUIRED_HEADERS)[number]) =>
-    String(row[indexByHeader.get(header) ?? -1] ?? "").trim();
 
-  rows.forEach((row, index) => {
-    const rowNumber = index + 2;
-    if (row.every((cell) => String(cell ?? "").trim() === "")) return;
-    const rawTimestamp = value(row, "Timestamp");
-    const opener = parseOpener(value(row, "Opener"));
-    const timestamp = parseSheetTimestamp(rawTimestamp, config.timeZone);
-    const customerName = value(row, "Customer Name");
-    const phoneNumber = value(row, "Phone Number");
+  for (const row of normalizedRows) {
+    if (
+      !row.timestamp &&
+      !row.opener &&
+      !row.customerName &&
+      !row.phoneNumber
+    ) {
+      continue;
+    }
+
+    const opener = parseOpener(row.opener);
+    const timestamp = parseSheetTimestamp(row.timestamp, config.timeZone);
     const fingerprint = createHash("sha256")
       .update(
-        [rawTimestamp, value(row, "Opener"), customerName, phoneNumber].join(
+        [row.timestamp, row.opener, row.customerName, row.phoneNumber].join(
           "\u001f",
         ),
       )
@@ -123,166 +264,142 @@ export function parseTransferCsv(
 
     if (seen.has(fingerprint)) {
       diagnostics.push({
-        rowNumber,
+        rowNumber: row.rowNumber,
         code: "duplicate",
-        message: `Row ${rowNumber} duplicates an earlier transfer row.`,
+        message: `Row ${row.rowNumber} duplicates an earlier transfer row.`,
       });
-      return;
+      continue;
     }
     seen.add(fingerprint);
 
     if (!opener) {
       diagnostics.push({
-        rowNumber,
+        rowNumber: row.rowNumber,
         code: "malformed_opener",
-        message: `Row ${rowNumber} has an invalid Opener value.`,
+        message: `Row ${row.rowNumber} has an invalid Opener value.`,
       });
-      return;
+      continue;
     }
     if (!timestamp.ok) {
       diagnostics.push({
-        rowNumber,
+        rowNumber: row.rowNumber,
         code: "invalid_timestamp",
-        message: `Row ${rowNumber} has an ${timestamp.reason} Timestamp value.`,
+        message: `Row ${row.rowNumber} has an ${timestamp.reason} Timestamp value.`,
         sheetAmericanName: opener.sheetAmericanName,
       });
     }
 
     records.push({
-      sourceRowId: `${config.gid}:${rowNumber}`,
-      rawTimestamp,
+      sourceRowId: `Xfers:${row.rowNumber}`,
+      rawTimestamp: row.timestamp,
       occurredAt: timestamp.ok ? timestamp.value : null,
       ...opener,
-      customerName,
-      phoneNumber,
+      customerName: row.customerName,
+      phoneNumber: row.phoneNumber,
     });
-  });
+  }
 
   return { records, diagnostics };
 }
 
-function base64Url(value: string | Buffer) {
-  return Buffer.from(value)
-    .toString("base64url");
-}
+export function parseAppsScriptTransferResponse(
+  content: string,
+  config: Pick<TransferSheetConfig, "timeZone">,
+) {
+  let json: unknown;
+  try {
+    json = JSON.parse(content);
+  } catch {
+    throw new TransferSheetConfigurationError(
+      "The Google Apps Script response is not valid JSON.",
+    );
+  }
 
-async function getServiceAccountToken(config: TransferSheetConfig) {
-  if (!config.serviceAccountEmail || !config.serviceAccountPrivateKey) {
-    return null;
+  const parsed = appsScriptPayloadSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new TransferSheetConfigurationError(
+      "The Google Apps Script response has an invalid shape.",
+    );
   }
-  if (
-    cachedServiceAccountToken?.email === config.serviceAccountEmail &&
-    cachedServiceAccountToken.expiresAt > Date.now() + 60_000
-  ) {
-    return cachedServiceAccountToken.token;
-  }
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = base64Url(
-    JSON.stringify({
-      iss: config.serviceAccountEmail,
-      scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
-      aud: "https://oauth2.googleapis.com/token",
-      iat: now,
-      exp: now + 3600,
-    }),
-  );
-  const unsigned = `${header}.${claims}`;
-  const signer = createSign("RSA-SHA256");
-  signer.update(unsigned);
-  signer.end();
-  const assertion = `${unsigned}.${signer.sign(
-    config.serviceAccountPrivateKey,
-    "base64url",
-  )}`;
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion,
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) {
-    throw new Error("Google service-account authentication failed.");
-  }
-  const body = (await response.json()) as { access_token?: string };
-  if (!body.access_token) {
-    throw new Error("Google did not return an access token.");
-  }
-  cachedServiceAccountToken = {
-    email: config.serviceAccountEmail,
-    token: body.access_token,
-    expiresAt: Date.now() + 55 * 60 * 1000,
-  };
-  return body.access_token;
-}
 
-async function readSheetCsv(config: TransferSheetConfig) {
-  const token = await getServiceAccountToken(config);
-  if (token) {
-    if (!config.range) {
+  const payload = parsed.data;
+  if (Array.isArray(payload)) return parseTransferRows(payload, config);
+  if (payload.success === false || payload.ok === false) {
+    throw new TransferSheetConfigurationError(
+      "The Google Apps Script transfer request was rejected.",
+    );
+  }
+
+  if ("headers" in payload || "worksheet" in payload) {
+    if (
+      typeof payload.worksheet === "string" &&
+      payload.worksheet !== "Xfers"
+    ) {
       throw new TransferSheetConfigurationError(
-        "An authenticated transfer Sheet requires GOOGLE_TRANSFERS_SHEET_RANGE.",
+        `The Google Apps Script returned the unexpected worksheet "${payload.worksheet}".`,
       );
     }
-    const url = new URL(
-      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
-        config.sheetId,
-      )}/values/${encodeURIComponent(config.range)}`,
-    );
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) {
-      throw new Error(`Google Sheets API request failed (${response.status}).`);
+
+    const matrixPayload = appsScriptMatrixPayloadSchema.safeParse(payload);
+    if (!matrixPayload.success) {
+      throw new TransferSheetConfigurationError(
+        "The Google Apps Script headers-and-rows response has an invalid shape.",
+      );
     }
-    const body = (await response.json()) as { values?: unknown[][] };
-    const values = body.values ?? [];
-    return values
-      .map((row) =>
-        row
-          .map((cell) => {
-            const value = String(cell ?? "");
-            return /[",\r\n]/.test(value)
-              ? `"${value.replaceAll('"', '""')}"`
-              : value;
-          })
-          .join(","),
-      )
-      .join("\n");
+
+    return parseTransferRows(
+      [matrixPayload.data.headers, ...matrixPayload.data.rows],
+      config,
+    );
   }
 
-  const url = new URL(
-    `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
-      config.sheetId,
-    )}/export`,
-  );
-  url.searchParams.set("format", "csv");
-  url.searchParams.set("gid", config.gid);
-  const response = await fetch(url, {
+  const rows = payload.transfers ?? payload.rows ?? payload.data;
+  if (!rows) {
+    throw new TransferSheetConfigurationError(
+      "The Google Apps Script response does not contain transfer rows.",
+    );
+  }
+  return parseTransferRows(rows, config);
+}
+
+async function readAppsScriptTransfers(config: TransferSheetConfig) {
+  const response = await fetch(config.endpointUrl, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ secret: config.secret }),
+    cache: "no-store",
     redirect: "follow",
     signal: AbortSignal.timeout(15_000),
   });
+
   if (!response.ok) {
-    throw new Error(`Google transfer Sheet request failed (${response.status}).`);
-  }
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("text/csv")) {
-    throw new TransferSheetConfigurationError(
-      "The transfer Sheet is not publicly readable; configure server-side service-account credentials and a range.",
+    throw new Error(
+      `Google Apps Script transfer request failed (${response.status}).`,
     );
   }
-  return response.text();
+
+  const declaredSize = Number(response.headers.get("content-length") ?? "0");
+  if (declaredSize > MAX_RESPONSE_BYTES) {
+    throw new TransferSheetConfigurationError(
+      "The Google Apps Script response is too large.",
+    );
+  }
+  const content = await response.text();
+  if (Buffer.byteLength(content, "utf8") > MAX_RESPONSE_BYTES) {
+    throw new TransferSheetConfigurationError(
+      "The Google Apps Script response is too large.",
+    );
+  }
+  return parseAppsScriptTransferResponse(content, config);
 }
 
-export class GoogleTransfersProvider implements TransfersProvider {
+export class GoogleAppsScriptTransfersProvider implements TransfersProvider {
   constructor(private readonly config: TransferSheetConfig) {}
 
   async listTransfers() {
-    const csv = await readSheetCsv(this.config);
-    return parseTransferCsv(csv, this.config);
+    return readAppsScriptTransfers(this.config);
   }
 }

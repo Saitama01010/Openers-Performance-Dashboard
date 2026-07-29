@@ -77,26 +77,35 @@ describe("environment validation", () => {
     ).toThrow(/base64-encoded 32-byte key/);
   });
 
-  it("validates the optional transfer Sheet configuration", async () => {
+  it("validates the paired server-only Apps Script configuration", async () => {
     const { parseEnv } = await import("@/env");
     const env = parseEnv({
       ...baseEnv,
-      GOOGLE_TRANSFERS_SHEET_ID: "sheet-id",
-      GOOGLE_TRANSFERS_SHEET_GID: "1437961980",
-      GOOGLE_TRANSFERS_SHEET_TIMEZONE: "Africa/Cairo",
+      GOOGLE_TRANSFERS_APPS_SCRIPT_URL:
+        "https://script.google.com/macros/s/deployment-id/exec",
+      LEADERBOARD_API_SECRET: "shared-secret",
+      GOOGLE_SHEETS_TIMEZONE: "Africa/Cairo",
     });
-    expect(env.GOOGLE_TRANSFERS_SHEET_TIMEZONE).toBe("Africa/Cairo");
+    expect(env.GOOGLE_SHEETS_TIMEZONE).toBe("Africa/Cairo");
 
     expect(() =>
       parseEnv({
         ...baseEnv,
-        GOOGLE_TRANSFERS_SHEET_ID: "sheet-id",
+        GOOGLE_TRANSFERS_APPS_SCRIPT_URL:
+          "https://script.google.com/macros/s/deployment-id/exec",
       }),
     ).toThrow(/must be configured together/);
     expect(() =>
       parseEnv({
         ...baseEnv,
-        GOOGLE_TRANSFERS_SHEET_TIMEZONE: "Mars/Olympus",
+        GOOGLE_TRANSFERS_APPS_SCRIPT_URL: "https://example.com/not-google",
+        LEADERBOARD_API_SECRET: "shared-secret",
+      }),
+    ).toThrow(/Google Apps Script/);
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        GOOGLE_SHEETS_TIMEZONE: "Mars/Olympus",
       }),
     ).toThrow(/valid IANA timezone/);
   });

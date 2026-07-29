@@ -1,46 +1,53 @@
 import "server-only";
 
 import { getEnv } from "@/env";
-import { listMatchableUsers } from "@/leaderboard/data";
-import { matchTransfersToUsers } from "@/leaderboard/matching";
 import {
-  GoogleTransfersProvider,
+  matchTransfersToUsers,
+  type MatchableUser,
+} from "@/leaderboard/matching";
+import {
+  GoogleAppsScriptTransfersProvider,
   type TransferSheetConfig,
 } from "@/sheets/transfers";
 
 export function transferSheetConfigFromEnv(): TransferSheetConfig | null {
   const env = getEnv();
-  if (!env.GOOGLE_TRANSFERS_SHEET_ID || !env.GOOGLE_TRANSFERS_SHEET_GID) {
+  if (
+    !env.GOOGLE_TRANSFERS_APPS_SCRIPT_URL ||
+    !env.LEADERBOARD_API_SECRET
+  ) {
     return null;
   }
   return {
-    sheetId: env.GOOGLE_TRANSFERS_SHEET_ID,
-    gid: env.GOOGLE_TRANSFERS_SHEET_GID,
-    range: env.GOOGLE_TRANSFERS_SHEET_RANGE,
-    timeZone: env.GOOGLE_TRANSFERS_SHEET_TIMEZONE,
-    serviceAccountEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    serviceAccountPrivateKey: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+    endpointUrl: env.GOOGLE_TRANSFERS_APPS_SCRIPT_URL,
+    secret: env.LEADERBOARD_API_SECRET,
+    timeZone: env.GOOGLE_SHEETS_TIMEZONE,
   };
 }
 
-export async function ingestAndMatchTransfers() {
-  const config = transferSheetConfigFromEnv();
+export async function ingestAndMatchTransfers(
+  users:
+    | readonly MatchableUser[]
+    | Promise<readonly MatchableUser[]>,
+  config = transferSheetConfigFromEnv(),
+) {
   if (!config) {
     return {
       status: "unconfigured" as const,
-      message: "The transfer Sheet has not been configured.",
+      message: "The Google Sheet transfer source has not been configured.",
     };
   }
 
-  const provider = new GoogleTransfersProvider(config);
-  const [transferResult, users] = await Promise.all([
+  const provider = new GoogleAppsScriptTransfersProvider(config);
+  const [transferResult, resolvedUsers] = await Promise.all([
     provider.listTransfers(),
-    listMatchableUsers(),
+    Promise.resolve(users),
   ]);
-  const matches = matchTransfersToUsers(transferResult.records, users);
+  const matches = matchTransfersToUsers(transferResult.records, resolvedUsers);
 
   return {
     status: "ready" as const,
+    timeZone: config.timeZone,
     records: transferResult.records,
     matches: matches.results,
     diagnostics: [...transferResult.diagnostics, ...matches.diagnostics],

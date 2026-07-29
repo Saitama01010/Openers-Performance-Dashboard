@@ -10,8 +10,23 @@ import {
   teamMemberships,
   teams,
 } from "@/db/schema";
-import type { ClosedDealsProvider } from "@/sheets/contracts";
-import { UnconfiguredClosedDealsProvider } from "@/sheets/closed-deals";
+import type {
+  MatchableUser,
+  MatchedTransfer,
+} from "@/leaderboard/matching";
+import {
+  rankLeaderboardRows,
+  type LeaderboardRow,
+} from "@/leaderboard/ranking";
+import {
+  ingestAndMatchTransfers,
+  transferSheetConfigFromEnv,
+} from "@/leaderboard/transfers";
+import { dateKeyInTimeZone } from "@/sheets/timestamp";
+import {
+  normalizeAmericanName,
+  TransferSheetConfigurationError,
+} from "@/sheets/transfers";
 
 export type LeaderboardFilters = {
   query?: string;
@@ -20,20 +35,28 @@ export type LeaderboardFilters = {
   to?: string;
 };
 
+type LeaderboardBase = {
+  teams: { id: string; name: string }[];
+  filters: LeaderboardFilters;
+};
+
 export type LeaderboardData =
-  | {
+  | (LeaderboardBase & {
       status: "unconfigured";
       message: string;
       rows: [];
-      teams: { id: string; name: string }[];
-      filters: LeaderboardFilters;
-    }
-  | {
+    })
+  | (LeaderboardBase & {
       status: "ready";
-      rows: import("@/leaderboard/ranking").LeaderboardRow[];
-      teams: { id: string; name: string }[];
-      filters: LeaderboardFilters;
-    };
+      rows: LeaderboardRow[];
+      sourceRecordCount: number;
+      diagnosticCount: number;
+    })
+  | (LeaderboardBase & {
+      status: "source_error";
+      message: string;
+      rows: [];
+    });
 
 async function listLeaderboardTeams() {
   return getDb()
@@ -81,26 +104,134 @@ export async function listMatchableUsers() {
   return rows;
 }
 
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase("en-US")
+    .replace(/\s+/g, " ");
+}
+
+function transferMatchesFilters(
+  match: Extract<MatchedTransfer, { status: "matched" }>,
+  filters: LeaderboardFilters,
+  timeZone: string,
+) {
+  if (!match.transfer.occurredAt) return false;
+  if (filters.teamId && match.user.teamId !== filters.teamId) return false;
+
+  if (filters.query) {
+    const query = normalizeSearchText(filters.query);
+    const americanNameQuery = normalizeAmericanName(filters.query);
+    if (
+      !normalizeSearchText(match.user.realName).includes(query) &&
+      !normalizeAmericanName(match.user.americanName).includes(
+        americanNameQuery,
+      )
+    ) {
+      return false;
+    }
+  }
+
+  const transferDate = dateKeyInTimeZone(match.transfer.occurredAt, timeZone);
+  if (filters.from && transferDate < filters.from) return false;
+  if (filters.to && transferDate > filters.to) return false;
+  return true;
+}
+
+export function buildTransferLeaderboardRows(
+  matches: readonly MatchedTransfer[],
+  filters: LeaderboardFilters,
+  timeZone: string,
+) {
+  const counts = new Map<
+    string,
+    { user: MatchableUser; transferCount: number }
+  >();
+
+  for (const match of matches) {
+    if (
+      match.status !== "matched" ||
+      !transferMatchesFilters(match, filters, timeZone)
+    ) {
+      continue;
+    }
+    const current = counts.get(match.user.id);
+    counts.set(match.user.id, {
+      user: match.user,
+      transferCount: (current?.transferCount ?? 0) + 1,
+    });
+  }
+
+  return rankLeaderboardRows(
+    Array.from(counts.values()).map(({ user, transferCount }) => ({
+      profileId: user.id,
+      realName: user.realName,
+      americanName: user.americanName,
+      teamId: user.teamId,
+      teamName: user.teamName,
+      transferCount,
+    })),
+  );
+}
+
 export async function getLeaderboardData(
   _actor: Actor,
   filters: LeaderboardFilters,
-  closedDealsProvider: ClosedDealsProvider =
-    new UnconfiguredClosedDealsProvider(),
 ): Promise<LeaderboardData> {
-  const teamRows = await listLeaderboardTeams();
-  if (!closedDealsProvider.configured) {
+  const teamRowsPromise = listLeaderboardTeams();
+  const config = transferSheetConfigFromEnv();
+
+  if (!config) {
     return {
       status: "unconfigured",
-      message: "Closed-deals data source has not been configured yet.",
+      message:
+        "Configure the server-only Google Apps Script URL and LeaderBoard secret to load transfers.",
+      rows: [],
+      teams: await teamRowsPromise,
+      filters,
+    };
+  }
+
+  const usersPromise = listMatchableUsers();
+  const ingestionPromise = ingestAndMatchTransfers(usersPromise, config);
+  let ingestion: Awaited<typeof ingestionPromise>;
+  try {
+    ingestion = await ingestionPromise;
+  } catch (error) {
+    if (error instanceof TransferSheetConfigurationError) {
+      return {
+        status: "source_error",
+        message: error.message,
+        rows: [],
+        teams: await teamRowsPromise,
+        filters,
+      };
+    }
+    throw error;
+  }
+  const teamRows = await teamRowsPromise;
+
+  if (ingestion.status === "unconfigured") {
+    return {
+      status: "unconfigured",
+      message: ingestion.message,
       rows: [],
       teams: teamRows,
       filters,
     };
   }
 
-  // The ready branch intentionally remains isolated until the real closed-deal
-  // columns and attribution rules are supplied. It must never substitute
-  // transfer volume for closed-deal counts.
-  await closedDealsProvider.listClosedDeals();
-  return { status: "ready", rows: [], teams: teamRows, filters };
+  return {
+    status: "ready",
+    rows: buildTransferLeaderboardRows(
+      ingestion.matches,
+      filters,
+      ingestion.timeZone,
+    ),
+    teams: teamRows,
+    filters,
+    sourceRecordCount: ingestion.records.length,
+    diagnosticCount: ingestion.diagnostics.length,
+  };
 }

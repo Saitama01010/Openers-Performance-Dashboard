@@ -3,7 +3,7 @@
 Production deployment is blocked until permission, authentication, import, and migration checks pass and a production email provider is configured.
 
 1. Create a Hostinger MySQL 8 database and a least-privilege application user.
-2. Configure required secrets: `DATABASE_URL`, a random 32+ character `SESSION_SECRET`, a base64-encoded 32-byte `TEMP_PASSWORD_ENCRYPTION_KEY`, public HTTPS `APP_URL`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `INVITATION_TTL_HOURS`, `PASSWORD_RESET_TTL_MINUTES`, and `NODE_ENV=production`.
+2. Configure required secrets: `DATABASE_URL`, a random 32+ character `SESSION_SECRET`, a base64-encoded 32-byte `TEMP_PASSWORD_ENCRYPTION_KEY`, public HTTPS `APP_URL`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `INVITATION_TTL_HOURS`, `PASSWORD_RESET_TTL_MINUTES`, `GOOGLE_TRANSFERS_APPS_SCRIPT_URL`, `LEADERBOARD_API_SECRET`, `GOOGLE_SHEETS_TIMEZONE`, and `NODE_ENV=production`.
 3. Configure exactly one production email provider. Do not use `EMAIL_PROVIDER=console` in production.
 4. Build with `npm ci && npm run build`.
 5. Run `npm run db:migrate` once during release. Do not run development seed data in production.
@@ -25,7 +25,11 @@ Back up MySQL before every migration and retain point-in-time or daily backups. 
 
 Recovering from admin lockout should be done with a one-time database maintenance script that creates or reactivates a known admin, then immediately forces password reset. Do not disable final-admin protections in source code.
 
-GitHub deployment should require CI success. Google service credentials and email API keys belong only in Hostinger secrets. Verify cookies are Secure over HTTPS and test invitation, reset, session revocation, manager scope, import confirmation, and backup restoration in staging before production cutover.
+GitHub deployment should require CI success. The Google Apps Script URL,
+LeaderBoard shared secret, and email API keys belong only in Hostinger secrets.
+Verify cookies are Secure over HTTPS and test invitation, reset, session
+revocation, manager scope, automatic LeaderBoard transfer loading, import
+confirmation, and backup restoration in staging before production cutover.
 
 If a Resend API key is exposed:
 

@@ -50,7 +50,9 @@ npm run db:seed
 
 `fixtures/dialer-sample.csv` is an anonymized dialer fixture that uses the exact production CSV headers.
 
-Architecture, permissions, authentication, import, testing, and Hostinger deployment notes are maintained in `docs/`. Google Sheets, leaderboards, commissions, and metric flags are planned phases and are not yet production-ready.
+Architecture, permissions, authentication, import, testing, Google Apps Script
+transfer ingestion, and Hostinger deployment notes are maintained in `docs/`.
+Closed-deal attribution, commissions, and metric flags remain planned phases.
 
 ## Transactional Email
 

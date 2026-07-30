@@ -7,10 +7,11 @@ const wizard = readFileSync(
   resolve(process.cwd(), "src/components/admin/user-import-wizard.tsx"),
   "utf8",
 );
+const normalizedWizard = wizard.replace(/\r\n/g, "\n");
 
 describe("user import wizard contract", () => {
   it("advertises only the new required headers", () => {
-    expect(wizard).toContain(
+    expect(normalizedWizard).toContain(
       "Required headers: Real Name, American Name,\n            Shift, Email.",
     );
     expect(wizard).not.toContain("Required headers: Username");

@@ -4,6 +4,7 @@ export type LeaderboardRow = {
   americanName: string;
   teamId: string | null;
   teamName: string | null;
+  transferCount: number;
   closedDeals: number;
   rank?: number;
 };

@@ -212,6 +212,7 @@ describe("LeaderBoard transfer-source errors", () => {
       americanName: "Gia Monroe",
       teamId: "team-1",
       teamName: "Team One",
+      transferCount: 0,
       closedDeals: 1,
       rank: 1,
     });

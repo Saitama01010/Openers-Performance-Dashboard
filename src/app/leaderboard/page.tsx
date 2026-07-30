@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { resolveOverviewDateRange } from "@/dashboard/date-range";
 import { getLeaderboardData } from "@/leaderboard/data";
+import { resolveLeaderboardSort } from "@/leaderboard/sorting";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export default async function LeaderboardPage({
   const query = firstValue(params.q)?.trim() || undefined;
   const teamId = firstValue(params.teamId)?.trim() || undefined;
   const dateRange = resolveOverviewDateRange(params);
+  const sort = resolveLeaderboardSort(params);
   const data = await getLeaderboardData(user, {
     query,
     teamId,
@@ -45,7 +47,12 @@ export default async function LeaderboardPage({
               <DashboardDateFilter
                 ariaLabel="Leaderboard date filter"
                 pathname="/leaderboard"
-                preservedParams={{ q: query, teamId }}
+                preservedParams={{
+                  q: query,
+                  teamId,
+                  sort: sort?.column,
+                  direction: sort?.direction,
+                }}
                 range={dateRange}
               />
               <LeaderboardRefreshControls />
@@ -55,7 +62,7 @@ export default async function LeaderboardPage({
           eyebrow="Performance"
           title="LeaderBoard"
         />
-        <LeaderboardView data={data} dateRange={dateRange} />
+        <LeaderboardView data={data} dateRange={dateRange} sort={sort} />
       </section>
     </DashboardShell>
   );

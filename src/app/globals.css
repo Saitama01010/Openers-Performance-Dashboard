@@ -1611,7 +1611,7 @@ input[type="file"]:not(:disabled) {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.leaderboard-filter-card,
+.leaderboard-filter-section,
 .leaderboard-state-card,
 .leaderboard-table-card {
   transition:
@@ -1621,27 +1621,50 @@ input[type="file"]:not(:disabled) {
 }
 
 .leaderboard-toolbar {
-  align-items: end;
-  display: grid;
-  gap: 0.75rem;
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
 }
 
-.leaderboard-toolbar label {
+.leaderboard-toolbar__control {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 0.55rem 0.625rem;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.leaderboard-toolbar__control--search {
+  flex: 0 1 18rem;
+}
+
+.leaderboard-toolbar__control--team {
+  flex: 0 1 12rem;
+}
+
+.leaderboard-toolbar__control label {
   color: var(--muted);
-  font-size: 0.75rem;
+  display: block;
+  font-size: 0.6875rem;
   font-weight: 650;
 }
 
 .leaderboard-toolbar input:not([type="hidden"]),
 .leaderboard-toolbar select {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--background);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--foreground);
   display: block;
-  margin-top: 0.35rem;
-  min-height: 2.75rem;
-  padding: 0.55rem 0.7rem;
+  font-size: 0.8125rem;
+  margin-top: 0.25rem;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.55rem;
   transition:
     border-color var(--motion-fast) var(--ease-out),
     box-shadow var(--motion-fast) var(--ease-out);
@@ -1659,6 +1682,7 @@ input[type="file"]:not(:disabled) {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  padding-block: 0.15rem;
 }
 
 .leaderboard-table-card {
@@ -1671,6 +1695,95 @@ input[type="file"]:not(:disabled) {
   font-variant-numeric: tabular-nums;
 }
 
+.leaderboard-sort-heading {
+  text-align: right;
+}
+
+.leaderboard-sort-link {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  display: inline-flex;
+  gap: 0.25rem;
+  justify-content: flex-end;
+  min-height: 2rem;
+  padding: 0.25rem 0.35rem;
+  text-decoration: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.leaderboard-sort-link[data-active] {
+  color: var(--primary);
+}
+
+.leaderboard-sort-link__indicator {
+  fill: none;
+  height: 0.75rem;
+  overflow: visible;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+  width: 0.65rem;
+}
+
+.leaderboard-sort-link__indicator path {
+  opacity: 0.35;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.leaderboard-sort-link__indicator[data-state="asc"] .leaderboard-sort-link__up,
+.leaderboard-sort-link__indicator[data-state="desc"] .leaderboard-sort-link__down {
+  opacity: 1;
+}
+
+.leaderboard-sort-link__indicator[data-state="asc"] .leaderboard-sort-link__down,
+.leaderboard-sort-link__indicator[data-state="desc"] .leaderboard-sort-link__up {
+  opacity: 0.12;
+}
+
+.leaderboard-unavailable-value {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.leaderboard-mobile-sort {
+  align-items: center;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.625rem;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+}
+
+.leaderboard-mobile-sort > p {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.leaderboard-mobile-sort > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+.leaderboard-sort-link--compact {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  min-height: 2.25rem;
+  padding-inline: 0.5rem;
+}
+
 .leaderboard-mobile-list > li {
   padding: 1rem;
   transition:
@@ -1680,6 +1793,25 @@ input[type="file"]:not(:disabled) {
 
 .leaderboard-mobile-list > li + li {
   border-top: 1px solid var(--border);
+}
+
+.leaderboard-mobile-metrics {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0.625rem;
+  text-align: right;
+}
+
+.leaderboard-mobile-metrics dt {
+  color: var(--muted);
+  font-size: 0.625rem;
+}
+
+.leaderboard-mobile-metrics dd {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  margin-top: 0.1rem;
 }
 
 .transfer-insight {
@@ -2983,6 +3115,17 @@ input[type="file"]:not(:disabled) {
     box-shadow: inset 3px 0 0 var(--primary);
   }
 
+  .leaderboard-toolbar__control:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 7px 18px rgb(6 21 47 / 0.06);
+    transform: translateY(-1px);
+  }
+
+  .leaderboard-sort-link:hover {
+    background: var(--primary-subtle);
+    color: var(--primary);
+  }
+
   .closed-deals-chart li:hover .closed-deals-chart__bar {
     filter: saturate(1.15) brightness(1.03);
   }
@@ -3007,10 +3150,6 @@ input[type="file"]:not(:disabled) {
 
   .leaderboard-kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .leaderboard-toolbar {
-    grid-template-columns: minmax(15rem, 2fr) minmax(11rem, 1fr) auto;
   }
 
   .transfer-insight__body {
@@ -3178,6 +3317,14 @@ input[type="file"]:not(:disabled) {
     flex: 1 1 auto;
   }
 
+  .leaderboard-toolbar__control {
+    flex-basis: 100%;
+  }
+
+  .leaderboard-toolbar__actions {
+    width: 100%;
+  }
+
   .overview-date-filter__icon {
     display: none;
   }
@@ -3328,11 +3475,14 @@ input[type="file"]:not(:disabled) {
   .overview-page .overview-main > *,
   .overview-page .overview-rail > *,
   .leaderboard-page > section,
-  .leaderboard-filter-card,
+  .leaderboard-filter-section,
   .leaderboard-state-card,
   .leaderboard-table-card,
+  .leaderboard-toolbar__control,
   .leaderboard-toolbar input:not([type="hidden"]),
   .leaderboard-toolbar select,
+  .leaderboard-sort-link,
+  .leaderboard-sort-link__indicator path,
   .leaderboard-mobile-list > li,
   .overview-page .ui-card,
   .overview-date-filter__option,

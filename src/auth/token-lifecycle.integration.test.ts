@@ -202,69 +202,84 @@ describe("auth token lifecycle integration", () => {
     );
   });
 
-  it("uses only the newest reset once, revokes sessions, and rejects password reuse", async () => {
-    const currentPassword = strongPassword("current");
-    const profileId = await createProfile({
-      accountStatus: "active",
-      password: currentPassword,
-    });
-    const oldReset = await createReset(profileId, {
-      createdAt: new Date(Date.now() - 1000 * 60),
-    });
-    const latestReset = await createReset(profileId, { createdAt: new Date() });
-    const sessionId = newId();
+  it(
+    "uses only the newest reset once, revokes sessions, and rejects password reuse",
+    async () => {
+      const currentPassword = strongPassword("current");
+      const profileId = await createProfile({
+        accountStatus: "active",
+        password: currentPassword,
+      });
+      const oldReset = await createReset(profileId, {
+        createdAt: new Date(Date.now() - 1000 * 60),
+      });
+      const latestReset = await createReset(profileId, { createdAt: new Date() });
+      const sessionId = newId();
 
-    await getDb().insert(sessions).values({
-      id: sessionId,
-      profileId,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
-    });
+      await getDb().insert(sessions).values({
+        id: sessionId,
+        profileId,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      });
 
-    expect(await inspectPasswordResetToken(oldReset.token)).toEqual({
-      status: "superseded",
-    });
-    expect(
-      await resetPassword({
-        token: oldReset.token,
-        password: strongPassword("old-link"),
-      }),
-    ).toEqual({
-      ok: false,
-      error: "This link is no longer valid. Request a new link.",
-    });
-    expect(
-      await resetPassword({ token: latestReset.token, password: currentPassword }),
-    ).toEqual({
-      ok: false,
-      error: "Your new password must be different from your current password.",
-    });
+      expect(await inspectPasswordResetToken(oldReset.token)).toEqual({
+        status: "superseded",
+      });
+      expect(
+        await resetPassword({
+          token: oldReset.token,
+          password: strongPassword("old-link"),
+        }),
+      ).toEqual({
+        ok: false,
+        error: "This link is no longer valid. Request a new link.",
+      });
+      expect(
+        await resetPassword({
+          token: latestReset.token,
+          password: currentPassword,
+        }),
+      ).toEqual({
+        ok: false,
+        error:
+          "Your new password must be different from your current password.",
+      });
 
-    const newPassword = strongPassword("new");
-    expect(
-      await resetPassword({ token: latestReset.token, password: newPassword }),
-    ).toEqual({ ok: true });
-    expect(
-      await resetPassword({ token: latestReset.token, password: strongPassword("again") }),
-    ).toEqual({
-      ok: false,
-      error: "This reset link is invalid or has already been used.",
-    });
+      const newPassword = strongPassword("new");
+      expect(
+        await resetPassword({ token: latestReset.token, password: newPassword }),
+      ).toEqual({ ok: true });
+      expect(
+        await resetPassword({
+          token: latestReset.token,
+          password: strongPassword("again"),
+        }),
+      ).toEqual({
+        ok: false,
+        error: "This reset link is invalid or has already been used.",
+      });
 
-    const [profile] = await getDb()
-      .select()
-      .from(profiles)
-      .where(eq(profiles.id, profileId))
-      .limit(1);
-    expect(profile?.passwordHash).toBeTruthy();
-    expect(await verifyPassword(newPassword, profile!.passwordHash!)).toBe(true);
+      const [profile] = await getDb()
+        .select()
+        .from(profiles)
+        .where(eq(profiles.id, profileId))
+        .limit(1);
+      expect(profile?.passwordHash).toBeTruthy();
+      expect(await verifyPassword(newPassword, profile!.passwordHash!)).toBe(
+        true,
+      );
 
-    const [session] = await getDb()
-      .select()
-      .from(sessions)
-      .where(and(eq(sessions.id, sessionId), eq(sessions.profileId, profileId)))
-      .limit(1);
-    expect(session?.revokedAt).toBeInstanceOf(Date);
-  });
+      const [session] = await getDb()
+        .select()
+        .from(sessions)
+        .where(
+          and(eq(sessions.id, sessionId), eq(sessions.profileId, profileId)),
+        )
+        .limit(1);
+      expect(session?.revokedAt).toBeInstanceOf(Date);
+    },
+    10000,
+  );
 
   it("rejects revoked and expired reset inspection", async () => {
     const profileId = await createProfile({

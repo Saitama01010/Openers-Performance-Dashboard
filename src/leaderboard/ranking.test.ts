@@ -11,6 +11,7 @@ describe("leaderboard ranking", () => {
         americanName: "Zoe",
         teamId: null,
         teamName: null,
+        transferCount: 1,
         closedDeals: 5,
       },
       {
@@ -19,6 +20,7 @@ describe("leaderboard ranking", () => {
         americanName: "Amy",
         teamId: null,
         teamName: null,
+        transferCount: 2,
         closedDeals: 8,
       },
       {
@@ -27,6 +29,7 @@ describe("leaderboard ranking", () => {
         americanName: "Ada",
         teamId: null,
         teamName: null,
+        transferCount: 3,
         closedDeals: 8,
       },
     ]);

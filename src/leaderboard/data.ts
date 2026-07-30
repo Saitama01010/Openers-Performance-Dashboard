@@ -251,21 +251,42 @@ export function buildClosedDealLeaderboardRows(
   deals: readonly NormalizedClosedDeal[],
   filters: LeaderboardFilters,
   timeZone: string,
+  transfers: readonly MatchedTransfer[] = [],
 ) {
   const filteredUsers = users.filter((user) =>
     userMatchesIdentityFilters(user, filters),
   );
-  const counts = new Map(filteredUsers.map((user) => [user.id, 0]));
+  const closedCounts = new Map(filteredUsers.map((user) => [user.id, 0]));
+  const transferCounts = new Map(
+    filteredUsers.map((user) => [user.id, 0]),
+  );
+
+  for (const match of transfers) {
+    if (
+      match.status !== "matched" ||
+      !transferCounts.has(match.user.id) ||
+      !transferMatchesFilters(match, filters, timeZone)
+    ) {
+      continue;
+    }
+    transferCounts.set(
+      match.user.id,
+      (transferCounts.get(match.user.id) ?? 0) + 1,
+    );
+  }
 
   for (const deal of deals) {
     if (
       !deal.matchedUserId ||
-      !counts.has(deal.matchedUserId) ||
+      !closedCounts.has(deal.matchedUserId) ||
       !closedDealMatchesDateFilters(deal, filters, timeZone)
     ) {
       continue;
     }
-    counts.set(deal.matchedUserId, (counts.get(deal.matchedUserId) ?? 0) + 1);
+    closedCounts.set(
+      deal.matchedUserId,
+      (closedCounts.get(deal.matchedUserId) ?? 0) + 1,
+    );
   }
 
   return rankLeaderboardRows(
@@ -275,7 +296,8 @@ export function buildClosedDealLeaderboardRows(
       americanName: user.americanName,
       teamId: user.teamId,
       teamName: user.teamName,
-      closedDeals: counts.get(user.id) ?? 0,
+      transferCount: transferCounts.get(user.id) ?? 0,
+      closedDeals: closedCounts.get(user.id) ?? 0,
     })),
   );
 }
@@ -432,6 +454,7 @@ export async function getLeaderboardData(
     ingestion.closedRecords,
     filters,
     ingestion.timeZone,
+    ingestion.transferMatches,
   );
   const totalClosedDeals = rows.reduce(
     (total, row) => total + row.closedDeals,

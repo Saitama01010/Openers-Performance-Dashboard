@@ -3,6 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
 
+const dateRange = {
+  key: "this-month" as const,
+  label: "This Month",
+  from: "2026-07-01",
+  to: "2026-07-30",
+  comparison: {
+    from: "2026-06-01",
+    to: "2026-06-30",
+    label: "previous month to date",
+  },
+};
+
 describe("LeaderBoard view", () => {
   it("shows filters and no invented ranking rows", () => {
     const markup = renderToStaticMarkup(
@@ -14,13 +26,17 @@ describe("LeaderBoard view", () => {
           teams: [{ id: "team-1", name: "Team One" }],
           filters: {},
         }}
+        dateRange={dateRange}
       />,
     );
 
     expect(markup).toContain("Google Apps Script has not been configured");
     expect(markup).toContain("Real Name or American Name");
     expect(markup).toContain("All teams");
-    expect(markup).toContain('type="date"');
+    expect(markup).toContain('name="range"');
+    expect(markup).toContain("Closed Deals");
+    expect(markup).toContain("Conversion Rate %");
+    expect(markup).toContain("Unavailable");
     expect(markup).not.toContain("<tbody>");
     expect(markup).not.toContain(">0<");
   });
@@ -46,13 +62,17 @@ describe("LeaderBoard view", () => {
           sourceRecordCount: 4,
           diagnosticCount: 0,
         }}
+        dateRange={dateRange}
       />,
     );
 
     expect(markup).toContain("Transfer ranking");
     expect(markup).toContain("Gia Monroe");
     expect(markup).toContain("Transfers");
-    expect(markup).not.toContain("Closed Deals");
+    expect(markup).toContain("Total transfers");
+    expect(markup).toContain('aria-label="4"');
+    expect(markup).toContain("Closed Deals");
+    expect(markup).toContain("No real closed-deals provider");
   });
 
   it("renders an expected transfer-source error as a controlled alert", () => {
@@ -65,6 +85,7 @@ describe("LeaderBoard view", () => {
           teams: [],
           filters: {},
         }}
+        dateRange={dateRange}
       />,
     );
 

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/auth/session";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import {
   AnimatedClosedDealsBarChart,
+  AnimatedMetricValue,
   type ClosedDealsPerformer,
 } from "@/components/dashboard/overview-animations";
 import { OverviewDateFilter } from "@/components/dashboard/overview-date-filter";
@@ -33,6 +34,7 @@ import {
   formatOptionalNumber,
   formatPercentage,
 } from "@/import/format";
+import { getTransferSummary } from "@/leaderboard/data";
 import { roleLabel } from "@/presentation/labels";
 import { CLOSED_DEALS_UNCONFIGURED_MESSAGE } from "@/sheets/closed-deals";
 
@@ -67,6 +69,36 @@ function dashboardRangeHref(
   return `/dashboard?${params.toString()}`;
 }
 
+function leaderboardRangeHref(range: OverviewDateRange) {
+  const params = new URLSearchParams({ range: range.key });
+  if (range.key === "custom") {
+    params.set("from", range.from);
+    params.set("to", range.to);
+  }
+  return `/leaderboard?${params.toString()}`;
+}
+
+function transferComparisonText(
+  current: number,
+  previous: number,
+  comparisonLabel: string,
+) {
+  if (previous <= 0) {
+    return current > 0
+      ? `New transfer activity vs ${comparisonLabel}`
+      : `No transfer activity vs ${comparisonLabel}`;
+  }
+
+  const change = ((current - previous) / previous) * 100;
+  if (Math.abs(change) < 0.005) {
+    return `No change vs ${comparisonLabel}`;
+  }
+
+  return `${change > 0 ? "Up" : "Down"} ${formatPercentage(
+    Math.abs(change),
+  )} vs ${comparisonLabel}`;
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -84,10 +116,13 @@ export default async function DashboardPage({
   const dateRange = resolveOverviewDateRange(params);
   const showAgentsWithNoData =
     params.showNoData === "1" || params.showNoData === "true";
-  const dashboard = await getDashboardData(user, {
-    dateRange,
-    showAgentsWithNoData,
-  });
+  const [dashboard, transferSummary] = await Promise.all([
+    getDashboardData(user, {
+      dateRange,
+      showAgentsWithNoData,
+    }),
+    getTransferSummary(user, dateRange),
+  ]);
   const loggedInHours = dashboard.totals.loggedInSeconds / 3600;
   const callsPerHour =
     loggedInHours > 0 ? dashboard.totals.calls / loggedInHours : null;
@@ -215,6 +250,96 @@ export default async function DashboardPage({
                   }
                 />
               </div>
+            </section>
+
+            <section
+              aria-labelledby="transfer-summary-heading"
+              className="ui-card transfer-insight"
+            >
+              <div className="ui-card__header">
+                <div>
+                  <h2
+                    className="ui-card__title"
+                    id="transfer-summary-heading"
+                  >
+                    Number of transfers
+                  </h2>
+                  <p className="ui-card__subtitle">
+                    Valid Xfers records matched inside your authorized scope.
+                  </p>
+                </div>
+                <StatusBadge
+                  tone={
+                    transferSummary.status === "ready"
+                      ? "success"
+                      : "warning"
+                  }
+                >
+                  {transferSummary.status === "ready"
+                    ? "Live source"
+                    : "Unavailable"}
+                </StatusBadge>
+              </div>
+              {transferSummary.status === "ready" ? (
+                <div className="transfer-insight__body">
+                  <span
+                    aria-hidden="true"
+                    className="transfer-insight__icon"
+                  >
+                    <DashboardIcon name="leaderboard" />
+                  </span>
+                  <div className="transfer-insight__metric">
+                    <p>{dateRange.label}</p>
+                    <strong>
+                      <AnimatedMetricValue
+                        format="count"
+                        value={transferSummary.totalTransfers}
+                      />
+                    </strong>
+                    <span>
+                      {transferComparisonText(
+                        transferSummary.totalTransfers,
+                        transferSummary.comparisonTransfers,
+                        transferSummary.comparisonLabel,
+                      )}
+                    </span>
+                  </div>
+                  <div className="transfer-insight__context">
+                    <p>
+                      {formatNumber(transferSummary.comparisonTransfers)} in{" "}
+                      {transferSummary.comparisonLabel}
+                    </p>
+                    {transferSummary.diagnosticCount > 0 ? (
+                      <p>
+                        {formatNumber(transferSummary.diagnosticCount)}{" "}
+                        {transferSummary.diagnosticCount === 1
+                          ? "matching or quality diagnostic was"
+                          : "matching or quality diagnostics were"}{" "}
+                        reported in this source read.
+                      </p>
+                    ) : (
+                      <p>No transfer matching diagnostics in this read.</p>
+                    )}
+                    <Link
+                      className="ui-link-action"
+                      href={leaderboardRangeHref(dateRange)}
+                    >
+                      Open LeaderBoard
+                      <DashboardIcon name="arrowRight" />
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="transfer-insight__empty" role="status">
+                  <span aria-hidden="true">
+                    <DashboardIcon name="leaderboard" />
+                  </span>
+                  <div>
+                    <strong>Transfer data is not available</strong>
+                    <p>{transferSummary.message}</p>
+                  </div>
+                </div>
+              )}
             </section>
 
             <section

@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { buildTransferLeaderboardRows } from "@/leaderboard/data";
+import {
+  buildTransferLeaderboardRows,
+  countScopedTransfers,
+} from "@/leaderboard/data";
 import type { MatchedTransfer } from "@/leaderboard/matching";
 
 const users = {
@@ -95,5 +98,40 @@ describe("transfer LeaderBoard aggregation", () => {
         rank: 1,
       }),
     ]);
+  });
+
+  it("counts Overview transfers inside the actor and date scope", () => {
+    const matches = [
+      matched(users.gia, new Date("2026-07-28T21:00:00.000Z"), 2),
+      matched(users.zoe, new Date("2026-07-28T21:30:00.000Z"), 3),
+      matched(users.gia, new Date("2026-06-28T21:00:00.000Z"), 4),
+      matched(users.gia, null, 5),
+    ];
+    const window = { from: "2026-07-01", to: "2026-07-31" };
+
+    expect(
+      countScopedTransfers(
+        matches,
+        { id: "admin", role: "admin", teamIds: [] },
+        window,
+        "Africa/Cairo",
+      ),
+    ).toBe(2);
+    expect(
+      countScopedTransfers(
+        matches,
+        { id: "manager", role: "manager", teamIds: ["team-1"] },
+        window,
+        "Africa/Cairo",
+      ),
+    ).toBe(1);
+    expect(
+      countScopedTransfers(
+        matches,
+        { id: "zoe", role: "agent", teamIds: ["team-2"] },
+        window,
+        "Africa/Cairo",
+      ),
+    ).toBe(1);
   });
 });

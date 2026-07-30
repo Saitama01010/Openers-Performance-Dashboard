@@ -11,6 +11,10 @@ import {
   teams,
 } from "@/db/schema";
 import type {
+  DashboardDateWindow,
+  OverviewDateRange,
+} from "@/dashboard/date-range";
+import type {
   MatchableUser,
   MatchedTransfer,
 } from "@/leaderboard/matching";
@@ -57,6 +61,19 @@ export type LeaderboardData =
       message: string;
       rows: [];
     });
+
+export type TransferSummaryData =
+  | {
+      status: "unconfigured" | "source_error";
+      message: string;
+    }
+  | {
+      status: "ready";
+      comparisonLabel: string;
+      comparisonTransfers: number;
+      diagnosticCount: number;
+      totalTransfers: number;
+    };
 
 async function listLeaderboardTeams() {
   return getDb()
@@ -139,6 +156,38 @@ function transferMatchesFilters(
   return true;
 }
 
+function actorCanViewTransfer(
+  actor: Actor,
+  user: Pick<MatchableUser, "id" | "teamId">,
+) {
+  if (actor.role === "admin") return true;
+  if (actor.role === "agent") return actor.id === user.id;
+  return user.teamId !== null && actor.teamIds.includes(user.teamId);
+}
+
+export function countScopedTransfers(
+  matches: readonly MatchedTransfer[],
+  actor: Actor,
+  window: DashboardDateWindow,
+  timeZone: string,
+) {
+  return matches.reduce((count, match) => {
+    if (
+      match.status !== "matched" ||
+      !actorCanViewTransfer(actor, match.user) ||
+      !transferMatchesFilters(
+        match,
+        { from: window.from, to: window.to },
+        timeZone,
+      )
+    ) {
+      return count;
+    }
+
+    return count + 1;
+  }, 0);
+}
+
 export function buildTransferLeaderboardRows(
   matches: readonly MatchedTransfer[],
   filters: LeaderboardFilters,
@@ -173,6 +222,61 @@ export function buildTransferLeaderboardRows(
       transferCount,
     })),
   );
+}
+
+export async function getTransferSummary(
+  actor: Actor,
+  dateRange: OverviewDateRange,
+): Promise<TransferSummaryData> {
+  const config = transferSheetConfigFromEnv();
+
+  if (!config) {
+    return {
+      status: "unconfigured",
+      message:
+        "Configure the server-only Google Apps Script URL and LeaderBoard secret to load transfers.",
+    };
+  }
+
+  try {
+    const ingestion = await ingestAndMatchTransfers(
+      listMatchableUsers(),
+      config,
+    );
+
+    if (ingestion.status === "unconfigured") {
+      return {
+        status: "unconfigured",
+        message: ingestion.message,
+      };
+    }
+
+    return {
+      status: "ready",
+      totalTransfers: countScopedTransfers(
+        ingestion.matches,
+        actor,
+        dateRange,
+        ingestion.timeZone,
+      ),
+      comparisonTransfers: countScopedTransfers(
+        ingestion.matches,
+        actor,
+        dateRange.comparison,
+        ingestion.timeZone,
+      ),
+      comparisonLabel: dateRange.comparison.label,
+      diagnosticCount: ingestion.diagnostics.length,
+    };
+  } catch (error) {
+    return {
+      status: "source_error",
+      message:
+        error instanceof TransferSheetConfigurationError
+          ? error.message
+          : "The transfer source could not be loaded right now. Retry after checking the Xfers connection.",
+    };
+  }
 }
 
 export async function getLeaderboardData(

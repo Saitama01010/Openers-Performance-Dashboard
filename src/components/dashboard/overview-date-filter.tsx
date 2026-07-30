@@ -6,6 +6,8 @@ import type {
   OverviewDateRange,
 } from "@/dashboard/date-range";
 
+type PreservedDateFilterParams = Record<string, string | undefined>;
+
 const filterOptions: {
   key: Exclude<OverviewDateFilterKey, "custom">;
   label: string;
@@ -15,24 +17,31 @@ const filterOptions: {
   { key: "last-month", label: "Last Month" },
 ];
 
-function dashboardHref(
+function dateFilterHref(
+  pathname: string,
   range: Exclude<OverviewDateFilterKey, "custom">,
-  showAgentsWithNoData: boolean,
+  preservedParams: PreservedDateFilterParams,
 ) {
   const params = new URLSearchParams({ range });
-  if (showAgentsWithNoData) params.set("showNoData", "1");
-  return `/dashboard?${params.toString()}`;
+  for (const [name, value] of Object.entries(preservedParams)) {
+    if (value) params.set(name, value);
+  }
+  return `${pathname}?${params.toString()}`;
 }
 
-export function OverviewDateFilter({
+export function DashboardDateFilter({
+  ariaLabel,
+  pathname,
+  preservedParams = {},
   range,
-  showAgentsWithNoData,
 }: {
+  ariaLabel: string;
+  pathname: string;
+  preservedParams?: PreservedDateFilterParams;
   range: OverviewDateRange;
-  showAgentsWithNoData: boolean;
 }) {
   return (
-    <div aria-label="Overview date filter" className="overview-date-filter">
+    <div aria-label={ariaLabel} className="overview-date-filter">
       <span className="overview-date-filter__icon" aria-hidden="true">
         <DashboardIcon name="calendar" />
       </span>
@@ -41,7 +50,7 @@ export function OverviewDateFilter({
           <Link
             aria-current={range.key === option.key ? "page" : undefined}
             className="overview-date-filter__option"
-            href={dashboardHref(option.key, showAgentsWithNoData)}
+            href={dateFilterHref(pathname, option.key, preservedParams)}
             key={option.key}
           >
             {option.label}
@@ -55,18 +64,21 @@ export function OverviewDateFilter({
             Custom Date
           </summary>
           <form
-            aria-label="Custom overview date range"
+            aria-label={`Custom ${ariaLabel.toLowerCase()} range`}
             className="overview-date-filter__popover"
             method="get"
           >
             <input defaultValue="custom" name="range" type="hidden" />
-            {showAgentsWithNoData ? (
+            {Object.entries(preservedParams).map(([name, value]) =>
+              value ? (
               <input
-                defaultValue="1"
-                name="showNoData"
+                  defaultValue={value}
+                  key={name}
+                  name={name}
                 type="hidden"
               />
-            ) : null}
+              ) : null,
+            )}
             <label>
               From
               <input
@@ -92,5 +104,24 @@ export function OverviewDateFilter({
         </details>
       </div>
     </div>
+  );
+}
+
+export function OverviewDateFilter({
+  range,
+  showAgentsWithNoData,
+}: {
+  range: OverviewDateRange;
+  showAgentsWithNoData: boolean;
+}) {
+  return (
+    <DashboardDateFilter
+      ariaLabel="Overview date filter"
+      pathname="/dashboard"
+      preservedParams={{
+        showNoData: showAgentsWithNoData ? "1" : undefined,
+      }}
+      range={range}
+    />
   );
 }

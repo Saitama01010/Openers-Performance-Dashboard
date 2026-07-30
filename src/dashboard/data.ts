@@ -5,14 +5,20 @@ import {
   asc,
   desc,
   eq,
+  gte,
   inArray,
   isNull,
+  lte,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
+import type {
+  DashboardDateWindow,
+  OverviewDateRange,
+} from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
   dialerAgentHourlyMetrics,
@@ -89,6 +95,11 @@ export type DashboardData = {
     latestMetricUpdatedAt: Date | null;
   };
   reconciliation: DashboardReconciliation;
+  comparison: {
+    hasData: boolean;
+    label: string;
+    totals: DashboardTotals;
+  } | null;
 };
 
 type DashboardScope = {
@@ -224,6 +235,23 @@ function localTestAccount(profile: Pick<ProfileRow, "email" | "name">) {
 
 function metricScopeMatchesNoRows() {
   return sql`false`;
+}
+
+function scopeForDateWindow(
+  scope: DashboardScope,
+  window: DashboardDateWindow,
+): DashboardScope {
+  const dateWhere = and(
+    gte(dialerAgentHourlyMetrics.metricDate, window.from),
+    lte(dialerAgentHourlyMetrics.metricDate, window.to),
+  );
+
+  return {
+    ...scope,
+    metricWhere: scope.metricWhere
+      ? and(scope.metricWhere, dateWhere)
+      : dateWhere,
+  };
 }
 
 async function currentManagerAgentProfileIds(actor: Actor) {
@@ -561,19 +589,36 @@ function reconcileAgentRows(
 
 export async function getDashboardData(
   actor: Actor,
-  options: { showAgentsWithNoData?: boolean } = {},
+  options: {
+    dateRange?: OverviewDateRange;
+    showAgentsWithNoData?: boolean;
+  } = {},
 ) {
-  const scope = await buildDashboardScope(actor);
+  const baseScope = await buildDashboardScope(actor);
+  const scope = options.dateRange
+    ? scopeForDateWindow(baseScope, options.dateRange)
+    : baseScope;
+  const comparisonScope = options.dateRange
+    ? scopeForDateWindow(baseScope, options.dateRange.comparison)
+    : null;
+  const baseTotalsPromise = getDashboardTotals(baseScope);
+  const currentTotalsPromise = options.dateRange
+    ? getDashboardTotals(scope)
+    : baseTotalsPromise;
   const [
-    { totals, activeScopeCount },
+    { activeScopeCount },
+    { totals },
     agentRows,
     hourlyBreakdown,
     dataFreshness,
+    comparisonResult,
   ] = await Promise.all([
-    getDashboardTotals(scope),
+    baseTotalsPromise,
+    currentTotalsPromise,
     getAgentPerformanceRows(scope, options.showAgentsWithNoData ?? false),
     getHourlyBreakdown(scope),
     getDataFreshness(scope),
+    comparisonScope ? getDashboardTotals(comparisonScope) : null,
   ]);
 
   return {
@@ -588,5 +633,13 @@ export async function getDashboardData(
     hourlyBreakdown,
     dataFreshness,
     reconciliation: reconcileAgentRows(totals, agentRows),
+    comparison:
+      options.dateRange && comparisonResult
+        ? {
+            hasData: comparisonResult.totals.rowCount > 0,
+            label: options.dateRange.comparison.label,
+            totals: comparisonResult.totals,
+          }
+        : null,
   } satisfies DashboardData;
 }

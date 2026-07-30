@@ -3,11 +3,14 @@ import type {
   ClosedDealsProvider,
 } from "@/sheets/contracts";
 
+export const CLOSED_DEALS_UNCONFIGURED_MESSAGE =
+  "Connect a real closed-deals provider and attribution rules before performance can be ranked. Transfer counts are intentionally kept separate.";
+
 export class UnconfiguredClosedDealsProvider implements ClosedDealsProvider {
   readonly configured = false;
 
   async listClosedDeals(): Promise<ClosedDealRecord[]> {
-    throw new Error("Closed-deals data source has not been configured yet.");
+    throw new Error(CLOSED_DEALS_UNCONFIGURED_MESSAGE);
   }
 }
 

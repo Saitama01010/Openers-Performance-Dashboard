@@ -277,4 +277,84 @@ describe("active-version dashboard scope", () => {
     expect(west.agentRows).toHaveLength(1);
     expect(west.agentRows[0]?.profileId).toBe(westAgentId);
   });
+
+  it("filters active metrics and returns the prior-period totals", async () => {
+    const adminId = await createProfile("admin", "Comparison Admin");
+    const agentId = await createProfile("agent", "Comparison Agent");
+    const teamId = await createTeam("Comparison Team");
+    await addMembership(agentId, teamId);
+
+    const previousScope =
+      `dialer|agent_hours_performance|2099-06-01|team:${teamId}|dialer:default`;
+    const currentScope =
+      `dialer|agent_hours_performance|2099-06-02|team:${teamId}|dialer:default`;
+    scopeKeys.push(previousScope, currentScope);
+
+    const previousVersion = await createVersion({
+      active: true,
+      actorId: adminId,
+      agentId,
+      calls: 10,
+      reportingDate: "2099-06-01",
+      scopeKey: previousScope,
+      teamId,
+      teamName: "Comparison Team",
+      versionNumber: 1,
+    });
+    const currentVersion = await createVersion({
+      active: true,
+      actorId: adminId,
+      agentId,
+      calls: 25,
+      reportingDate: "2099-06-02",
+      scopeKey: currentScope,
+      teamId,
+      teamName: "Comparison Team",
+      versionNumber: 1,
+    });
+
+    await getDb().insert(dialerDatasetScopes).values([
+      {
+        scopeKey: previousScope,
+        source: "dialer",
+        importType: "agent_hours_performance",
+        reportingDate: "2099-06-01",
+        teamId,
+        activeVersionId: previousVersion,
+        revision: 1,
+      },
+      {
+        scopeKey: currentScope,
+        source: "dialer",
+        importType: "agent_hours_performance",
+        reportingDate: "2099-06-02",
+        teamId,
+        activeVersionId: currentVersion,
+        revision: 1,
+      },
+    ]);
+
+    const dashboard = await getDashboardData(
+      { id: adminId, role: "admin", teamIds: [] },
+      {
+        dateRange: {
+          key: "today",
+          label: "Today",
+          from: "2099-06-02",
+          to: "2099-06-02",
+          comparison: {
+            from: "2099-06-01",
+            to: "2099-06-01",
+            label: "previous day",
+          },
+        },
+      },
+    );
+
+    expect(dashboard.status).toBe("ACTIVE_IMPORT");
+    expect(dashboard.totals.calls).toBe(25);
+    expect(dashboard.agentRows).toHaveLength(1);
+    expect(dashboard.comparison?.hasData).toBe(true);
+    expect(dashboard.comparison?.totals.calls).toBe(10);
+  });
 });

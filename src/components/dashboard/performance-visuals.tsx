@@ -2,7 +2,13 @@ import {
   DashboardIcon,
   type DashboardIconName,
 } from "@/components/dashboard/dashboard-icons";
+import {
+  AnimatedMetricValue,
+  AnimatedProductivityMix,
+  type AnimatedMetricFormat,
+} from "@/components/dashboard/overview-animations";
 import type {
+  DashboardData,
   DashboardHourlyBreakdownRow,
   DashboardTotals,
 } from "@/dashboard/data";
@@ -26,7 +32,12 @@ export function MetricPanel({
   label,
   tone = "blue",
   value,
+  animatedValue,
 }: {
+  animatedValue?: {
+    format: AnimatedMetricFormat;
+    value: number | null;
+  };
   detail: string;
   icon: DashboardIconName;
   label: string;
@@ -41,7 +52,16 @@ export function MetricPanel({
         </span>
         <p className="metric-panel__label">{label}</p>
       </div>
-      <p className="metric-panel__value">{value}</p>
+      <p className="metric-panel__value">
+        {animatedValue ? (
+          <AnimatedMetricValue
+            format={animatedValue.format}
+            value={animatedValue.value}
+          />
+        ) : (
+          value
+        )}
+      </p>
       <p className="metric-panel__detail">{detail}</p>
     </article>
   );
@@ -57,7 +77,58 @@ const activityStates = [
   ["Untracked time", "untrackedSeconds", "untracked", "slate"],
 ] as const;
 
-export function ActivityStateGrid({ totals }: { totals: DashboardTotals }) {
+type DashboardComparison = NonNullable<DashboardData["comparison"]>;
+
+function comparisonTrend(
+  current: number,
+  previous: number,
+  comparison: DashboardComparison,
+) {
+  if (!comparison.hasData) {
+    return {
+      label: "No prior period data",
+      tone: "neutral",
+    } as const;
+  }
+
+  if (previous <= 0) {
+    return current > 0
+      ? {
+          label: `↑ New vs ${comparison.label}`,
+          tone: "up",
+        }
+      : {
+          label: `— No change vs ${comparison.label}`,
+          tone: "neutral",
+        };
+  }
+
+  const percentage = ((current - previous) / previous) * 100;
+  if (Math.abs(percentage) < 0.005) {
+    return {
+      label: `— No change vs ${comparison.label}`,
+      tone: "neutral",
+    } as const;
+  }
+
+  const rising = percentage > 0;
+  return {
+    label: `${rising ? "↑ Up" : "↓ Down"} ${formatPercentage(
+      Math.abs(percentage),
+    )} vs ${comparison.label}`,
+    tone: rising ? "up" : "down",
+  } as const;
+}
+
+export function ActivityStateGrid({
+  animateValues = false,
+  comparison,
+  totals,
+}: {
+  animateValues?: boolean;
+  comparison?: DashboardComparison | null;
+  totals: DashboardTotals;
+}) {
   return (
     <div className="activity-state-grid">
       {activityStates.map(([label, key, icon, tone]) => {
@@ -66,6 +137,13 @@ export function ActivityStateGrid({ totals }: { totals: DashboardTotals }) {
           totals.loggedInSeconds > 0
             ? (seconds / totals.loggedInSeconds) * 100
             : null;
+        const trend = comparison
+          ? comparisonTrend(
+              seconds,
+              comparison.totals[key],
+              comparison,
+            )
+          : null;
 
         return (
           <article
@@ -79,13 +157,24 @@ export function ActivityStateGrid({ totals }: { totals: DashboardTotals }) {
               <p>{label}</p>
             </div>
             <p className="activity-state__value">
-              {formatCompactDuration(seconds)}
+              {animateValues ? (
+                <AnimatedMetricValue format="duration" value={seconds} />
+              ) : (
+                formatCompactDuration(seconds)
+              )}
             </p>
             <p className="activity-state__share">
               {share === null
                 ? "No logged-in time"
                 : `${formatPercentage(share)} of logged-in time`}
             </p>
+            {trend ? (
+              <p
+                className={`activity-state__trend activity-state__trend--${trend.tone}`}
+              >
+                {trend.label}
+              </p>
+            ) : null}
             <span className="activity-state__track" aria-hidden="true">
               <span
                 className="activity-state__bar"
@@ -181,7 +270,13 @@ export function HourlyActivityChart({
   );
 }
 
-export function ProductivityMix({ totals }: { totals: DashboardTotals }) {
+export function ProductivityMix({
+  totals,
+  variant = "bar",
+}: {
+  totals: DashboardTotals;
+  variant?: "bar" | "donut";
+}) {
   const items = [
     ["Ready", totals.readySeconds, "blue"],
     ["Talk", totals.talkSeconds, "green"],
@@ -192,6 +287,18 @@ export function ProductivityMix({ totals }: { totals: DashboardTotals }) {
     ["Untracked", totals.untrackedSeconds, "slate"],
   ] as const;
   const total = items.reduce((sum, [, seconds]) => sum + seconds, 0);
+
+  if (variant === "donut") {
+    return (
+      <AnimatedProductivityMix
+        items={items.map(([label, seconds, tone]) => ({
+          label,
+          seconds,
+          tone,
+        }))}
+      />
+    );
+  }
 
   return (
     <div className="productivity-mix">

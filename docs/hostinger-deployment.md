@@ -29,7 +29,9 @@ GitHub deployment should require CI success. The Google Apps Script URL,
 LeaderBoard shared secret, and email API keys belong only in Hostinger secrets.
 Verify cookies are Secure over HTTPS and test invitation, reset, session
 revocation, manager scope, automatic LeaderBoard transfer loading, import
-confirmation, and backup restoration in staging before production cutover.
+confirmation, nested Closed parsing, manual/automatic LeaderBoard refresh,
+stale-source behavior, and backup restoration in staging before production
+cutover.
 
 If a Resend API key is exposed:
 

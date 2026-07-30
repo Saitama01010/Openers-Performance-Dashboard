@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { rankLeaderboardRows } from "@/leaderboard/ranking";
 
 describe("leaderboard ranking", () => {
-  it("uses transfers then American Name for deterministic ordering", () => {
+  it("uses Closed Deals then American Name for deterministic ordering", () => {
     const rows = rankLeaderboardRows([
       {
         profileId: "a",
@@ -11,7 +11,7 @@ describe("leaderboard ranking", () => {
         americanName: "Zoe",
         teamId: null,
         teamName: null,
-        transferCount: 5,
+        closedDeals: 5,
       },
       {
         profileId: "b",
@@ -19,7 +19,7 @@ describe("leaderboard ranking", () => {
         americanName: "Amy",
         teamId: null,
         teamName: null,
-        transferCount: 8,
+        closedDeals: 8,
       },
       {
         profileId: "c",
@@ -27,7 +27,7 @@ describe("leaderboard ranking", () => {
         americanName: "Ada",
         teamId: null,
         teamName: null,
-        transferCount: 8,
+        closedDeals: 8,
       },
     ]);
     expect(rows.map((row) => [row.profileId, row.rank])).toEqual([

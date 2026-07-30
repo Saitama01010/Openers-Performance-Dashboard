@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/auth/session";
 import { DashboardDateFilter } from "@/components/dashboard/overview-date-filter";
+import { LeaderboardRefreshControls } from "@/components/leaderboard/leaderboard-refresh-controls";
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
 import { PageHeader } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -40,14 +41,17 @@ export default async function LeaderboardPage({
       <section className="dashboard-page leaderboard-page">
         <PageHeader
           actions={
-            <DashboardDateFilter
-              ariaLabel="Leaderboard date filter"
-              pathname="/leaderboard"
-              preservedParams={{ q: query, teamId }}
-              range={dateRange}
-            />
+            <>
+              <DashboardDateFilter
+                ariaLabel="Leaderboard date filter"
+                pathname="/leaderboard"
+                preservedParams={{ q: query, teamId }}
+                range={dateRange}
+              />
+              <LeaderboardRefreshControls />
+            </>
           }
-          description="Rank openers by valid transfers from the latest Xfers sheet data, matched automatically by American Name."
+          description="Rank openers by valid Closed worksheet submissions, attributed automatically by American Name."
           eyebrow="Performance"
           title="LeaderBoard"
         />

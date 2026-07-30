@@ -4,11 +4,24 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type {
+  ClosedDealReadResult,
   TransferDiagnostic,
   TransferReadResult,
   TransferRecord,
   TransfersProvider,
 } from "@/sheets/contracts";
+import {
+  closedAppsScriptFailureSchema,
+  ClosedSheetConfigurationError,
+  parseClosedAppsScriptSuccess,
+  type ClosedSourceErrorKind,
+} from "@/sheets/closed-deals";
+import {
+  extractOpenerAmericanName,
+  normalizeAmericanName as normalizeSharedAmericanName,
+  normalizeSheetHeader,
+  sheetCellText,
+} from "@/sheets/normalization";
 import { parseSheetTimestamp } from "@/sheets/timestamp";
 
 const REQUIRED_HEADERS = [
@@ -31,6 +44,10 @@ const appsScriptMatrixPayloadSchema = z
     headers: z.array(z.string()),
     rows: matrixRowsSchema,
     rowCount: z.number().int().nonnegative().optional(),
+    sourceRowNumbers: z
+      .array(z.number().int().positive())
+      .max(MAX_ROWS)
+      .optional(),
     generatedAt: z.string().optional(),
   })
   .passthrough()
@@ -43,6 +60,16 @@ const appsScriptMatrixPayloadSchema = z
         code: z.ZodIssueCode.custom,
         path: ["rowCount"],
         message: "rowCount must match the number of transfer rows.",
+      });
+    }
+    if (
+      payload.sourceRowNumbers !== undefined &&
+      payload.sourceRowNumbers.length !== payload.rows.length
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sourceRowNumbers"],
+        message: "sourceRowNumbers must align with the transfer rows.",
       });
     }
   });
@@ -67,43 +94,30 @@ export type TransferSheetConfig = {
 
 export class TransferSheetConfigurationError extends Error {}
 
-function normalizeHeader(value: unknown) {
-  return String(value ?? "")
-    .trim()
-    .replace(/^\uFEFF/, "")
-    .trim()
-    .toLocaleLowerCase("en-US");
-}
-
 export function parseOpener(value: string) {
-  const normalized = value.trim();
-  const separator = normalized.indexOf("-");
-  if (separator < 1 || separator === normalized.length - 1) return null;
-  const sheetRealName = normalized.slice(0, separator).trim();
-  const sheetAmericanName = normalized.slice(separator + 1).trim();
-  if (!sheetRealName || !sheetAmericanName) return null;
-  return { sheetRealName, sheetAmericanName };
+  const opener = extractOpenerAmericanName(value);
+  if (!opener?.sheetRealName) return null;
+  return {
+    sheetRealName: opener.sheetRealName,
+    sheetAmericanName: opener.sheetAmericanName,
+  };
 }
 
 export function normalizeAmericanName(value: string) {
-  return value
-    .normalize("NFKC")
-    .trim()
-    .toLocaleLowerCase("en-US")
-    .replace(/[.’'`]/gu, "")
-    .replace(/[\p{Pd},;:()[\]{}]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeSharedAmericanName(value);
 }
 
 function headerIndexes(headers: readonly unknown[]) {
   const indexByHeader = new Map<string, number>();
   const requiredByNormalizedHeader = new Map(
-    REQUIRED_HEADERS.map((header) => [normalizeHeader(header), header]),
+    REQUIRED_HEADERS.map((header) => [
+      normalizeSheetHeader(header),
+      header,
+    ]),
   );
 
   headers.forEach((rawHeader, index) => {
-    const header = normalizeHeader(rawHeader);
+    const header = normalizeSheetHeader(rawHeader);
     if (!header) return;
     if (
       indexByHeader.has(header) &&
@@ -117,7 +131,7 @@ function headerIndexes(headers: readonly unknown[]) {
   });
 
   const missing = REQUIRED_HEADERS.filter(
-    (header) => !indexByHeader.has(normalizeHeader(header)),
+    (header) => !indexByHeader.has(normalizeSheetHeader(header)),
   );
   if (missing.length > 0) {
     throw new TransferSheetConfigurationError(
@@ -129,14 +143,8 @@ function headerIndexes(headers: readonly unknown[]) {
 }
 
 function cellText(value: unknown, header: string) {
-  if (value === null || value === undefined) return "";
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return String(value).trim();
-  }
+  const text = sheetCellText(value);
+  if (text !== null) return text;
   throw new TransferSheetConfigurationError(
     `Transfer source contains an invalid ${header} value.`,
   );
@@ -150,18 +158,25 @@ type NormalizedSourceRow = {
   phoneNumber: string;
 };
 
-function normalizeMatrixRows(rows: readonly unknown[]) {
+function normalizeMatrixRows(
+  rows: readonly unknown[],
+  sourceRowNumbers?: readonly number[],
+) {
   const matrix = rows as unknown[][];
   if (matrix.length === 0) return [];
   const indexes = headerIndexes(matrix[0]);
   const value = (
     row: readonly unknown[],
     header: (typeof REQUIRED_HEADERS)[number],
-  ) => cellText(row[indexes.get(normalizeHeader(header)) ?? -1], header);
+  ) =>
+    cellText(
+      row[indexes.get(normalizeSheetHeader(header)) ?? -1],
+      header,
+    );
 
   return matrix.slice(1).map(
     (row, index): NormalizedSourceRow => ({
-      rowNumber: index + 2,
+      rowNumber: sourceRowNumbers?.[index] ?? index + 2,
       timestamp: value(row, "Timestamp"),
       opener: value(row, "Opener"),
       customerName: value(row, "Customer Name"),
@@ -176,16 +191,17 @@ function normalizeObjectRows(rows: readonly unknown[]) {
   const normalizedRows = objects.map((row) => {
     const values = new Map<string, unknown>();
     for (const [rawHeader, value] of Object.entries(row)) {
-      const header = normalizeHeader(rawHeader);
+      const header = normalizeSheetHeader(rawHeader);
       if (!header) continue;
       if (
         values.has(header) &&
         REQUIRED_HEADERS.some(
-          (requiredHeader) => normalizeHeader(requiredHeader) === header,
+          (requiredHeader) =>
+            normalizeSheetHeader(requiredHeader) === header,
         )
       ) {
         const requiredHeader = REQUIRED_HEADERS.find(
-          (candidate) => normalizeHeader(candidate) === header,
+          (candidate) => normalizeSheetHeader(candidate) === header,
         );
         throw new TransferSheetConfigurationError(
           `Transfer source contains the required header more than once: ${requiredHeader}.`,
@@ -204,7 +220,7 @@ function normalizeObjectRows(rows: readonly unknown[]) {
   const value = (
     row: Map<string, unknown>,
     header: (typeof REQUIRED_HEADERS)[number],
-  ) => cellText(row.get(normalizeHeader(header)), header);
+  ) => cellText(row.get(normalizeSheetHeader(header)), header);
 
   return normalizedRows.map(
     (row, index): NormalizedSourceRow => ({
@@ -237,7 +253,13 @@ export function parseTransferRows(
   rows: readonly unknown[],
   config: Pick<TransferSheetConfig, "timeZone">,
 ): TransferReadResult {
-  const normalizedRows = normalizeRows(rows);
+  return parseNormalizedTransferRows(normalizeRows(rows), config);
+}
+
+function parseNormalizedTransferRows(
+  normalizedRows: readonly NormalizedSourceRow[],
+  config: Pick<TransferSheetConfig, "timeZone">,
+): TransferReadResult {
   const records: TransferRecord[] = [];
   const diagnostics: TransferDiagnostic[] = [];
   const seen = new Set<string>();
@@ -302,19 +324,33 @@ export function parseTransferRows(
   return { records, diagnostics };
 }
 
-export function parseAppsScriptTransferResponse(
-  content: string,
+function parseTransferMatrixPayload(
+  payload: z.infer<typeof appsScriptMatrixPayloadSchema>,
   config: Pick<TransferSheetConfig, "timeZone">,
 ) {
-  let json: unknown;
+  return parseNormalizedTransferRows(
+    normalizeMatrixRows(
+      [payload.headers, ...payload.rows],
+      payload.sourceRowNumbers,
+    ),
+    config,
+  );
+}
+
+function parseAppsScriptJson(content: string) {
   try {
-    json = JSON.parse(content);
+    return JSON.parse(content) as unknown;
   } catch {
     throw new TransferSheetConfigurationError(
       "The Google Apps Script response is not valid JSON.",
     );
   }
+}
 
+function parseTransferPayload(
+  json: unknown,
+  config: Pick<TransferSheetConfig, "timeZone">,
+) {
   const parsed = appsScriptPayloadSchema.safeParse(json);
   if (!parsed.success) {
     throw new TransferSheetConfigurationError(
@@ -347,10 +383,7 @@ export function parseAppsScriptTransferResponse(
       );
     }
 
-    return parseTransferRows(
-      [matrixPayload.data.headers, ...matrixPayload.data.rows],
-      config,
-    );
+    return parseTransferMatrixPayload(matrixPayload.data, config);
   }
 
   const rows = payload.transfers ?? payload.rows ?? payload.data;
@@ -362,7 +395,100 @@ export function parseAppsScriptTransferResponse(
   return parseTransferRows(rows, config);
 }
 
-async function readAppsScriptTransfers(config: TransferSheetConfig) {
+export function parseAppsScriptTransferResponse(
+  content: string,
+  config: Pick<TransferSheetConfig, "timeZone">,
+) {
+  return parseTransferPayload(parseAppsScriptJson(content), config);
+}
+
+export type ClosedSourceResult =
+  | {
+      status: "ready";
+      data: ClosedDealReadResult;
+    }
+  | {
+      status: "source_error";
+      kind: ClosedSourceErrorKind;
+      message: string;
+      worksheet: "Closed";
+      headerValidationStatus: "invalid" | "unknown";
+    };
+
+export type AppsScriptLeaderboardSources = {
+  transfers: TransferReadResult;
+  closed: ClosedSourceResult;
+};
+
+function parseClosedSource(
+  json: unknown,
+  config: Pick<TransferSheetConfig, "timeZone">,
+): ClosedSourceResult {
+  if (
+    typeof json !== "object" ||
+    json === null ||
+    Array.isArray(json) ||
+    !("closed" in json)
+  ) {
+    return {
+      status: "source_error",
+      kind: "unavailable",
+      message: "The closed-deals source could not be processed.",
+      worksheet: "Closed",
+      headerValidationStatus: "unknown",
+    };
+  }
+
+  const closed = (json as { closed?: unknown }).closed;
+  const failed = closedAppsScriptFailureSchema.safeParse(closed);
+  if (failed.success) {
+    const missingHeaders =
+      failed.data.missingHeaders &&
+      failed.data.missingHeaders.length > 0;
+    return {
+      status: "source_error",
+      kind: missingHeaders ? "configuration" : "unavailable",
+      message: missingHeaders
+        ? "The Closed worksheet does not contain all required headers."
+        : "The closed-deals source could not be processed.",
+      worksheet: "Closed",
+      headerValidationStatus: missingHeaders ? "invalid" : "unknown",
+    };
+  }
+
+  try {
+    return {
+      status: "ready",
+      data: parseClosedAppsScriptSuccess(closed, config),
+    };
+  } catch (error) {
+    const missingHeaders =
+      error instanceof ClosedSheetConfigurationError &&
+      error.message.includes("missing required headers");
+    return {
+      status: "source_error",
+      kind: missingHeaders ? "configuration" : "unavailable",
+      message: missingHeaders
+        ? "The Closed worksheet does not contain all required headers."
+        : "The closed-deals source could not be processed.",
+      worksheet: "Closed",
+      headerValidationStatus: missingHeaders ? "invalid" : "unknown",
+    };
+  }
+}
+
+export function parseAppsScriptLeaderboardResponse(
+  content: string,
+  config: Pick<TransferSheetConfig, "timeZone">,
+): AppsScriptLeaderboardSources {
+  const json = parseAppsScriptJson(content);
+  return {
+    transfers: parseTransferPayload(json, config),
+    closed: parseClosedSource(json, config),
+  };
+}
+
+async function readAppsScriptSources(config: TransferSheetConfig) {
   const response = await fetch(config.endpointUrl, {
     method: "POST",
     headers: {
@@ -393,13 +519,17 @@ async function readAppsScriptTransfers(config: TransferSheetConfig) {
       "The Google Apps Script response is too large.",
     );
   }
-  return parseAppsScriptTransferResponse(content, config);
+  return parseAppsScriptLeaderboardResponse(content, config);
 }
 
 export class GoogleAppsScriptTransfersProvider implements TransfersProvider {
   constructor(private readonly config: TransferSheetConfig) {}
 
   async listTransfers() {
-    return readAppsScriptTransfers(this.config);
+    return (await readAppsScriptSources(this.config)).transfers;
+  }
+
+  async listSources() {
+    return readAppsScriptSources(this.config);
   }
 }

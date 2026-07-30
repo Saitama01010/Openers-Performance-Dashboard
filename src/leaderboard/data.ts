@@ -3,6 +3,10 @@ import "server-only";
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
+import type {
+  DashboardDateWindow,
+  OverviewDateRange,
+} from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
   profiles,
@@ -10,10 +14,6 @@ import {
   teamMemberships,
   teams,
 } from "@/db/schema";
-import type {
-  DashboardDateWindow,
-  OverviewDateRange,
-} from "@/dashboard/date-range";
 import type {
   MatchableUser,
   MatchedTransfer,
@@ -23,9 +23,11 @@ import {
   type LeaderboardRow,
 } from "@/leaderboard/ranking";
 import {
+  ingestAndMatchLeaderboardSources,
   ingestAndMatchTransfers,
   transferSheetConfigFromEnv,
 } from "@/leaderboard/transfers";
+import type { NormalizedClosedDeal } from "@/sheets/contracts";
 import { dateKeyInTimeZone } from "@/sheets/timestamp";
 import {
   normalizeAmericanName,
@@ -37,6 +39,26 @@ export type LeaderboardFilters = {
   teamId?: string;
   from?: string;
   to?: string;
+};
+
+export type SafeClosedDiagnostics = {
+  connectionStatus: "connected";
+  worksheet: "Closed";
+  headerValidationStatus: "valid";
+  totalNonEmptyRows: number;
+  validRows: number;
+  matchedRows: number;
+  unmatchedRows: number;
+  ambiguousRows: number;
+  invalidRows: number;
+  invalidTimestampRows: number;
+  lastSuccessfulSynchronization: string;
+};
+
+export type SafeClosedErrorDiagnostics = {
+  connectionStatus: "configuration_error" | "unavailable";
+  worksheet: "Closed";
+  headerValidationStatus: "invalid" | "unknown";
 };
 
 type LeaderboardBase = {
@@ -53,8 +75,21 @@ export type LeaderboardData =
   | (LeaderboardBase & {
       status: "ready";
       rows: LeaderboardRow[];
-      sourceRecordCount: number;
-      diagnosticCount: number;
+      totalTransfers: number;
+      totalClosedDeals: number;
+      closedSourceEmpty: boolean;
+      transferSourceRecordCount: number;
+      transferDiagnosticCount: number;
+      stale: boolean;
+      closedDiagnostics?: SafeClosedDiagnostics;
+    })
+  | (LeaderboardBase & {
+      status: "closed_error";
+      message: string;
+      rows: [];
+      transferSourceRecordCount: number;
+      transferDiagnosticCount: number;
+      closedDiagnostics?: SafeClosedErrorDiagnostics;
     })
   | (LeaderboardBase & {
       status: "source_error";
@@ -84,7 +119,7 @@ async function listLeaderboardTeams() {
 }
 
 export async function listMatchableUsers() {
-  const rows = await getDb()
+  return getDb()
     .select({
       id: profiles.id,
       realName: profiles.name,
@@ -117,8 +152,6 @@ export async function listMatchableUsers() {
         eq(profiles.active, true),
       ),
     );
-
-  return rows;
 }
 
 function normalizeSearchText(value: string) {
@@ -129,26 +162,28 @@ function normalizeSearchText(value: string) {
     .replace(/\s+/g, " ");
 }
 
+function userMatchesIdentityFilters(
+  user: MatchableUser,
+  filters: LeaderboardFilters,
+) {
+  if (filters.teamId && user.teamId !== filters.teamId) return false;
+  if (!filters.query) return true;
+
+  const query = normalizeSearchText(filters.query);
+  const americanNameQuery = normalizeAmericanName(filters.query);
+  return (
+    normalizeSearchText(user.realName).includes(query) ||
+    normalizeAmericanName(user.americanName).includes(americanNameQuery)
+  );
+}
+
 function transferMatchesFilters(
   match: Extract<MatchedTransfer, { status: "matched" }>,
   filters: LeaderboardFilters,
   timeZone: string,
 ) {
   if (!match.transfer.occurredAt) return false;
-  if (filters.teamId && match.user.teamId !== filters.teamId) return false;
-
-  if (filters.query) {
-    const query = normalizeSearchText(filters.query);
-    const americanNameQuery = normalizeAmericanName(filters.query);
-    if (
-      !normalizeSearchText(match.user.realName).includes(query) &&
-      !normalizeAmericanName(match.user.americanName).includes(
-        americanNameQuery,
-      )
-    ) {
-      return false;
-    }
-  }
+  if (!userMatchesIdentityFilters(match.user, filters)) return false;
 
   const transferDate = dateKeyInTimeZone(match.transfer.occurredAt, timeZone);
   if (filters.from && transferDate < filters.from) return false;
@@ -183,45 +218,92 @@ export function countScopedTransfers(
     ) {
       return count;
     }
-
     return count + 1;
   }, 0);
 }
 
-export function buildTransferLeaderboardRows(
+function countFilteredTransfers(
   matches: readonly MatchedTransfer[],
   filters: LeaderboardFilters,
   timeZone: string,
 ) {
-  const counts = new Map<
-    string,
-    { user: MatchableUser; transferCount: number }
-  >();
+  return matches.filter(
+    (match) =>
+      match.status === "matched" &&
+      transferMatchesFilters(match, filters, timeZone),
+  ).length;
+}
 
-  for (const match of matches) {
+function closedDealMatchesDateFilters(
+  deal: NormalizedClosedDeal,
+  filters: LeaderboardFilters,
+  timeZone: string,
+) {
+  if (deal.matchStatus !== "matched" || !deal.timestamp) return false;
+  const closedDate = dateKeyInTimeZone(deal.timestamp, timeZone);
+  if (filters.from && closedDate < filters.from) return false;
+  if (filters.to && closedDate > filters.to) return false;
+  return true;
+}
+
+export function buildClosedDealLeaderboardRows(
+  users: readonly MatchableUser[],
+  deals: readonly NormalizedClosedDeal[],
+  filters: LeaderboardFilters,
+  timeZone: string,
+) {
+  const filteredUsers = users.filter((user) =>
+    userMatchesIdentityFilters(user, filters),
+  );
+  const counts = new Map(filteredUsers.map((user) => [user.id, 0]));
+
+  for (const deal of deals) {
     if (
-      match.status !== "matched" ||
-      !transferMatchesFilters(match, filters, timeZone)
+      !deal.matchedUserId ||
+      !counts.has(deal.matchedUserId) ||
+      !closedDealMatchesDateFilters(deal, filters, timeZone)
     ) {
       continue;
     }
-    const current = counts.get(match.user.id);
-    counts.set(match.user.id, {
-      user: match.user,
-      transferCount: (current?.transferCount ?? 0) + 1,
-    });
+    counts.set(deal.matchedUserId, (counts.get(deal.matchedUserId) ?? 0) + 1);
   }
 
   return rankLeaderboardRows(
-    Array.from(counts.values()).map(({ user, transferCount }) => ({
+    filteredUsers.map((user) => ({
       profileId: user.id,
       realName: user.realName,
       americanName: user.americanName,
       teamId: user.teamId,
       teamName: user.teamName,
-      transferCount,
+      closedDeals: counts.get(user.id) ?? 0,
     })),
   );
+}
+
+function safeClosedDiagnostics(
+  deals: readonly NormalizedClosedDeal[],
+  totalNonEmptyRows: number,
+  lastSuccessfulSynchronization: string,
+): SafeClosedDiagnostics {
+  return {
+    connectionStatus: "connected",
+    worksheet: "Closed",
+    headerValidationStatus: "valid",
+    totalNonEmptyRows,
+    validRows: deals.filter((deal) => deal.matchStatus !== "invalid").length,
+    matchedRows: deals.filter((deal) => deal.matchStatus === "matched").length,
+    unmatchedRows: deals.filter((deal) => deal.matchStatus === "unmatched")
+      .length,
+    ambiguousRows: deals.filter((deal) => deal.matchStatus === "ambiguous")
+      .length,
+    invalidRows: deals.filter((deal) => deal.matchStatus === "invalid").length,
+    invalidTimestampRows: deals.filter((deal) =>
+      deal.validationErrors.some((error) =>
+        error.toLocaleLowerCase("en-US").includes("timestamp"),
+      ),
+    ).length,
+    lastSuccessfulSynchronization,
+  };
 }
 
 export async function getTransferSummary(
@@ -229,7 +311,6 @@ export async function getTransferSummary(
   dateRange: OverviewDateRange,
 ): Promise<TransferSummaryData> {
   const config = transferSheetConfigFromEnv();
-
   if (!config) {
     return {
       status: "unconfigured",
@@ -243,14 +324,9 @@ export async function getTransferSummary(
       listMatchableUsers(),
       config,
     );
-
     if (ingestion.status === "unconfigured") {
-      return {
-        status: "unconfigured",
-        message: ingestion.message,
-      };
+      return { status: "unconfigured", message: ingestion.message };
     }
-
     return {
       status: "ready",
       totalTransfers: countScopedTransfers(
@@ -280,12 +356,11 @@ export async function getTransferSummary(
 }
 
 export async function getLeaderboardData(
-  _actor: Actor,
+  actor: Actor,
   filters: LeaderboardFilters,
 ): Promise<LeaderboardData> {
   const teamRowsPromise = listLeaderboardTeams();
   const config = transferSheetConfigFromEnv();
-
   if (!config) {
     return {
       status: "unconfigured",
@@ -298,7 +373,10 @@ export async function getLeaderboardData(
   }
 
   const usersPromise = listMatchableUsers();
-  const ingestionPromise = ingestAndMatchTransfers(usersPromise, config);
+  const ingestionPromise = ingestAndMatchLeaderboardSources(
+    usersPromise,
+    config,
+  );
   let ingestion: Awaited<typeof ingestionPromise>;
   try {
     ingestion = await ingestionPromise;
@@ -326,16 +404,62 @@ export async function getLeaderboardData(
     };
   }
 
+  if (ingestion.status === "closed_error") {
+    return {
+      status: "closed_error",
+      message: ingestion.message,
+      rows: [],
+      teams: teamRows,
+      filters,
+      transferSourceRecordCount: ingestion.transferRecords.length,
+      transferDiagnosticCount: ingestion.transferDiagnostics.length,
+      closedDiagnostics:
+        actor.role === "admin"
+          ? {
+              connectionStatus:
+                ingestion.errorKind === "configuration"
+                  ? "configuration_error"
+                  : "unavailable",
+              worksheet: "Closed",
+              headerValidationStatus: ingestion.headerValidationStatus,
+            }
+          : undefined,
+    };
+  }
+
+  const rows = buildClosedDealLeaderboardRows(
+    ingestion.users,
+    ingestion.closedRecords,
+    filters,
+    ingestion.timeZone,
+  );
+  const totalClosedDeals = rows.reduce(
+    (total, row) => total + row.closedDeals,
+    0,
+  );
+
   return {
     status: "ready",
-    rows: buildTransferLeaderboardRows(
-      ingestion.matches,
+    rows,
+    teams: teamRows,
+    filters,
+    totalTransfers: countFilteredTransfers(
+      ingestion.transferMatches,
       filters,
       ingestion.timeZone,
     ),
-    teams: teamRows,
-    filters,
-    sourceRecordCount: ingestion.records.length,
-    diagnosticCount: ingestion.diagnostics.length,
+    totalClosedDeals,
+    closedSourceEmpty: ingestion.totalNonEmptyClosedRows === 0,
+    transferSourceRecordCount: ingestion.transferRecords.length,
+    transferDiagnosticCount: ingestion.transferDiagnostics.length,
+    stale: ingestion.stale,
+    closedDiagnostics:
+      actor.role === "admin"
+        ? safeClosedDiagnostics(
+            ingestion.closedRecords,
+            ingestion.totalNonEmptyClosedRows,
+            ingestion.closedGeneratedAt ?? ingestion.fetchedAt,
+          )
+        : undefined,
   };
 }

@@ -6,6 +6,7 @@ let parseOpener: typeof import("@/sheets/transfers").parseOpener;
 let normalizeAmericanName: typeof import("@/sheets/transfers").normalizeAmericanName;
 let parseTransferRows: typeof import("@/sheets/transfers").parseTransferRows;
 let parseAppsScriptTransferResponse: typeof import("@/sheets/transfers").parseAppsScriptTransferResponse;
+let parseAppsScriptLeaderboardResponse: typeof import("@/sheets/transfers").parseAppsScriptLeaderboardResponse;
 let GoogleAppsScriptTransfersProvider: typeof import("@/sheets/transfers").GoogleAppsScriptTransfersProvider;
 let parseSheetTimestamp: typeof import("@/sheets/timestamp").parseSheetTimestamp;
 let matchTransfersToUsers: typeof import("@/leaderboard/matching").matchTransfersToUsers;
@@ -16,6 +17,7 @@ beforeAll(async () => {
     normalizeAmericanName,
     parseTransferRows,
     parseAppsScriptTransferResponse,
+    parseAppsScriptLeaderboardResponse,
     GoogleAppsScriptTransfersProvider,
   } = await import("@/sheets/transfers"));
   ({ parseSheetTimestamp } = await import("@/sheets/timestamp"));
@@ -96,6 +98,100 @@ describe("Google Apps Script transfer parsing", () => {
       sheetAmericanName: "Gia Monroe",
       customerName: "Customer",
       phoneNumber: "Phone",
+    });
+  });
+
+  it("preserves top-level Xfers compatibility while parsing nested Closed", () => {
+    const result = parseAppsScriptLeaderboardResponse(
+      JSON.stringify({
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [
+          [
+            "2026-07-28T18:47:27.547Z",
+            "Amira Ayman-Gia Monroe",
+            "Transfer Customer",
+            "Phone",
+          ],
+        ],
+        rowCount: 1,
+        sourceRowNumbers: [9],
+        generatedAt: "2026-07-30T10:00:00.000Z",
+        closed: {
+          ok: true,
+          worksheet: "Closed",
+          headers: [
+            "Timestamp",
+            "Closer",
+            "Customer Name",
+            "File Number",
+            "Debt Amount",
+            "Ready For Submission",
+            "Opener",
+          ],
+          rows: [
+            [
+              "2026-07-29T18:47:27.547Z",
+              "Closer",
+              "Closed Customer",
+              "F-1",
+              "1000",
+              "No",
+              "Gia Monroe",
+            ],
+          ],
+          rowCount: 1,
+          sourceRowNumbers: [22],
+          generatedAt: "2026-07-30T10:00:00.000Z",
+        },
+      }),
+      { timeZone: "Africa/Cairo" },
+    );
+
+    expect(result.transfers.records[0].sourceRowId).toBe("Xfers:9");
+    expect(result.closed.status).toBe("ready");
+    if (result.closed.status === "ready") {
+      expect(result.closed.data.records[0]).toMatchObject({
+        sourceRowNumber: 22,
+        extractedAmericanName: "Gia Monroe",
+      });
+    }
+  });
+
+  it("keeps Xfers usable when nested Closed returns ok false", () => {
+    const result = parseAppsScriptLeaderboardResponse(
+      JSON.stringify({
+        ok: true,
+        worksheet: "Xfers",
+        headers: [
+          "Timestamp",
+          "Opener",
+          "Customer Name",
+          "Phone Number",
+        ],
+        rows: [],
+        rowCount: 0,
+        closed: {
+          ok: false,
+          worksheet: "Closed",
+          error: "Missing required headers.",
+          missingHeaders: ["Opener"],
+        },
+      }),
+      { timeZone: "Africa/Cairo" },
+    );
+
+    expect(result.transfers).toEqual({ records: [], diagnostics: [] });
+    expect(result.closed).toMatchObject({
+      status: "source_error",
+      kind: "configuration",
+      message: "The Closed worksheet does not contain all required headers.",
     });
   });
 
@@ -435,6 +531,53 @@ describe("Google Apps Script transfer parsing", () => {
       redirect: "follow",
       body: JSON.stringify({ secret: "server-secret" }),
     });
+  });
+
+  it("loads Xfers and Closed with one HTTP request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          worksheet: "Xfers",
+          headers: [
+            "Timestamp",
+            "Opener",
+            "Customer Name",
+            "Phone Number",
+          ],
+          rows: [],
+          rowCount: 0,
+          closed: {
+            ok: true,
+            worksheet: "Closed",
+            headers: [
+              "Timestamp",
+              "Closer",
+              "Customer Name",
+              "File Number",
+              "Debt Amount",
+              "Ready For Submission",
+              "Opener",
+            ],
+            rows: [],
+            rowCount: 0,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new GoogleAppsScriptTransfersProvider({
+      endpointUrl:
+        "https://script.google.com/macros/s/deployment-id/exec",
+      secret: "server-secret",
+      timeZone: "Africa/Cairo",
+    });
+
+    const result = await provider.listSources();
+    expect(result.transfers.records).toEqual([]);
+    expect(result.closed.status).toBe("ready");
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("rejects malformed, failed, and non-JSON endpoint responses", () => {

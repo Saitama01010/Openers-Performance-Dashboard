@@ -1,4 +1,6 @@
 import type {
+  ClosedDealDiagnostic,
+  NormalizedClosedDeal,
   TransferDiagnostic,
   TransferRecord,
 } from "@/sheets/contracts";
@@ -24,14 +26,7 @@ export function matchTransfersToUsers(
   transfers: readonly TransferRecord[],
   users: readonly MatchableUser[],
 ) {
-  const usersByAmericanName = new Map<string, MatchableUser[]>();
-  for (const user of users) {
-    const key = normalizeAmericanName(user.americanName);
-    if (!key) continue;
-    const matches = usersByAmericanName.get(key) ?? [];
-    matches.push(user);
-    usersByAmericanName.set(key, matches);
-  }
+  const usersByAmericanName = usersByNormalizedAmericanName(users);
 
   const diagnostics: TransferDiagnostic[] = [];
   const results: MatchedTransfer[] = transfers.map((transfer) => {
@@ -70,6 +65,69 @@ export function matchTransfersToUsers(
   });
 
   return { results, diagnostics, duplicateAmericanNames: duplicateNames(usersByAmericanName) };
+}
+
+export function matchClosedDealsToUsers(
+  deals: readonly NormalizedClosedDeal[],
+  users: readonly MatchableUser[],
+) {
+  const usersByAmericanName = usersByNormalizedAmericanName(users);
+  const diagnostics: ClosedDealDiagnostic[] = [];
+  const records = deals.map((deal): NormalizedClosedDeal => {
+    if (deal.matchStatus === "invalid") return deal;
+
+    const matches =
+      usersByAmericanName.get(deal.normalizedAmericanName) ?? [];
+    if (matches.length === 0) {
+      diagnostics.push({
+        sourceRowNumber: deal.sourceRowNumber,
+        code: "unmatched_opener",
+        message: `No active user matches the Closed opener on row ${deal.sourceRowNumber ?? "unknown"}.`,
+      });
+      return {
+        ...deal,
+        matchedUserId: null,
+        matchStatus: "unmatched",
+      };
+    }
+    if (matches.length > 1) {
+      diagnostics.push({
+        sourceRowNumber: deal.sourceRowNumber,
+        code: "ambiguous_opener",
+        message: `Multiple active users match the Closed opener on row ${deal.sourceRowNumber ?? "unknown"}.`,
+      });
+      return {
+        ...deal,
+        matchedUserId: null,
+        matchStatus: "ambiguous",
+      };
+    }
+    return {
+      ...deal,
+      matchedUserId: matches[0].id,
+      matchStatus: "matched",
+    };
+  });
+
+  return {
+    records,
+    diagnostics,
+    duplicateAmericanNames: duplicateNames(usersByAmericanName),
+  };
+}
+
+function usersByNormalizedAmericanName(
+  users: readonly MatchableUser[],
+) {
+  const usersByAmericanName = new Map<string, MatchableUser[]>();
+  for (const user of users) {
+    const key = normalizeAmericanName(user.americanName);
+    if (!key) continue;
+    const matches = usersByAmericanName.get(key) ?? [];
+    matches.push(user);
+    usersByAmericanName.set(key, matches);
+  }
+  return usersByAmericanName;
 }
 
 function duplicateNames(usersByAmericanName: Map<string, MatchableUser[]>) {

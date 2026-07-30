@@ -36,8 +36,12 @@ export function LeaderboardView({
   dateRange: OverviewDateRange;
 }) {
   const totalTransfers =
-    data.status === "ready"
-      ? data.rows.reduce((total, row) => total + row.transferCount, 0)
+    data.status === "ready" ? data.totalTransfers : null;
+  const totalClosedDeals =
+    data.status === "ready" ? data.totalClosedDeals : null;
+  const conversionRate =
+    totalTransfers && totalClosedDeals !== null
+      ? (totalClosedDeals / totalTransfers) * 100
       : null;
 
   return (
@@ -62,7 +66,7 @@ export function LeaderboardView({
             detail={
               totalTransfers === null
                 ? "The Xfers source is not available for this reporting window."
-                : "Valid transfers matched to the filtered ranking."
+                : "Valid Xfers rows matched to active agents."
             }
             icon="import"
             label="Total transfers"
@@ -73,18 +77,31 @@ export function LeaderboardView({
             }
           />
           <MetricPanel
-            detail="No real closed-deals provider or attribution rules are configured."
+            animatedValue={
+              totalClosedDeals === null
+                ? undefined
+                : { format: "count", value: totalClosedDeals }
+            }
+            detail="Valid Closed rows matched to active agents."
             icon="leaderboard"
             label="Closed Deals"
             tone="green"
-            value="Unavailable"
+            value={
+              totalClosedDeals === null
+                ? "Unavailable"
+                : formatNumber(totalClosedDeals)
+            }
           />
           <MetricPanel
-            detail="Requires real closed deals divided by valid matched transfers."
+            detail="Matched closed deals divided by matched transfers."
             icon="performance"
             label="Conversion Rate %"
             tone="violet"
-            value="Unavailable"
+            value={
+              conversionRate === null
+                ? "Unavailable"
+                : `${conversionRate.toFixed(1)}%`
+            }
           />
         </div>
       </section>
@@ -139,6 +156,30 @@ export function LeaderboardView({
         </form>
       </section>
 
+      {data.status === "ready" && data.stale ? (
+        <section
+          className="ui-card ui-card--padded leaderboard-state-card"
+          role="status"
+        >
+          <p className="text-sm text-muted">
+            Showing the last successful ranking because the latest source
+            refresh could not be completed.
+          </p>
+        </section>
+      ) : null}
+
+      {data.status === "ready" && data.closedSourceEmpty ? (
+        <section
+          className="ui-card ui-card--padded leaderboard-state-card"
+          role="status"
+        >
+          <p className="text-sm text-muted">
+            The Closed source is connected, but no closed-deal submissions
+            were found.
+          </p>
+        </section>
+      ) : null}
+
       {data.status === "unconfigured" ? (
         <section
           aria-labelledby="leaderboard-unconfigured"
@@ -183,13 +224,32 @@ export function LeaderboardView({
             </p>
           </div>
         </section>
+      ) : data.status === "closed_error" ? (
+        <section
+          aria-labelledby="leaderboard-closed-error"
+          className="ui-card ui-card--padded leaderboard-state-card"
+          role="alert"
+        >
+          <div className="mx-auto max-w-2xl py-10 text-center">
+            <h2
+              className="text-lg font-semibold"
+              id="leaderboard-closed-error"
+            >
+              Closed source needs attention
+            </h2>
+            <p className="mt-2 text-sm text-muted">{data.message}</p>
+            <p className="mt-2 text-sm text-muted">
+              Xfers remains connected, but rankings require a valid Closed
+              worksheet response.
+            </p>
+          </div>
+        </section>
       ) : data.rows.length === 0 ? (
         <section className="ui-card ui-card--padded leaderboard-state-card">
           <div className="py-10 text-center">
             <h2 className="text-lg font-semibold">No ranking data found</h2>
             <p className="mt-2 text-sm text-muted">
-              No valid transfers matched an active user and the selected
-              filters.
+              No active agents matched the selected search and team filters.
             </p>
           </div>
         </section>
@@ -197,9 +257,9 @@ export function LeaderboardView({
         <section className="ui-card leaderboard-table-card">
           <div className="ui-card__header">
             <div>
-              <h2 className="ui-card__title">Transfer rankings</h2>
+              <h2 className="ui-card__title">Closed-deal rankings</h2>
               <p className="ui-card__subtitle">
-                Ranked by valid matched transfers, then American Name.
+                Ranked by matched Closed rows, then American Name.
               </p>
             </div>
             <p className="leaderboard-table-card__count">
@@ -208,20 +268,20 @@ export function LeaderboardView({
             </p>
           </div>
           <div
-            aria-label="Transfer rankings. Scroll horizontally to view all columns."
+            aria-label="Closed-deal rankings. Scroll horizontally to view all columns."
             className="hidden overflow-x-auto md:block"
             role="region"
             tabIndex={0}
           >
             <table className="ui-table">
-              <caption>Transfer ranking for all authenticated users</caption>
+              <caption>Closed-deal ranking for all authenticated users</caption>
               <thead>
                 <tr>
                   <th scope="col">Rank</th>
                   <th scope="col">Real Name</th>
                   <th scope="col">American Name</th>
                   <th scope="col">Team</th>
-                  <th scope="col">Transfers</th>
+                  <th scope="col">Closed Deals</th>
                 </tr>
               </thead>
               <tbody>
@@ -231,7 +291,7 @@ export function LeaderboardView({
                     <th scope="row">{row.realName}</th>
                     <td>{row.americanName}</td>
                     <td>{row.teamName ?? "Unassigned"}</td>
-                    <td className="numeric">{row.transferCount}</td>
+                    <td className="numeric">{row.closedDeals}</td>
                   </tr>
                 ))}
               </tbody>
@@ -253,9 +313,9 @@ export function LeaderboardView({
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-semibold">
-                      {row.transferCount}
+                      {row.closedDeals}
                     </p>
-                    <p className="text-xs text-muted">Transfers</p>
+                    <p className="text-xs text-muted">Closed Deals</p>
                   </div>
                 </div>
               </li>
@@ -263,6 +323,70 @@ export function LeaderboardView({
           </ol>
         </section>
       )}
+
+      {"closedDiagnostics" in data && data.closedDiagnostics ? (
+        <section
+          aria-labelledby="closed-diagnostics-heading"
+          className="ui-card ui-card--padded"
+        >
+          <div className="section-heading">
+            <p className="section-heading__overline">Administrator diagnostics</p>
+            <h2 id="closed-diagnostics-heading">Closed source health</h2>
+          </div>
+          <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <dt className="text-xs text-muted">Connection</dt>
+              <dd>{data.closedDiagnostics.connectionStatus}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Worksheet</dt>
+              <dd>{data.closedDiagnostics.worksheet}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Headers</dt>
+              <dd>{data.closedDiagnostics.headerValidationStatus}</dd>
+            </div>
+            {"totalNonEmptyRows" in data.closedDiagnostics ? (
+              <>
+                <div>
+                  <dt className="text-xs text-muted">Non-empty rows</dt>
+                  <dd>{formatNumber(data.closedDiagnostics.totalNonEmptyRows)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Valid rows</dt>
+                  <dd>{formatNumber(data.closedDiagnostics.validRows)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Matched rows</dt>
+                  <dd>{formatNumber(data.closedDiagnostics.matchedRows)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Unmatched rows</dt>
+                  <dd>{formatNumber(data.closedDiagnostics.unmatchedRows)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Ambiguous rows</dt>
+                  <dd>{formatNumber(data.closedDiagnostics.ambiguousRows)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Invalid rows</dt>
+                  <dd>{formatNumber(data.closedDiagnostics.invalidRows)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Invalid timestamps</dt>
+                  <dd>
+                    {formatNumber(data.closedDiagnostics.invalidTimestampRows)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Last synchronization</dt>
+                  <dd>{data.closedDiagnostics.lastSuccessfulSynchronization}</dd>
+                </div>
+              </>
+            ) : null}
+          </dl>
+        </section>
+      ) : null}
     </>
   );
 }

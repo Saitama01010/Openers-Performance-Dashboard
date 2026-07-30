@@ -25,22 +25,53 @@ export type TransferReadResult = {
   diagnostics: TransferDiagnostic[];
 };
 
-export type ClosedDealRecord = {
-  externalId: string;
-  closedAt: Date;
-  customerId: string | null;
-  customerPhoneNumber: string | null;
-  transferReference: string | null;
-  openerAmericanName: string | null;
-  status: string;
-  sourceRowId: string;
+export type ClosedDealMatchStatus =
+  | "matched"
+  | "unmatched"
+  | "ambiguous"
+  | "invalid";
+
+export type NormalizedClosedDeal = {
+  sourceRowNumber: number | null;
+  timestamp: Date | null;
+  timestampIso: string | null;
+  closer: string;
+  customerName: string;
+  fileNumber: string;
+  debtAmount: string;
+  readyForSubmission: string;
+  sheetOpener: string;
+  extractedAmericanName: string;
+  normalizedAmericanName: string;
+  matchedUserId: string | null;
+  matchStatus: ClosedDealMatchStatus;
+  validationErrors: string[];
+};
+
+export type ClosedDealDiagnosticCode =
+  | "invalid_timestamp"
+  | "missing_timestamp"
+  | "missing_opener"
+  | "invalid_opener"
+  | "invalid_cell"
+  | "unmatched_opener"
+  | "ambiguous_opener";
+
+export type ClosedDealDiagnostic = {
+  sourceRowNumber: number | null;
+  code: ClosedDealDiagnosticCode;
+  message: string;
+};
+
+export type ClosedDealReadResult = {
+  worksheet: "Closed";
+  generatedAt: string | null;
+  headerValidationStatus: "valid";
+  totalNonEmptyRows: number;
+  records: NormalizedClosedDeal[];
+  diagnostics: ClosedDealDiagnostic[];
 };
 
 export interface TransfersProvider {
   listTransfers(): Promise<TransferReadResult>;
-}
-
-export interface ClosedDealsProvider {
-  readonly configured: boolean;
-  listClosedDeals(): Promise<ClosedDealRecord[]>;
 }

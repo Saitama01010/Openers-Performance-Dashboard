@@ -4,19 +4,19 @@ export type LeaderboardRow = {
   americanName: string;
   teamId: string | null;
   teamName: string | null;
-  transferCount: number;
+  closedDeals: number;
   rank?: number;
 };
 
 /**
- * Ranking is deterministic: valid matched transfers descending, then American
- * Name ascending.
+ * Ranking is deterministic: valid matched Closed rows descending, then
+ * American Name ascending.
  */
 export function rankLeaderboardRows(rows: readonly LeaderboardRow[]) {
   return [...rows]
     .sort(
       (left, right) =>
-        right.transferCount - left.transferCount ||
+        right.closedDeals - left.closedDeals ||
         left.americanName.localeCompare(right.americanName, "en", {
           sensitivity: "base",
         }),

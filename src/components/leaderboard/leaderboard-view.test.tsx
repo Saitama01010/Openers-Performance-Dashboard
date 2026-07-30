@@ -41,7 +41,7 @@ describe("LeaderBoard view", () => {
     expect(markup).not.toContain(">0<");
   });
 
-  it("renders server-provided transfer rankings", () => {
+  it("renders server-provided Closed rankings", () => {
     const markup = renderToStaticMarkup(
       <LeaderboardView
         data={{
@@ -53,26 +53,30 @@ describe("LeaderBoard view", () => {
               americanName: "Gia Monroe",
               teamId: "team-1",
               teamName: "Team One",
-              transferCount: 4,
+              closedDeals: 4,
               rank: 1,
             },
           ],
           teams: [{ id: "team-1", name: "Team One" }],
           filters: {},
-          sourceRecordCount: 4,
-          diagnosticCount: 0,
+          totalTransfers: 8,
+          totalClosedDeals: 4,
+          closedSourceEmpty: false,
+          transferSourceRecordCount: 8,
+          transferDiagnosticCount: 0,
+          stale: false,
         }}
         dateRange={dateRange}
       />,
     );
 
-    expect(markup).toContain("Transfer ranking");
+    expect(markup).toContain("Closed-deal ranking");
     expect(markup).toContain("Gia Monroe");
-    expect(markup).toContain("Transfers");
+    expect(markup).toContain("Closed Deals");
     expect(markup).toContain("Total transfers");
     expect(markup).toContain('aria-label="4"');
     expect(markup).toContain("Closed Deals");
-    expect(markup).toContain("No real closed-deals provider");
+    expect(markup).toContain("50.0%");
   });
 
   it("renders an expected transfer-source error as a controlled alert", () => {
@@ -93,5 +97,100 @@ describe("LeaderBoard view", () => {
     expect(markup).toContain("Transfer source needs attention");
     expect(markup).toContain("missing required headers: Opener");
     expect(markup).not.toContain("<tbody>");
+  });
+
+  it("renders Closed configuration and empty-source states without fake rankings", () => {
+    const errorMarkup = renderToStaticMarkup(
+      <LeaderboardView
+        data={{
+          status: "closed_error",
+          message:
+            "The Closed worksheet does not contain all required headers.",
+          rows: [],
+          teams: [],
+          filters: {},
+          transferSourceRecordCount: 3,
+          transferDiagnosticCount: 0,
+        }}
+        dateRange={dateRange}
+      />,
+    );
+    expect(errorMarkup).toContain('role="alert"');
+    expect(errorMarkup).toContain("Closed source needs attention");
+    expect(errorMarkup).toContain(
+      "The Closed worksheet does not contain all required headers.",
+    );
+    expect(errorMarkup).not.toContain("<tbody>");
+
+    const emptyMarkup = renderToStaticMarkup(
+      <LeaderboardView
+        data={{
+          status: "ready",
+          rows: [
+            {
+              profileId: "profile-1",
+              realName: "Amira Ayman",
+              americanName: "Gia Monroe",
+              teamId: null,
+              teamName: null,
+              closedDeals: 0,
+              rank: 1,
+            },
+          ],
+          teams: [],
+          filters: {},
+          totalTransfers: 0,
+          totalClosedDeals: 0,
+          closedSourceEmpty: true,
+          transferSourceRecordCount: 0,
+          transferDiagnosticCount: 0,
+          stale: false,
+        }}
+        dateRange={dateRange}
+      />,
+    );
+    expect(emptyMarkup).toContain(
+      "The Closed source is connected, but no closed-deal submissions were found.",
+    );
+    expect(emptyMarkup).toContain("<tbody>");
+  });
+
+  it("renders only aggregate administrator diagnostics and stale status", () => {
+    const markup = renderToStaticMarkup(
+      <LeaderboardView
+        data={{
+          status: "ready",
+          rows: [],
+          teams: [],
+          filters: {},
+          totalTransfers: 0,
+          totalClosedDeals: 0,
+          closedSourceEmpty: false,
+          transferSourceRecordCount: 0,
+          transferDiagnosticCount: 0,
+          stale: true,
+          closedDiagnostics: {
+            connectionStatus: "connected",
+            worksheet: "Closed",
+            headerValidationStatus: "valid",
+            totalNonEmptyRows: 4,
+            validRows: 3,
+            matchedRows: 1,
+            unmatchedRows: 1,
+            ambiguousRows: 1,
+            invalidRows: 1,
+            invalidTimestampRows: 1,
+            lastSuccessfulSynchronization:
+              "2026-07-30T10:00:00.000Z",
+          },
+        }}
+        dateRange={dateRange}
+      />,
+    );
+    expect(markup).toContain("Showing the last successful ranking");
+    expect(markup).toContain("Administrator diagnostics");
+    expect(markup).not.toContain("Customer");
+    expect(markup).not.toContain("File Number");
+    expect(markup).not.toContain("Debt Amount");
   });
 });

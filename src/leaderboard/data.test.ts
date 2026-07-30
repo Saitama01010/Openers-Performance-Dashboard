@@ -3,10 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
-  buildTransferLeaderboardRows,
+  buildClosedDealLeaderboardRows,
   countScopedTransfers,
 } from "@/leaderboard/data";
-import type { MatchedTransfer } from "@/leaderboard/matching";
+import type {
+  MatchableUser,
+  MatchedTransfer,
+} from "@/leaderboard/matching";
+import type { NormalizedClosedDeal } from "@/sheets/contracts";
 
 const users = {
   gia: {
@@ -16,17 +20,48 @@ const users = {
     teamId: "team-1",
     teamName: "Team One",
   },
+  ada: {
+    id: "ada",
+    realName: "Ada Real",
+    americanName: "Ada Lane",
+    teamId: "team-1",
+    teamName: "Team One",
+  },
   zoe: {
     id: "zoe",
-    realName: "Mona Ali",
-    americanName: "Zoe Stone",
+    realName: "Zoe Real",
+    americanName: "Zoe Lane",
     teamId: "team-2",
     teamName: "Team Two",
   },
-};
+} satisfies Record<string, MatchableUser>;
 
-function matched(
-  user: (typeof users)[keyof typeof users],
+function closedDeal(
+  matchedUserId: string | null,
+  timestamp: Date | null,
+  overrides: Partial<NormalizedClosedDeal> = {},
+): NormalizedClosedDeal {
+  return {
+    sourceRowNumber: 2,
+    timestamp,
+    timestampIso: timestamp?.toISOString() ?? null,
+    closer: "Closer",
+    customerName: "Private Customer",
+    fileNumber: "F-1",
+    debtAmount: "1000",
+    readyForSubmission: "",
+    sheetOpener: "Gia Monroe",
+    extractedAmericanName: "Gia Monroe",
+    normalizedAmericanName: "gia monroe",
+    matchedUserId,
+    matchStatus: matchedUserId ? "matched" : "unmatched",
+    validationErrors: [],
+    ...overrides,
+  };
+}
+
+function matchedTransfer(
+  user: MatchableUser,
   occurredAt: Date | null,
   row: number,
 ): MatchedTransfer {
@@ -45,67 +80,123 @@ function matched(
   };
 }
 
-describe("transfer LeaderBoard aggregation", () => {
-  it("counts only valid matched transfers and ranks deterministically", () => {
-    const rows = buildTransferLeaderboardRows(
+describe("Closed LeaderBoard aggregation", () => {
+  it("counts every valid matched Closed row exactly once and ranks deterministically", () => {
+    const rows = buildClosedDealLeaderboardRows(
+      [users.gia, users.ada, users.zoe],
       [
-        matched(users.gia, new Date("2026-07-28T20:00:00.000Z"), 2),
-        matched(users.gia, new Date("2026-07-28T21:00:00.000Z"), 3),
-        matched(users.gia, null, 4),
-        matched(users.zoe, new Date("2026-07-28T20:00:00.000Z"), 5),
-        {
-          status: "unmatched",
-          transfer: matched(
-            users.zoe,
-            new Date("2026-07-28T20:00:00.000Z"),
-            6,
-          ).transfer,
-          candidates: [],
-        },
+        closedDeal("gia", new Date("2026-07-28T20:00:00.000Z")),
+        closedDeal("gia", new Date("2026-07-28T21:00:00.000Z"), {
+          sourceRowNumber: 4,
+          fileNumber: "F-1",
+          readyForSubmission: "No",
+        }),
+        closedDeal("zoe", new Date("2026-07-28T20:00:00.000Z")),
+        closedDeal(null, new Date("2026-07-28T20:00:00.000Z")),
+        closedDeal(null, null, {
+          matchStatus: "invalid",
+          validationErrors: ["invalid Timestamp"],
+        }),
       ],
       {},
       "Africa/Cairo",
     );
 
-    expect(rows.map((row) => [row.profileId, row.transferCount, row.rank])).toEqual([
+    expect(
+      rows.map((row) => [row.profileId, row.closedDeals, row.rank]),
+    ).toEqual([
       ["gia", 2, 1],
       ["zoe", 1, 2],
+      ["ada", 0, 3],
     ]);
   });
 
-  it("applies Cairo calendar dates, team, and name filters", () => {
-    const matches = [
-      matched(users.gia, new Date("2026-07-28T20:59:59.000Z"), 2),
-      matched(users.gia, new Date("2026-07-28T21:00:00.000Z"), 3),
-      matched(users.zoe, new Date("2026-07-28T21:30:00.000Z"), 4),
-    ];
+  it("does not filter by Ready For Submission or deduplicate File Number", () => {
+    const rows = buildClosedDealLeaderboardRows(
+      [users.gia],
+      [
+        closedDeal("gia", new Date("2026-07-28T20:00:00.000Z"), {
+          fileNumber: "same",
+          readyForSubmission: "",
+        }),
+        closedDeal("gia", new Date("2026-07-28T20:00:00.000Z"), {
+          fileNumber: "same",
+          readyForSubmission: "No",
+        }),
+      ],
+      {},
+      "Africa/Cairo",
+    );
+    expect(rows[0].closedDeals).toBe(2);
+  });
 
-    expect(
-      buildTransferLeaderboardRows(
-        matches,
-        {
-          from: "2026-07-29",
-          to: "2026-07-29",
-          teamId: "team-1",
-          query: "gia mon",
-        },
-        "Africa/Cairo",
-      ),
-    ).toEqual([
+  it("uses Closed timestamps for Cairo date filtering and preserves team/search filters", () => {
+    const rows = buildClosedDealLeaderboardRows(
+      [users.gia, users.ada, users.zoe],
+      [
+        closedDeal("gia", new Date("2026-07-28T20:59:59.000Z")),
+        closedDeal("gia", new Date("2026-07-28T21:00:00.000Z")),
+        closedDeal("zoe", new Date("2026-07-28T21:30:00.000Z")),
+      ],
+      {
+        from: "2026-07-29",
+        to: "2026-07-29",
+        teamId: "team-1",
+        query: "gia mon",
+      },
+      "Africa/Cairo",
+    );
+
+    expect(rows).toEqual([
       expect.objectContaining({
         profileId: "gia",
-        transferCount: 1,
+        closedDeals: 1,
         rank: 1,
       }),
     ]);
   });
 
-  it("counts Overview transfers inside the actor and date scope", () => {
+  it("includes active agents with zero deals and orders zero ties by American Name", () => {
+    const rows = buildClosedDealLeaderboardRows(
+      [users.zoe, users.gia, users.ada],
+      [],
+      {},
+      "Africa/Cairo",
+    );
+    expect(rows.map((row) => row.profileId)).toEqual(["ada", "gia", "zoe"]);
+    expect(rows.every((row) => row.closedDeals === 0)).toBe(true);
+  });
+
+  it("does not use Xfers rows as closed-deal counts", () => {
+    const rows = buildClosedDealLeaderboardRows(
+      [users.gia],
+      [],
+      {},
+      "Africa/Cairo",
+    );
+    expect(rows[0].closedDeals).toBe(0);
+  });
+});
+
+describe("Overview Xfers aggregation", () => {
+  it("continues counting Xfers inside the actor and date scope", () => {
     const matches = [
-      matched(users.gia, new Date("2026-07-28T21:00:00.000Z"), 2),
-      matched(users.zoe, new Date("2026-07-28T21:30:00.000Z"), 3),
-      matched(users.gia, new Date("2026-06-28T21:00:00.000Z"), 4),
-      matched(users.gia, null, 5),
+      matchedTransfer(
+        users.gia,
+        new Date("2026-07-28T21:00:00.000Z"),
+        2,
+      ),
+      matchedTransfer(
+        users.zoe,
+        new Date("2026-07-28T21:30:00.000Z"),
+        3,
+      ),
+      matchedTransfer(
+        users.gia,
+        new Date("2026-06-28T21:00:00.000Z"),
+        4,
+      ),
+      matchedTransfer(users.gia, null, 5),
     ];
     const window = { from: "2026-07-01", to: "2026-07-31" };
 

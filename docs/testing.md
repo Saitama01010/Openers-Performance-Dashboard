@@ -87,3 +87,39 @@ npm run db:health
 ```
 
 On Windows PowerShell, use `npm.cmd run ...` when script execution policy blocks `npm.ps1`.
+
+## Integration Test Database
+
+Integration tests must run against a database that is separate from the local
+development database.
+
+Required environment variables:
+
+```txt
+DATABASE_URL=mysql://user:password@127.0.0.1:3306/openers_dashboard
+TEST_DATABASE_URL=mysql://user:password@127.0.0.1:3306/openers_dashboard_test
+ALLOW_INTEGRATION_TEST_DATABASE=true
+NODE_ENV=test
+```
+
+The integration guard in `src/test/integration-env.ts` refuses to run when:
+
+- `TEST_DATABASE_URL` is missing
+- `TEST_DATABASE_URL` resolves to the same database as `DATABASE_URL`
+- `ALLOW_INTEGRATION_TEST_DATABASE` is not `true`
+- `NODE_ENV` is not `test`
+- the target host is not local
+- the target database name does not include `test`
+- the target looks production-like
+
+Create and migrate the local test database before running integration tests:
+
+```powershell
+$env:NODE_ENV = "test"
+$env:ALLOW_INTEGRATION_TEST_DATABASE = "true"
+$env:TEST_DATABASE_URL = "mysql://user:password@127.0.0.1:3306/openers_dashboard_test"
+npm run db:migrate:test
+npm run test:integration
+```
+
+Do not commit real database URLs or local `.env*` files.

@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "@/test/integration-env";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { inArray } from "drizzle-orm";

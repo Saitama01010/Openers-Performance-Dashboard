@@ -8,8 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:integration": "vitest run integration.test",
+    "cleanup:test-users": "tsx scripts/cleanup-local-test-users.ts",
+    "cleanup:local-test-users": "tsx scripts/cleanup-local-test-users.ts",
+    "local:reset-users": "tsx scripts/reset-local-users.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:migrate:test": "tsx scripts/db-migrate-test.ts",
     "db:seed": "tsx scripts/db-seed.ts",
     "db:health": "tsx scripts/db-health.ts"
   },

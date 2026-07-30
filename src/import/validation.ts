@@ -98,16 +98,21 @@ function duplicateRows(preview: ImportPreview) {
       seenRows.set(rawKey, row.rowNumber);
     }
 
-    if (row.date && row.hour !== null && row.agentKey) {
-      const hourlyKey = `${row.agentKey}:${row.date}:${row.hour}`;
-      const firstHourlyRow = seenKeys.get(hourlyKey);
+    if (row.date && row.agentKey) {
+      const metricKey =
+        row.granularity === "daily"
+          ? `${row.agentKey}:${row.date}:daily`
+          : row.hour !== null
+            ? `${row.agentKey}:${row.date}:hour:${row.hour}`
+            : null;
+      const firstMetricRow = metricKey ? seenKeys.get(metricKey) : undefined;
 
-      if (firstHourlyRow) {
-        duplicateRowNumbers.add(firstHourlyRow);
+      if (firstMetricRow) {
+        duplicateRowNumbers.add(firstMetricRow);
         duplicateRowNumbers.add(row.rowNumber);
         duplicateAgents.add(row.dialerAgentName);
-      } else {
-        seenKeys.set(hourlyKey, row.rowNumber);
+      } else if (metricKey) {
+        seenKeys.set(metricKey, row.rowNumber);
       }
     }
   }
@@ -164,7 +169,19 @@ export function validateImport(input: {
   if (input.preview.missingHeaders.length > 0) {
     addUnique(
       errors,
-      `Missing required CSV headers: ${input.preview.missingHeaders.join(", ")}.`,
+      input.preview.granularity === "daily"
+        ? "Agent Hours CSV must contain: Agent, Logged In (sec), Ready (sec), Talk (sec), Wrap (sec), Paused (sec), System Pause (sec), Net (sec), and Calls."
+        : `Missing required CSV headers: ${input.preview.missingHeaders.join(", ")}.`,
+    );
+  }
+
+  if (
+    input.preview.granularity === "daily" &&
+    !input.selectedReportingDate
+  ) {
+    addUnique(
+      errors,
+      "Choose the reporting date represented by this Agent Hours file.",
     );
   }
 
@@ -189,7 +206,9 @@ export function validateImport(input: {
   if (duplicates.duplicateRowNumbers.length > 0) {
     addUnique(
       errors,
-      `Duplicate agent/date/hour rows were found at CSV rows ${duplicates.duplicateRowNumbers.join(", ")}.`,
+      input.preview.granularity === "daily"
+        ? `Duplicate agent/reporting-date rows were found at CSV rows ${duplicates.duplicateRowNumbers.join(", ")}.`
+        : `Duplicate agent/date/hour rows were found at CSV rows ${duplicates.duplicateRowNumbers.join(", ")}.`,
     );
   }
 
@@ -252,6 +271,7 @@ export function validateImport(input: {
   }
 
   if (
+    input.preview.granularity === "hourly" &&
     input.selectedReportingDate &&
     (reportingDates.length !== 1 ||
       reportingDates[0] !== input.selectedReportingDate)
@@ -260,6 +280,20 @@ export function validateImport(input: {
       warnings,
       `The CSV reporting date (${reportingDates.join(", ") || "none"}) differs from the selected date (${input.selectedReportingDate}).`,
     );
+  }
+
+  if (input.preview.filenameRange) {
+    addUnique(
+      notices,
+      `Filename suggests a reporting period from ${input.preview.filenameRange.startDate} to ${input.preview.filenameRange.endDate}.`,
+    );
+
+    if (input.preview.filenameRange.multiDay && input.selectedReportingDate) {
+      addUnique(
+        warnings,
+        `The filename suggests this file may contain totals for multiple days. All rows will be assigned to the selected reporting date ${input.selectedReportingDate}.`,
+      );
+    }
   }
 
   for (const row of input.preview.rows) {

@@ -137,7 +137,14 @@ export default async function AdminImportsPage({
                         {row.fileSizeBytes.toLocaleString("en-US")} stored bytes
                       </span>
                     </td>
-                    <td>{importTypeLabel(row.importType)}</td>
+                    <td>
+                      <span className="block">
+                        {importTypeLabel(row.importType)}
+                      </span>
+                      <span className="block text-xs capitalize text-muted">
+                        {row.granularity}
+                      </span>
+                    </td>
                     <td>
                       {reportingPeriod(
                         row.reportingStartDate,

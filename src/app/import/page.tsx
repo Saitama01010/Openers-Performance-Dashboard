@@ -79,7 +79,7 @@ export default async function ImportPage({
           </div>
           <form action={previewImportAction}>
             <label className="ui-label mt-4">
-              Expected reporting date
+              File reporting date
               <input
                 className="ui-input"
                 name="reportingDate"
@@ -87,7 +87,8 @@ export default async function ImportPage({
                 type="date"
               />
               <span className="ui-helper">
-                Used to warn when the CSV contains a different reporting date.
+                Choose the date represented by the totals in this CSV. All
+                imported agent rows will be assigned to this date.
               </span>
             </label>
             <FileUploadField
@@ -105,8 +106,8 @@ export default async function ImportPage({
 
         {params.error ? (
           <StatusBanner tone="danger">
-            {params.error === "reporting_date"
-              ? "Choose the expected reporting date."
+            {params.error === "agent_hours_reporting_date"
+              ? "Choose the reporting date represented by this Agent Hours file."
               : "Upload a valid CSV file before previewing."}
           </StatusBanner>
         ) : null}

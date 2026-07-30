@@ -22,6 +22,7 @@ import {
 import { listActiveDialerMetrics } from "@/import/active-data";
 import {
   createDialerPreviewBatch,
+  getStoredImportPreview,
   publishDialerImportBatch,
   rejectDialerImportBatch,
   restoreDialerImportBatch,
@@ -37,6 +38,8 @@ const batchIds: string[] = [];
 
 const header =
   "Agent,Date,Hour,Logged In (sec),Ready (sec),Talk (sec),Ringing (sec),Wrap (sec),Paused (sec),Idle (sec),Untracked (sec),Calls";
+const dailyHeader =
+  "Agent,Logged In (sec),Ready (sec),Talk (sec),Wrap (sec),Paused (sec),System Pause (sec),Net (sec),Calls";
 
 function csvFor(input: {
   agentName: string;
@@ -51,6 +54,16 @@ function csvFor(input: {
 
 function malformedCsv(agentName: string) {
   return `${header}\n"${agentName},2099-01-01,0,3600,600,1200,60,60,300,300,0,5\n`;
+}
+
+function dailyCsvFor(input: {
+  agentName: string;
+  calls?: number;
+  loggedInSeconds?: number;
+  systemPauseSeconds?: number;
+  netSeconds?: number;
+}) {
+  return `${dailyHeader}\n${input.agentName},${input.loggedInSeconds ?? 3600},600,1200,60,300,${input.systemPauseSeconds ?? 45},${input.netSeconds ?? 3300},${input.calls ?? 5}\n`;
 }
 
 async function createTeam(name: string) {
@@ -212,6 +225,142 @@ afterEach(async () => {
 });
 
 describe("versioned dialer import service integration", () => {
+  it("requires and persists the selected date for daily Agent Hours imports", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Daily Date Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Daily Date Agent");
+    const fileContent = dailyCsvFor({ agentName: agent.dialerName });
+
+    await expect(
+      createDialerPreviewBatch({
+        actor: admin,
+        source: "dialer",
+        fileName: "agent-hours.csv",
+        fileContent,
+      }),
+    ).rejects.toMatchObject({
+      code: "invalid_reporting_date",
+      message:
+        "Choose the reporting date represented by this Agent Hours file.",
+    });
+
+    const draft = await upload({
+      actor: admin,
+      fileName: "agent-hours.csv",
+      fileContent,
+      reportingDate: "2099-01-03",
+    });
+    const [batch] = await getDb()
+      .select()
+      .from(dialerImportBatches)
+      .where(eq(dialerImportBatches.id, draft.batchId));
+    const [metric] = await getDb()
+      .select()
+      .from(dialerAgentHourlyMetrics)
+      .where(eq(dialerAgentHourlyMetrics.batchId, draft.batchId));
+
+    expect(batch).toMatchObject({
+      granularity: "daily",
+      selectedReportingDate: "2099-01-03",
+      reportingStartDate: "2099-01-03",
+      reportingEndDate: "2099-01-03",
+    });
+    expect(metric).toMatchObject({
+      granularity: "daily",
+      metricDate: "2099-01-03",
+      metricHour: null,
+      metricKey: "daily",
+      systemPauseSeconds: 45,
+      netSeconds: 3300,
+      ringingSeconds: null,
+      idleSeconds: null,
+      untrackedSeconds: null,
+    });
+
+    const revalidated = await getStoredImportPreview({
+      actor: admin,
+      batchId: draft.batchId,
+    });
+    expect(revalidated?.preview.selectedReportingDate).toBe("2099-01-03");
+    expect(
+      revalidated?.preview.rows.every(
+        (row) => row.date === "2099-01-03" && row.hour === null,
+      ),
+    ).toBe(true);
+  });
+
+  it("versions daily snapshots once per date and rolls back to the previous daily total", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Daily Version Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Daily Version Agent");
+    const first = await upload({
+      actor: admin,
+      fileName: "daily-version-1.csv",
+      fileContent: dailyCsvFor({ agentName: agent.dialerName, calls: 5 }),
+      reportingDate: "2099-01-04",
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
+    const second = await upload({
+      actor: admin,
+      fileName: "daily-version-2.csv",
+      fileContent: dailyCsvFor({ agentName: agent.dialerName, calls: 8 }),
+      reportingDate: "2099-01-04",
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: second.batchId });
+
+    expect(await activeCalls(agent.id, "2099-01-04")).toBe(8);
+    const versions = await getDb()
+      .select()
+      .from(dialerDatasetVersions)
+      .where(
+        inArray(dialerDatasetVersions.importBatchId, [
+          first.batchId,
+          second.batchId,
+        ]),
+      );
+    expect(versions.map((version) => version.versionNumber).sort()).toEqual([
+      1, 2,
+    ]);
+    expect(
+      versions.filter((version) => version.status === "active"),
+    ).toHaveLength(1);
+
+    await rollbackDialerImportBatch({
+      actor: admin,
+      batchId: second.batchId,
+      reason: "Restore the previous verified daily totals.",
+    });
+    expect(await activeCalls(agent.id, "2099-01-04")).toBe(5);
+  });
+
+  it("supersedes an hourly version with a daily version in the same intended scope", async () => {
+    const admin = await createActor("admin");
+    const teamId = await createTeam(`Mixed Granularity Team ${newId()}`);
+    const agent = await createMappedAgent(teamId, "Mixed Granularity Agent");
+    const hourly = await upload({
+      actor: admin,
+      fileName: "hourly.csv",
+      fileContent: csvFor({
+        agentName: agent.dialerName,
+        calls: 4,
+        date: "2099-01-05",
+      }),
+      reportingDate: "2099-01-05",
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: hourly.batchId });
+    const daily = await upload({
+      actor: admin,
+      fileName: "daily.csv",
+      fileContent: dailyCsvFor({ agentName: agent.dialerName, calls: 9 }),
+      reportingDate: "2099-01-05",
+    });
+    await publishDialerImportBatch({ actor: admin, batchId: daily.batchId });
+
+    expect(await activeCalls(agent.id, "2099-01-05")).toBe(9);
+    expect(await batchStatus(hourly.batchId)).toBe("superseded");
+    expect(await batchStatus(daily.batchId)).toBe("active");
+  });
+
   it("stores a valid CSV as a permanent ready draft without changing live data", async () => {
     const admin = await createActor("admin");
     const teamId = await createTeam(`Draft Team ${newId()}`);

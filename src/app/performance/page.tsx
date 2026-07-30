@@ -107,7 +107,10 @@ export default async function PerformancePage() {
               </div>
               <StatusBadge tone="info">Calls</StatusBadge>
             </div>
-            <HourlyActivityChart rows={dashboard.hourlyBreakdown} />
+            <HourlyActivityChart
+              dailyAggregatePresent={dashboard.hourlyDetailUnavailable}
+              rows={dashboard.hourlyBreakdown}
+            />
           </section>
 
           <section className="ui-card analysis-layout__narrow">
@@ -163,8 +166,16 @@ export default async function PerformancePage() {
                 {dashboard.hourlyBreakdown.length === 0 ? (
                   <EmptyTableRow
                     colSpan={6}
-                    description="The active data does not contain hourly records for this scope."
-                    title="No hourly activity is available"
+                    description={
+                      dashboard.hourlyDetailUnavailable
+                        ? "Hourly detail is unavailable for daily aggregate imports."
+                        : "The active data does not contain hourly records for this scope."
+                    }
+                    title={
+                      dashboard.hourlyDetailUnavailable
+                        ? "Daily aggregate data has no hourly detail"
+                        : "No hourly activity is available"
+                    }
                   />
                 ) : (
                   dashboard.hourlyBreakdown.map((row) => {

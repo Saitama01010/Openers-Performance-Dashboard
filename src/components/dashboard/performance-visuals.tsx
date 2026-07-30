@@ -13,7 +13,9 @@ import {
   formatPercentage,
 } from "@/import/format";
 
-export function formatCompactDuration(seconds: number) {
+export function formatCompactDuration(seconds: number | null) {
+  if (seconds === null) return "N/A";
+
   const safeSeconds = Math.max(0, Math.trunc(seconds));
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
@@ -53,6 +55,8 @@ const activityStates = [
   ["Ringing time", "ringingSeconds", "ringing", "violet"],
   ["Wrap time", "wrapSeconds", "activity", "cyan"],
   ["Paused time", "pausedSeconds", "pause", "orange"],
+  ["System Pause", "systemPauseSeconds", "pause", "orange"],
+  ["Net", "netSeconds", "activity", "blue"],
   ["Idle time", "idleSeconds", "freshness", "pink"],
   ["Untracked time", "untrackedSeconds", "untracked", "slate"],
 ] as const;
@@ -63,7 +67,7 @@ export function ActivityStateGrid({ totals }: { totals: DashboardTotals }) {
       {activityStates.map(([label, key, icon, tone]) => {
         const seconds = totals[key];
         const share =
-          totals.loggedInSeconds > 0
+          seconds !== null && totals.loggedInSeconds > 0
             ? (seconds / totals.loggedInSeconds) * 100
             : null;
 
@@ -82,7 +86,9 @@ export function ActivityStateGrid({ totals }: { totals: DashboardTotals }) {
               {formatCompactDuration(seconds)}
             </p>
             <p className="activity-state__share">
-              {share === null
+              {seconds === null
+                ? "Not reported by source"
+                : share === null
                 ? "No logged-in time"
                 : `${formatPercentage(share)} of logged-in time`}
             </p>
@@ -100,8 +106,10 @@ export function ActivityStateGrid({ totals }: { totals: DashboardTotals }) {
 }
 
 export function HourlyActivityChart({
+  dailyAggregatePresent = false,
   rows,
 }: {
+  dailyAggregatePresent?: boolean;
   rows: DashboardHourlyBreakdownRow[];
 }) {
   const maximumCalls = Math.max(0, ...rows.map((row) => row.calls));
@@ -111,7 +119,9 @@ export function HourlyActivityChart({
   if (rows.length === 0) {
     return (
       <div className="chart-empty">
-        No hourly activity is available in the active data.
+        {dailyAggregatePresent
+          ? "Hourly detail is unavailable for daily aggregate imports."
+          : "No hourly activity is available in the active data."}
       </div>
     );
   }
@@ -187,11 +197,12 @@ export function ProductivityMix({ totals }: { totals: DashboardTotals }) {
     ["Talk", totals.talkSeconds, "green"],
     ["Wrap", totals.wrapSeconds, "cyan"],
     ["Paused", totals.pausedSeconds, "orange"],
+    ["System Pause", totals.systemPauseSeconds, "orange"],
     ["Idle", totals.idleSeconds, "pink"],
     ["Ringing", totals.ringingSeconds, "violet"],
     ["Untracked", totals.untrackedSeconds, "slate"],
   ] as const;
-  const total = items.reduce((sum, [, seconds]) => sum + seconds, 0);
+  const total = items.reduce((sum, [, seconds]) => sum + (seconds ?? 0), 0);
 
   return (
     <div className="productivity-mix">
@@ -202,10 +213,16 @@ export function ProductivityMix({ totals }: { totals: DashboardTotals }) {
       >
         {items.map(([label, seconds, tone]) => (
           <span
-            aria-label={`${label}: ${formatDurationSeconds(seconds).hms}`}
+            aria-label={`${label}: ${
+              seconds === null ? "not reported" : formatDurationSeconds(seconds).hms
+            }`}
             className={`productivity-mix__segment productivity-mix__segment--${tone}`}
             key={label}
-            style={{ width: `${total > 0 ? (seconds / total) * 100 : 0}%` }}
+            style={{
+              width: `${
+                total > 0 && seconds !== null ? (seconds / total) * 100 : 0
+              }%`,
+            }}
           />
         ))}
       </div>
@@ -219,10 +236,12 @@ export function ProductivityMix({ totals }: { totals: DashboardTotals }) {
               {label}
             </dt>
             <dd>
-              {total > 0
+              {seconds === null
+                ? "N/A"
+                : total > 0
                 ? formatOptionalNumber((seconds / total) * 100)
                 : "0.0"}
-              %
+              {seconds === null ? null : "%"}
             </dd>
           </div>
         ))}

@@ -35,28 +35,58 @@ function aggregateTeams(
     const current = teams.get(row.teamName) ?? {
       agents: 0,
       calls: 0,
-      idleSeconds: 0,
+      idleSeconds: null,
       loggedInSeconds: 0,
       name: row.teamName,
+      netSeconds: null,
       pausedSeconds: 0,
       readySeconds: 0,
-      ringingSeconds: 0,
+      ringingSeconds: null,
       rowCount: 0,
+      systemPauseSeconds: null,
       talkSeconds: 0,
-      untrackedSeconds: 0,
+      untrackedSeconds: null,
       wrapSeconds: 0,
     };
 
     current.agents += 1;
     current.calls += row.calls;
-    current.idleSeconds += row.idleSeconds;
+    current.idleSeconds =
+      current.agents === 1
+        ? row.idleSeconds
+        : current.idleSeconds === null || row.idleSeconds === null
+          ? null
+          : current.idleSeconds + row.idleSeconds;
     current.loggedInSeconds += row.loggedInSeconds;
+    current.netSeconds =
+      current.agents === 1
+        ? row.netSeconds
+        : current.netSeconds === null || row.netSeconds === null
+          ? null
+          : current.netSeconds + row.netSeconds;
     current.pausedSeconds += row.pausedSeconds;
     current.readySeconds += row.readySeconds;
-    current.ringingSeconds += row.ringingSeconds;
+    current.ringingSeconds =
+      current.agents === 1
+        ? row.ringingSeconds
+        : current.ringingSeconds === null || row.ringingSeconds === null
+          ? null
+          : current.ringingSeconds + row.ringingSeconds;
     current.rowCount += row.rowCount;
+    current.systemPauseSeconds =
+      current.agents === 1
+        ? row.systemPauseSeconds
+        : current.systemPauseSeconds === null ||
+            row.systemPauseSeconds === null
+          ? null
+          : current.systemPauseSeconds + row.systemPauseSeconds;
     current.talkSeconds += row.talkSeconds;
-    current.untrackedSeconds += row.untrackedSeconds;
+    current.untrackedSeconds =
+      current.agents === 1
+        ? row.untrackedSeconds
+        : current.untrackedSeconds === null || row.untrackedSeconds === null
+          ? null
+          : current.untrackedSeconds + row.untrackedSeconds;
     current.wrapSeconds += row.wrapSeconds;
     teams.set(row.teamName, current);
   }

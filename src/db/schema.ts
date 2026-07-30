@@ -67,6 +67,10 @@ export const importRowStatusEnum = mysqlEnum("import_row_status", [
   "unknown",
   "out_of_scope",
 ]);
+export const metricGranularityEnum = mysqlEnum("metric_granularity", [
+  "hourly",
+  "daily",
+]);
 export const userImportStatusEnum = mysqlEnum("user_import_status", [
   "previewed",
   "processing",
@@ -236,6 +240,7 @@ export const dialerImportBatches = mysqlTable(
     importType: varchar("import_type", { length: 64 })
       .notNull()
       .default("agent_hours_performance"),
+    granularity: metricGranularityEnum.notNull().default("hourly"),
     dialerId: varchar("dialer_id", { length: 120 }),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     fileHash: varchar("file_hash", { length: 64 }).notNull(),
@@ -256,6 +261,9 @@ export const dialerImportBatches = mysqlTable(
     unmatchedAgentCount: int("unmatched_agent_count").notNull().default(0),
     reportingStartDate: date("reporting_start_date", { mode: "string" }),
     reportingEndDate: date("reporting_end_date", { mode: "string" }),
+    selectedReportingDate: date("selected_reporting_date", {
+      mode: "string",
+    }),
     previewSummary: json("preview_summary").$type<Record<string, unknown>>(),
     validationErrors: json("validation_errors").$type<string[]>(),
     validationWarnings: json("validation_warnings").$type<string[]>(),
@@ -331,6 +339,7 @@ export const dialerDatasetVersions = mysqlTable(
     scopeKey: varchar("scope_key", { length: 512 }).notNull(),
     source: varchar("source", { length: 64 }).notNull(),
     importType: varchar("import_type", { length: 64 }).notNull(),
+    granularity: metricGranularityEnum.notNull().default("hourly"),
     reportingDate: date("reporting_date", { mode: "string" }).notNull(),
     teamId: varchar("team_id", { length: 36 }).references(() => teams.id),
     dialerId: varchar("dialer_id", { length: 120 }),
@@ -418,17 +427,21 @@ export const dialerAgentHourlyMetrics = mysqlTable(
       () => dialerDatasetVersions.id,
       { onDelete: "restrict" },
     ),
+    granularity: metricGranularityEnum.notNull().default("hourly"),
     metricDate: date("metric_date", { mode: "string" }).notNull(),
-    metricHour: int("metric_hour").notNull(),
+    metricHour: int("metric_hour"),
+    metricKey: varchar("metric_key", { length: 24 }).notNull(),
     calls: int("calls").notNull().default(0),
     loggedInSeconds: int("logged_in_seconds").notNull().default(0),
     readySeconds: int("ready_seconds").notNull().default(0),
     talkSeconds: int("talk_seconds").notNull().default(0),
-    ringingSeconds: int("ringing_seconds").notNull().default(0),
+    ringingSeconds: int("ringing_seconds"),
     wrapSeconds: int("wrap_seconds").notNull().default(0),
     pausedSeconds: int("paused_seconds").notNull().default(0),
-    idleSeconds: int("idle_seconds").notNull().default(0),
-    untrackedSeconds: int("untracked_seconds").notNull().default(0),
+    systemPauseSeconds: int("system_pause_seconds"),
+    netSeconds: int("net_seconds"),
+    idleSeconds: int("idle_seconds"),
+    untrackedSeconds: int("untracked_seconds"),
     teamIdSnapshot: varchar("team_id_snapshot", { length: 36 }).references(
       () => teams.id,
     ),
@@ -443,6 +456,12 @@ export const dialerAgentHourlyMetrics = mysqlTable(
       table.agentProfileId,
       table.metricDate,
       table.metricHour,
+    ),
+    unique("dialer_version_metric_key_unique").on(
+      table.versionId,
+      table.agentProfileId,
+      table.metricDate,
+      table.metricKey,
     ),
     index("dialer_hourly_agent_date_idx").on(
       table.agentProfileId,
@@ -472,6 +491,7 @@ export const dialerImportRows = mysqlTable(
     matchedAgentProfileId: varchar("matched_agent_profile_id", {
       length: 36,
     }).references(() => profiles.id),
+    granularity: metricGranularityEnum.notNull().default("hourly"),
     metricDate: date("metric_date", { mode: "string" }),
     metricHour: int("metric_hour"),
     calls: int("calls"),
@@ -481,6 +501,8 @@ export const dialerImportRows = mysqlTable(
     ringingSeconds: int("ringing_seconds"),
     wrapSeconds: int("wrap_seconds"),
     pausedSeconds: int("paused_seconds"),
+    systemPauseSeconds: int("system_pause_seconds"),
+    netSeconds: int("net_seconds"),
     idleSeconds: int("idle_seconds"),
     untrackedSeconds: int("untracked_seconds"),
     teamIdSnapshot: varchar("team_id_snapshot", { length: 36 }).references(

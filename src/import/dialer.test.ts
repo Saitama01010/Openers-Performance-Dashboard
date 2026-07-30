@@ -89,11 +89,14 @@ function sumAgentHourlyDurations(durations: DurationTotals[]) {
       loggedInSeconds: total.loggedInSeconds + row.loggedInSeconds,
       readySeconds: total.readySeconds + row.readySeconds,
       talkSeconds: total.talkSeconds + row.talkSeconds,
-      ringingSeconds: total.ringingSeconds + row.ringingSeconds,
+      ringingSeconds: (total.ringingSeconds ?? 0) + (row.ringingSeconds ?? 0),
       wrapSeconds: total.wrapSeconds + row.wrapSeconds,
       pausedSeconds: total.pausedSeconds + row.pausedSeconds,
-      idleSeconds: total.idleSeconds + row.idleSeconds,
-      untrackedSeconds: total.untrackedSeconds + row.untrackedSeconds,
+      systemPauseSeconds: null,
+      netSeconds: null,
+      idleSeconds: (total.idleSeconds ?? 0) + (row.idleSeconds ?? 0),
+      untrackedSeconds:
+        (total.untrackedSeconds ?? 0) + (row.untrackedSeconds ?? 0),
     }),
     {
       loggedInSeconds: 0,
@@ -102,6 +105,8 @@ function sumAgentHourlyDurations(durations: DurationTotals[]) {
       ringingSeconds: 0,
       wrapSeconds: 0,
       pausedSeconds: 0,
+      systemPauseSeconds: null,
+      netSeconds: null,
       idleSeconds: 0,
       untrackedSeconds: 0,
     },
@@ -186,6 +191,8 @@ describe("dialer import preview", () => {
       ringingSeconds: 370,
       wrapSeconds: 740,
       pausedSeconds: 2630,
+      systemPauseSeconds: null,
+      netSeconds: null,
       idleSeconds: 210,
       untrackedSeconds: 0,
     });
@@ -229,14 +236,18 @@ describe("dialer import preview", () => {
         {
           source: "dialer",
           agentProfileId: "agent-alpha",
+          granularity: "hourly",
           metricDate: "2026-07-21",
           metricHour: 8,
+          metricKey: "hour:08",
           rowHash: metricRowHash({
             source: "dialer",
             sourceAgentName: "Agent Alpha",
             agentProfileId: "agent-alpha",
+            granularity: "hourly",
             metricDate: "2026-07-21",
             metricHour: 8,
+            metricKey: "hour:08",
             calls: 12,
             loggedInSeconds: 1800,
             readySeconds: 300,
@@ -244,6 +255,8 @@ describe("dialer import preview", () => {
             ringingSeconds: 60,
             wrapSeconds: 120,
             pausedSeconds: 390,
+            systemPauseSeconds: null,
+            netSeconds: null,
             idleSeconds: 30,
             untrackedSeconds: 0,
             teamIdSnapshot: "east",
@@ -489,8 +502,10 @@ describe("dialer import preview", () => {
           ? {
               source: row.metric.source,
               agentProfileId: row.metric.agentProfileId,
+              granularity: row.metric.granularity,
               metricDate: row.metric.metricDate,
               metricHour: row.metric.metricHour,
+              metricKey: row.metric.metricKey,
               rowHash: row.rowHash,
             }
           : null,
@@ -537,8 +552,10 @@ describe("dialer import preview", () => {
     const existing: ExistingDialerMetric = {
       source: "dialer",
       agentProfileId: "agent-ava",
+      granularity: "hourly",
       metricDate: "2026-07-20",
       metricHour: 0,
+      metricKey: "hour:00",
       rowHash: metricRowHash(avaMetric!),
     };
 

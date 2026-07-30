@@ -171,6 +171,16 @@ export default async function AdminImportDetailPage({
             </p>
           </div>
           <div>
+            <p className="text-xs uppercase text-muted">Granularity</p>
+            <p className="capitalize">{batch.granularity}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-muted">
+              File reporting date
+            </p>
+            <p>{batch.selectedReportingDate ?? "Not applicable"}</p>
+          </div>
+          <div>
             <p className="text-xs uppercase text-muted">Rows</p>
             <p className="font-mono">{formatNumber(batch.rowCount)}</p>
           </div>
@@ -340,6 +350,7 @@ export default async function AdminImportDetailPage({
             <thead>
               <tr>
                 <th scope="col">Date</th>
+                <th scope="col">Granularity</th>
                 <th scope="col">Team</th>
                 <th scope="col">Version</th>
                 <th scope="col">Rows</th>
@@ -355,6 +366,7 @@ export default async function AdminImportDetailPage({
               {versions.map((version) => (
                 <tr key={version.id}>
                   <td>{version.reportingDate}</td>
+                  <td className="capitalize">{version.granularity}</td>
                   <td>{version.teamName ?? "Company"}</td>
                   <td className="font-mono">{version.versionNumber}</td>
                   <td className="font-mono">{version.rowCount}</td>

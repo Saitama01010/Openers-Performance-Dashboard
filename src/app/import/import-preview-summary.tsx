@@ -33,8 +33,6 @@ import type {
 } from "@/import/dialer";
 import type { ImportValidationResult } from "@/import/validation";
 
-const tableColumnCount = 26;
-
 const sortLabels: { value: PreviewSortKey; label: string }[] = [
   { value: "agent", label: "Agent name" },
   { value: "calls", label: "Calls" },
@@ -46,7 +44,7 @@ const sortLabels: { value: PreviewSortKey; label: string }[] = [
   { value: "rowCount", label: "Included row count" },
 ];
 
-const durationColumns: {
+const hourlyDurationColumns: {
   key: keyof DurationTotals;
   label: string;
 }[] = [
@@ -58,6 +56,19 @@ const durationColumns: {
   { key: "pausedSeconds", label: "Paused time" },
   { key: "idleSeconds", label: "Idle time" },
   { key: "untrackedSeconds", label: "Untracked time" },
+];
+
+const dailyDurationColumns: {
+  key: keyof DurationTotals;
+  label: string;
+}[] = [
+  { key: "loggedInSeconds", label: "Logged In" },
+  { key: "readySeconds", label: "Ready" },
+  { key: "talkSeconds", label: "Talk" },
+  { key: "wrapSeconds", label: "Wrap" },
+  { key: "pausedSeconds", label: "Paused" },
+  { key: "systemPauseSeconds", label: "System Pause" },
+  { key: "netSeconds", label: "Net" },
 ];
 
 const summaryCards = [
@@ -114,7 +125,11 @@ function importStatusLabel(status: string) {
   }
 }
 
-function DurationCell({ seconds }: { seconds: number }) {
+function DurationCell({ seconds }: { seconds: number | null }) {
+  if (seconds === null) {
+    return <span className="font-medium text-muted">N/A</span>;
+  }
+
   const formatted = formatDurationSeconds(seconds);
 
   return (
@@ -176,6 +191,16 @@ export function ImportPreviewSummary({
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [pageSize, setPageSize] = useState<PreviewPageSize>(25);
   const [requestedPage, setRequestedPage] = useState(1);
+  const isDaily = preview.granularity === "daily";
+  const durationColumns = isDaily
+    ? dailyDurationColumns
+    : hourlyDurationColumns;
+  const tableColumnCount = isDaily ? 14 : 26;
+  const availableSortLabels = isDaily
+    ? sortLabels.filter(
+        (option) => option.value !== "idle" && option.value !== "rowCount",
+      )
+    : sortLabels;
   const mappedRowsToImport = preview.fileSummary.mappedRowsToImport;
   const unresolvedRowsToSkip =
     preview.fileSummary.unmappedRowsToSkip +
@@ -253,6 +278,11 @@ export function ImportPreviewSummary({
             <p className="mt-1 break-all font-mono text-xs text-muted">
               SHA-256: {preview.fileHash}
             </p>
+            {isDaily && preview.selectedReportingDate ? (
+              <p className="mt-3 text-base font-semibold text-primary">
+                Daily Agent Hours report for {preview.selectedReportingDate}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             {preview.duplicateFile ? (
@@ -283,7 +313,9 @@ export function ImportPreviewSummary({
             className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
             role="alert"
           >
-            Missing required headers: {preview.missingHeaders.join(", ")}
+            {isDaily
+              ? "Agent Hours CSV must contain: Agent, Logged In (sec), Ready (sec), Talk (sec), Wrap (sec), Paused (sec), System Pause (sec), Net (sec), and Calls."
+              : `Missing required headers: ${preview.missingHeaders.join(", ")}`}
           </div>
         ) : null}
 
@@ -568,7 +600,7 @@ export function ImportPreviewSummary({
                 }}
                 value={sort}
               >
-                {sortLabels.map((option) => (
+                {availableSortLabels.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -649,11 +681,16 @@ export function ImportPreviewSummary({
                     Team
                   </th>
                   <th className="whitespace-nowrap px-3 py-2" scope="col">
-                    Reporting date range
+                    {isDaily ? "Reporting date" : "Reporting date range"}
                   </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Included rows
-                  </th>
+                  {!isDaily ? (
+                    <th
+                      className="whitespace-nowrap px-3 py-2 text-right"
+                      scope="col"
+                    >
+                      Included rows
+                    </th>
+                  ) : null}
                   <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
                     Calls
                   </th>
@@ -666,36 +703,40 @@ export function ImportPreviewSummary({
                       {label}
                     </th>
                   ))}
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Talk %
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Ready %
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Wrap %
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Paused %
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Idle %
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Calls / login hour
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    New rows
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Changed rows
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Unchanged rows
-                  </th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
-                    Invalid rows
-                  </th>
+                  {!isDaily ? (
+                    <>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Talk %
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Ready %
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Wrap %
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Paused %
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Idle %
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Calls / login hour
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        New rows
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Changed rows
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Unchanged rows
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right" scope="col">
+                        Invalid rows
+                      </th>
+                    </>
+                  ) : null}
                   <th className="min-w-44 px-3 py-2" scope="col">
                     Import status
                   </th>
@@ -726,12 +767,17 @@ export function ImportPreviewSummary({
                         : "N/A"}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5">
-                      {agent.dateRange.earliest ?? "N/A"} to{" "}
-                      {agent.dateRange.latest ?? "N/A"}
+                      {isDaily
+                        ? agent.dateRange.earliest ?? "N/A"
+                        : `${agent.dateRange.earliest ?? "N/A"} to ${
+                            agent.dateRange.latest ?? "N/A"
+                          }`}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatNumber(agent.validRowCount)}
-                    </td>
+                    {!isDaily ? (
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                        {formatNumber(agent.validRowCount)}
+                      </td>
+                    ) : null}
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
                       {formatNumber(agent.calls)}
                     </td>
@@ -740,38 +786,42 @@ export function ImportPreviewSummary({
                         <DurationCell seconds={agent.durations[key]} />
                       </td>
                     ))}
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatPercentage(agent.performance.talkPercentage)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatPercentage(agent.performance.readyPercentage)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatPercentage(agent.performance.wrapPercentage)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatPercentage(agent.performance.pausedPercentage)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatPercentage(agent.performance.idlePercentage)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatOptionalNumber(
-                        agent.performance.callsPerLoggedInHour,
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatNumber(agent.rowCounts.new)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatNumber(agent.rowCounts.changed)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatNumber(agent.rowCounts.unchanged)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
-                      {formatNumber(agent.rowCounts.invalid)}
-                    </td>
+                    {!isDaily ? (
+                      <>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatPercentage(agent.performance.talkPercentage)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatPercentage(agent.performance.readyPercentage)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatPercentage(agent.performance.wrapPercentage)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatPercentage(agent.performance.pausedPercentage)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatPercentage(agent.performance.idlePercentage)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatOptionalNumber(
+                            agent.performance.callsPerLoggedInHour,
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatNumber(agent.rowCounts.new)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatNumber(agent.rowCounts.changed)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatNumber(agent.rowCounts.unchanged)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono tabular-nums">
+                          {formatNumber(agent.rowCounts.invalid)}
+                        </td>
+                      </>
+                    ) : null}
                     <td className="px-3 py-2.5">
                       <span
                         className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold ${importStatusClass(agent.importStatus)}`}

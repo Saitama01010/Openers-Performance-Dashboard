@@ -127,6 +127,7 @@ async function createScopeChain(
       versionId,
       metricDate: "2099-05-01",
       metricHour: 0,
+      metricKey: "hour:00",
       calls: index + 1,
       loggedInSeconds: 3600,
       rowHash: newId().replaceAll("-", "").padEnd(64, "0").slice(0, 64),

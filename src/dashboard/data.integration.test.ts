@@ -64,11 +64,15 @@ async function createVersion(input: {
   actorId: string;
   agentId: string;
   calls: number;
+  granularity?: "hourly" | "daily";
+  loggedInSeconds?: number;
+  netSeconds?: number;
   previousVersionId?: string;
   reportingDate: string;
   scopeKey: string;
   teamId: string;
   teamName: string;
+  systemPauseSeconds?: number;
   versionNumber: number;
 }) {
   const batchId = newId();
@@ -81,6 +85,7 @@ async function createVersion(input: {
     id: batchId,
     source: "dialer",
     importType: "agent_hours_performance",
+    granularity: input.granularity ?? "hourly",
     fileName: `${batchId}.csv`,
     fileHash: batchId.replaceAll("-", "").padEnd(64, "0").slice(0, 64),
     fileSizeBytes: Buffer.byteLength(rawFileContent),
@@ -92,6 +97,8 @@ async function createVersion(input: {
     rowCount: 1,
     reportingStartDate: input.reportingDate,
     reportingEndDate: input.reportingDate,
+    selectedReportingDate:
+      input.granularity === "daily" ? input.reportingDate : null,
   });
   await getDb().insert(dialerDatasetVersions).values({
     id: versionId,
@@ -99,6 +106,7 @@ async function createVersion(input: {
     scopeKey: input.scopeKey,
     source: "dialer",
     importType: "agent_hours_performance",
+    granularity: input.granularity ?? "hourly",
     reportingDate: input.reportingDate,
     teamId: input.teamId,
     versionNumber: input.versionNumber,
@@ -115,11 +123,26 @@ async function createVersion(input: {
     agentProfileId: input.agentId,
     batchId,
     versionId,
+    granularity: input.granularity ?? "hourly",
     metricDate: input.reportingDate,
-    metricHour: input.versionNumber,
+    metricHour:
+      input.granularity === "daily" ? null : input.versionNumber,
+    metricKey:
+      input.granularity === "daily"
+        ? "daily"
+        : `hour:${String(input.versionNumber).padStart(2, "0")}`,
     calls: input.calls,
-    loggedInSeconds: 3600,
+    loggedInSeconds: input.loggedInSeconds ?? 3600,
     talkSeconds: 1200,
+    ringingSeconds: input.granularity === "daily" ? null : 0,
+    systemPauseSeconds:
+      input.granularity === "daily"
+        ? input.systemPauseSeconds ?? 30
+        : null,
+    netSeconds:
+      input.granularity === "daily" ? input.netSeconds ?? 3300 : null,
+    idleSeconds: input.granularity === "daily" ? null : 0,
+    untrackedSeconds: input.granularity === "daily" ? null : 0,
     rowHash: newId().replaceAll("-", "").padEnd(64, "0").slice(0, 64),
     teamIdSnapshot: input.teamId,
     teamNameSnapshot: input.teamName,
@@ -172,6 +195,62 @@ afterEach(async () => {
 });
 
 describe("active-version dashboard scope", () => {
+  it("counts a daily aggregate once and creates no fabricated hourly chart row", async () => {
+    const adminId = await createProfile("admin", "Daily Dashboard Admin");
+    const agentId = await createProfile("agent", "Daily Dashboard Agent");
+    const teamId = await createTeam("Daily Dashboard Team");
+    await addMembership(agentId, teamId);
+    const scopeKey =
+      `dialer|agent_hours_performance|2099-06-02|team:${teamId}|dialer:default`;
+    scopeKeys.push(scopeKey);
+    const versionId = await createVersion({
+      active: true,
+      actorId: adminId,
+      agentId,
+      calls: 17,
+      granularity: "daily",
+      loggedInSeconds: 7200,
+      netSeconds: 6900,
+      reportingDate: "2099-06-02",
+      scopeKey,
+      systemPauseSeconds: 75,
+      teamId,
+      teamName: "Daily Dashboard Team",
+      versionNumber: 1,
+    });
+    await getDb().insert(dialerDatasetScopes).values({
+      scopeKey,
+      source: "dialer",
+      importType: "agent_hours_performance",
+      reportingDate: "2099-06-02",
+      teamId,
+      activeVersionId: versionId,
+      revision: 1,
+    });
+
+    const dashboard = await getDashboardData({
+      id: agentId,
+      role: "agent",
+      teamIds: [],
+    });
+
+    expect(dashboard.totals).toMatchObject({
+      calls: 17,
+      loggedInSeconds: 7200,
+      systemPauseSeconds: 75,
+      netSeconds: 6900,
+      ringingSeconds: null,
+      idleSeconds: null,
+      untrackedSeconds: null,
+      rowCount: 1,
+    });
+    expect(dashboard.agentRows).toHaveLength(1);
+    expect(dashboard.agentRows[0]?.calls).toBe(17);
+    expect(dashboard.hourlyBreakdown).toEqual([]);
+    expect(dashboard.hourlyDetailUnavailable).toBe(true);
+    expect(dashboard.reconciliation.callsMatch).toBe(true);
+  });
+
   it("uses one role scope for totals and rows while excluding superseded versions", async () => {
     const adminId = await createProfile("admin", "Dashboard Admin");
     const managerId = await createProfile("manager", "East Manager");
@@ -249,9 +328,14 @@ describe("active-version dashboard scope", () => {
       role: "admin",
       teamIds: [],
     });
+    const createdAgentIds = new Set<string>([eastAgentId, westAgentId]);
+    const adminCreatedRows = admin.agentRows
+      .filter((row) => createdAgentIds.has(row.profileId))
+      .map((row) => row.calls)
+      .sort((a, b) => b - a);
+
     expect(admin.status).toBe("ACTIVE_IMPORT");
-    expect(admin.totals.calls).toBe(30);
-    expect(admin.agentRows.map((row) => row.calls)).toEqual([20, 10]);
+    expect(adminCreatedRows).toEqual([20, 10]);
     expect(admin.reconciliation.callsMatch).toBe(true);
 
     const manager: Actor = {

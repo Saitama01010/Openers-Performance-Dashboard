@@ -256,6 +256,7 @@ describe("admin user provisioning integration", () => {
       batchId,
       metricDate: "2026-07-25",
       metricHour: 9,
+      metricKey: "hour:09",
       calls: 12,
       loggedInSeconds: 3600,
       readySeconds: 1200,

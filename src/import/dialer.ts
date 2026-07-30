@@ -8,7 +8,7 @@ import {
   formatRatio,
 } from "@/import/format";
 
-export const REQUIRED_DIALER_HEADERS = [
+export const HOURLY_DIALER_HEADERS = [
   "agent",
   "date",
   "hour",
@@ -23,7 +23,24 @@ export const REQUIRED_DIALER_HEADERS = [
   "untracked_seconds",
 ] as const;
 
-export type DialerHeader = (typeof REQUIRED_DIALER_HEADERS)[number];
+export const AGENT_HOURS_DAILY_HEADERS = [
+  "agent",
+  "logged_in_seconds",
+  "ready_seconds",
+  "talk_seconds",
+  "wrap_seconds",
+  "paused_seconds",
+  "system_pause_seconds",
+  "net_seconds",
+  "calls",
+] as const;
+
+export const REQUIRED_DIALER_HEADERS = HOURLY_DIALER_HEADERS;
+
+export type ImportGranularity = "hourly" | "daily";
+export type DialerHeader =
+  | (typeof HOURLY_DIALER_HEADERS)[number]
+  | (typeof AGENT_HOURS_DAILY_HEADERS)[number];
 
 export const DIALER_HEADER_ALIASES: Record<string, DialerHeader> = {
   agent: "agent",
@@ -54,6 +71,12 @@ export const DIALER_HEADER_ALIASES: Record<string, DialerHeader> = {
   "paused (sec)": "paused_seconds",
   paused_seconds: "paused_seconds",
   paused_time: "paused_seconds",
+  "system pause": "system_pause_seconds",
+  "system pause (sec)": "system_pause_seconds",
+  system_pause_seconds: "system_pause_seconds",
+  net: "net_seconds",
+  "net (sec)": "net_seconds",
+  net_seconds: "net_seconds",
   idle: "idle_seconds",
   "idle (sec)": "idle_seconds",
   idle_seconds: "idle_seconds",
@@ -68,11 +91,13 @@ export type DurationTotals = {
   loggedInSeconds: number;
   readySeconds: number;
   talkSeconds: number;
-  ringingSeconds: number;
+  ringingSeconds: number | null;
   wrapSeconds: number;
   pausedSeconds: number;
-  idleSeconds: number;
-  untrackedSeconds: number;
+  systemPauseSeconds: number | null;
+  netSeconds: number | null;
+  idleSeconds: number | null;
+  untrackedSeconds: number | null;
 };
 
 export type DerivedPerformanceMetrics = {
@@ -106,6 +131,7 @@ export type HourlyPreviewRow = {
   dialerAgentName: string;
   date: string | null;
   hour: number | null;
+  granularity: ImportGranularity;
   calls: number | null;
   durations: DurationTotals | null;
   status: ImportRowStatus;
@@ -129,6 +155,7 @@ export type AgentPreviewSummary = {
     | "revoked"
     | "deleted";
   warningMessage?: string;
+  granularity: ImportGranularity;
   csvRowCount: number;
   validRowCount: number;
   invalidRowCount: number;
@@ -192,24 +219,33 @@ export type DialerMetricInput = {
   source: string;
   sourceAgentName: string;
   agentProfileId: string;
+  granularity: ImportGranularity;
   metricDate: string;
-  metricHour: number;
+  metricHour: number | null;
+  metricKey: string;
   calls: number;
   loggedInSeconds: number;
   readySeconds: number;
   talkSeconds: number;
-  ringingSeconds: number;
+  ringingSeconds: number | null;
   wrapSeconds: number;
   pausedSeconds: number;
-  idleSeconds: number;
-  untrackedSeconds: number;
+  systemPauseSeconds: number | null;
+  netSeconds: number | null;
+  idleSeconds: number | null;
+  untrackedSeconds: number | null;
   teamIdSnapshot: string | null;
   teamNameSnapshot: string | null;
 };
 
 export type ExistingDialerMetric = Pick<
   DialerMetricInput,
-  "source" | "agentProfileId" | "metricDate" | "metricHour"
+  | "source"
+  | "agentProfileId"
+  | "granularity"
+  | "metricDate"
+  | "metricHour"
+  | "metricKey"
 > & {
   rowHash: string;
 };
@@ -234,6 +270,9 @@ export type ImportPreviewRow = HourlyPreviewRow & {
 };
 
 export type ImportPreview = {
+  granularity: ImportGranularity | null;
+  selectedReportingDate: string | null;
+  filenameRange: AgentHoursFilenameRange | null;
   fileHash: string;
   duplicateFile: boolean;
   parseError?: string;
@@ -248,11 +287,19 @@ export type ImportPreview = {
   agents: AgentPreviewSummary[];
 };
 
+export type AgentHoursFilenameRange = {
+  startDate: string;
+  endDate: string;
+  multiDay: boolean;
+};
+
 type ParsedCsvMetric = {
   sourceAgentName: string;
   agentKey: string;
+  granularity: ImportGranularity;
   metricDate: string;
-  metricHour: number;
+  metricHour: number | null;
+  metricKey: string;
   calls: number;
   durations: DurationTotals;
 };
@@ -275,6 +322,7 @@ type AgentBuilder = {
     | "revoked"
     | "deleted";
   warningMessage?: string;
+  granularity: ImportGranularity;
   csvRowCount: number;
   validRowCount: number;
   invalidRowCount: number;
@@ -283,7 +331,7 @@ type AgentBuilder = {
   calls: number;
   durations: DurationTotals;
   rowCounts: RowClassificationTotals;
-  hourlyRows: ImportPreviewRow[];
+  sourceRows: ImportPreviewRow[];
 };
 
 type MappingLookup =
@@ -297,6 +345,8 @@ const DURATION_KEYS = [
   "ringingSeconds",
   "wrapSeconds",
   "pausedSeconds",
+  "systemPauseSeconds",
+  "netSeconds",
   "idleSeconds",
   "untrackedSeconds",
 ] as const satisfies (keyof DurationTotals)[];
@@ -310,6 +360,7 @@ export function normalizeDialerHeader(header: string) {
     .replace(/^\uFEFF/, "")
     .trim()
     .replace(/\s+/g, " ")
+    .replace(/\s*\(\s*sec\s*\)$/i, " (sec)")
     .toLowerCase();
 
   return DIALER_HEADER_ALIASES[normalized] ?? normalized;
@@ -325,8 +376,91 @@ export function displayAgentName(name: string | undefined) {
   return displayName.length > 0 ? displayName : "(missing agent)";
 }
 
-export function validateDialerHeaders(headers: string[]) {
-  return REQUIRED_DIALER_HEADERS.filter((header) => !headers.includes(header));
+export function detectDialerGranularity(headers: string[]) {
+  const normalized = new Set(headers.map(normalizeDialerHeader));
+
+  if (normalized.has("date") || normalized.has("hour")) {
+    return "hourly" as const;
+  }
+
+  if (
+    normalized.has("system_pause_seconds") ||
+    normalized.has("net_seconds") ||
+    normalized.has("agent")
+  ) {
+    return "daily" as const;
+  }
+
+  return null;
+}
+
+export function validateDialerHeaders(
+  headers: string[],
+  granularity = detectDialerGranularity(headers),
+) {
+  const required =
+    granularity === "daily"
+      ? AGENT_HOURS_DAILY_HEADERS
+      : HOURLY_DIALER_HEADERS;
+
+  return required.filter((header) => !headers.includes(header));
+}
+
+export function inspectDialerCsvFormat(fileContent: string) {
+  try {
+    const [headers = []] = parse(fileContent, {
+      bom: true,
+      relax_column_count: true,
+      skip_empty_lines: true,
+      to_line: 1,
+      trim: true,
+    }) as string[][];
+    const detectedHeaders = headers.map((header) =>
+      header.replace(/^\uFEFF/, "").trim(),
+    );
+    const granularity = detectDialerGranularity(detectedHeaders);
+
+    return {
+      detectedHeaders,
+      granularity,
+      missingHeaders: validateDialerHeaders(
+        detectedHeaders.map(normalizeDialerHeader),
+        granularity,
+      ),
+    };
+  } catch {
+    return {
+      detectedHeaders: [],
+      granularity: null,
+      missingHeaders: [...HOURLY_DIALER_HEADERS],
+    };
+  }
+}
+
+export function parseAgentHoursFilenameRange(
+  fileName: string,
+): AgentHoursFilenameRange | null {
+  const match =
+    /^agent-hours_(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})(?: \([1-9]\d*\))?\.csv$/i.exec(
+      fileName.trim(),
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const startDate = parseDialerDate(match[1]);
+  const endDate = parseDialerDate(match[2]);
+
+  if (!startDate || !endDate || startDate > endDate) {
+    return null;
+  }
+
+  return {
+    startDate,
+    endDate,
+    multiDay: startDate !== endDate,
+  };
 }
 
 export function getImportConfirmationBlockReasons(preview: ImportPreview) {
@@ -372,14 +506,32 @@ export function hourlyKey(
   metric: Pick<
     DialerMetricInput,
     "source" | "agentProfileId" | "metricDate" | "metricHour"
-  >,
+  > &
+    Partial<Pick<DialerMetricInput, "granularity" | "metricKey">>,
 ) {
-  return `${metric.source}:${metric.agentProfileId}:${metric.metricDate}:${metric.metricHour}`;
+  const granularity =
+    metric.granularity ?? (metric.metricHour === null ? "daily" : "hourly");
+
+  return granularity === "daily"
+    ? `${metric.source}:${metric.agentProfileId}:${metric.metricDate}:daily`
+    : `${metric.source}:${metric.agentProfileId}:${metric.metricDate}:${metric.metricHour}`;
+}
+
+export function metricKeyFor(
+  granularity: ImportGranularity,
+  metricHour: number | null,
+) {
+  return granularity === "daily"
+    ? "daily"
+    : `hour:${String(metricHour).padStart(2, "0")}`;
 }
 
 export function metricRowHash(metric: DialerMetricInput) {
   return sha256(
     JSON.stringify({
+      granularity: metric.granularity,
+      metricDate: metric.metricDate,
+      metricKey: metric.metricKey,
       calls: metric.calls,
       loggedInSeconds: metric.loggedInSeconds,
       readySeconds: metric.readySeconds,
@@ -387,6 +539,8 @@ export function metricRowHash(metric: DialerMetricInput) {
       ringingSeconds: metric.ringingSeconds,
       wrapSeconds: metric.wrapSeconds,
       pausedSeconds: metric.pausedSeconds,
+      systemPauseSeconds: metric.systemPauseSeconds,
+      netSeconds: metric.netSeconds,
       idleSeconds: metric.idleSeconds,
       untrackedSeconds: metric.untrackedSeconds,
     }),
@@ -398,11 +552,13 @@ function emptyDurations(): DurationTotals {
     loggedInSeconds: 0,
     readySeconds: 0,
     talkSeconds: 0,
-    ringingSeconds: 0,
+    ringingSeconds: null,
     wrapSeconds: 0,
     pausedSeconds: 0,
-    idleSeconds: 0,
-    untrackedSeconds: 0,
+    systemPauseSeconds: null,
+    netSeconds: null,
+    idleSeconds: null,
+    untrackedSeconds: null,
   };
 }
 
@@ -419,7 +575,13 @@ function emptySummary(): RowClassificationTotals {
 
 function addDurations(target: DurationTotals, source: DurationTotals) {
   for (const key of DURATION_KEYS) {
-    target[key] += source[key];
+    const sourceValue = source[key];
+
+    if (sourceValue === null) {
+      continue;
+    }
+
+    target[key] = (target[key] ?? 0) + sourceValue;
   }
 }
 
@@ -432,6 +594,9 @@ function normalizeSeconds(value: string | undefined) {
 
   if (/^\d{1,3}:\d{2}:\d{2}$/.test(trimmed)) {
     const [hours, minutes, seconds] = trimmed.split(":").map(Number);
+    if (minutes > 59 || seconds > 59) {
+      return null;
+    }
     return hours * 3600 + minutes * 60 + seconds;
   }
 
@@ -443,9 +608,14 @@ function normalizeSeconds(value: string | undefined) {
 }
 
 function parseNonNegativeInteger(value: string | undefined) {
-  const parsed = Number((value ?? "").trim());
+  const trimmed = (value ?? "").trim();
 
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 function isLeapYear(year: number) {
@@ -504,11 +674,19 @@ export function parseDialerDate(value: string | undefined) {
   return null;
 }
 
-function parseCsvMetric(row: Record<string, string>): ParseCsvMetricResult {
+function parseCsvMetric(
+  row: Record<string, string>,
+  granularity: ImportGranularity,
+  selectedReportingDate: string | null,
+): ParseCsvMetricResult {
   const sourceAgentName = displayAgentName(row.agent);
   const agentKey = normalizeAgentName(row.agent);
-  const metricDate = parseDialerDate(row.date);
-  const metricHour = parseDialerHour(row.hour);
+  const metricDate =
+    granularity === "daily"
+      ? selectedReportingDate
+      : parseDialerDate(row.date);
+  const metricHour =
+    granularity === "daily" ? null : parseDialerHour(row.hour);
   const calls = parseNonNegativeInteger(row.calls);
 
   if (agentKey.length === 0) {
@@ -521,13 +699,16 @@ function parseCsvMetric(row: Record<string, string>): ParseCsvMetricResult {
 
   if (!metricDate) {
     return {
-      error: "Invalid date. Expected YYYY-MM-DD or M/D/YYYY.",
+      error:
+        granularity === "daily"
+          ? "Choose the reporting date represented by this Agent Hours file."
+          : "Invalid date. Expected YYYY-MM-DD or M/D/YYYY.",
       sourceAgentName,
       agentKey,
     };
   }
 
-  if (metricHour === null) {
+  if (granularity === "hourly" && metricHour === null) {
     return {
       error: "Invalid hour. Expected 0-23 or H:00/HH:00 on the hour.",
       sourceAgentName,
@@ -547,19 +728,53 @@ function parseCsvMetric(row: Record<string, string>): ParseCsvMetricResult {
     loggedInSeconds: normalizeSeconds(row.logged_in_seconds),
     readySeconds: normalizeSeconds(row.ready_seconds),
     talkSeconds: normalizeSeconds(row.talk_seconds),
-    ringingSeconds: normalizeSeconds(row.ringing_seconds),
+    ringingSeconds:
+      granularity === "hourly"
+        ? normalizeSeconds(row.ringing_seconds)
+        : null,
     wrapSeconds: normalizeSeconds(row.wrap_seconds),
     pausedSeconds: normalizeSeconds(row.paused_seconds),
-    idleSeconds: normalizeSeconds(row.idle_seconds),
-    untrackedSeconds: normalizeSeconds(row.untracked_seconds),
+    systemPauseSeconds:
+      granularity === "daily"
+        ? normalizeSeconds(row.system_pause_seconds)
+        : null,
+    netSeconds:
+      granularity === "daily" ? normalizeSeconds(row.net_seconds) : null,
+    idleSeconds:
+      granularity === "hourly" ? normalizeSeconds(row.idle_seconds) : null,
+    untrackedSeconds:
+      granularity === "hourly"
+        ? normalizeSeconds(row.untracked_seconds)
+        : null,
   };
-  const invalidDuration = Object.entries(durations).find(
-    ([, value]) => value === null || value < 0,
+  const requiredDurationKeys: (keyof DurationTotals)[] =
+    granularity === "daily"
+      ? [
+          "loggedInSeconds",
+          "readySeconds",
+          "talkSeconds",
+          "wrapSeconds",
+          "pausedSeconds",
+          "systemPauseSeconds",
+          "netSeconds",
+        ]
+      : [
+          "loggedInSeconds",
+          "readySeconds",
+          "talkSeconds",
+          "ringingSeconds",
+          "wrapSeconds",
+          "pausedSeconds",
+          "idleSeconds",
+          "untrackedSeconds",
+        ];
+  const invalidDuration = requiredDurationKeys.find(
+    (key) => durations[key] === null || durations[key] < 0,
   );
 
   if (invalidDuration) {
     return {
-      error: `Invalid ${invalidDuration[0]} duration.`,
+      error: `Invalid ${invalidDuration} duration.`,
       sourceAgentName,
       agentKey,
     };
@@ -569,8 +784,10 @@ function parseCsvMetric(row: Record<string, string>): ParseCsvMetricResult {
     metric: {
       sourceAgentName,
       agentKey,
+      granularity,
       metricDate,
       metricHour,
+      metricKey: metricKeyFor(granularity, metricHour),
       calls,
       durations: durations as DurationTotals,
     } satisfies ParsedCsvMetric,
@@ -626,6 +843,7 @@ function mergeMappingGroup(group: SourceMapping[]) {
 function createAgentBuilder(
   agentKey: string,
   dialerAgentName: string,
+  granularity: ImportGranularity,
 ): AgentBuilder {
   return {
     agentKey,
@@ -636,6 +854,7 @@ function createAgentBuilder(
     teamNames: [],
     accountStatus: undefined,
     warningMessage: undefined,
+    granularity,
     csvRowCount: 0,
     validRowCount: 0,
     invalidRowCount: 0,
@@ -644,7 +863,7 @@ function createAgentBuilder(
     calls: 0,
     durations: emptyDurations(),
     rowCounts: emptySummary(),
-    hourlyRows: [],
+    sourceRows: [],
   };
 }
 
@@ -676,8 +895,15 @@ function updateAgentMapping(
   }
 }
 
-function dateHourKey(metric: Pick<ParsedCsvMetric, "metricDate" | "metricHour">) {
-  return `${metric.metricDate} ${String(metric.metricHour).padStart(2, "0")}:00`;
+function dateMetricKey(
+  metric: Pick<
+    ParsedCsvMetric,
+    "granularity" | "metricDate" | "metricHour"
+  >,
+) {
+  return metric.granularity === "daily"
+    ? metric.metricDate
+    : `${metric.metricDate} ${String(metric.metricHour).padStart(2, "0")}:00`;
 }
 
 function addValidMetric(builder: AgentBuilder, parsed: ParsedCsvMetric) {
@@ -685,7 +911,7 @@ function addValidMetric(builder: AgentBuilder, parsed: ParsedCsvMetric) {
   builder.calls += parsed.calls;
   addDurations(builder.durations, parsed.durations);
 
-  const currentDateHour = dateHourKey(parsed);
+  const currentDateHour = dateMetricKey(parsed);
 
   if (!builder.earliest || currentDateHour < builder.earliest) {
     builder.earliest = currentDateHour;
@@ -718,7 +944,10 @@ function calculatePerformance(
     readyPercentage: (durations.readySeconds / loggedInSeconds) * 100,
     wrapPercentage: (durations.wrapSeconds / loggedInSeconds) * 100,
     pausedPercentage: (durations.pausedSeconds / loggedInSeconds) * 100,
-    idlePercentage: (durations.idleSeconds / loggedInSeconds) * 100,
+    idlePercentage:
+      durations.idleSeconds === null
+        ? null
+        : (durations.idleSeconds / loggedInSeconds) * 100,
     callsPerLoggedInHour: calls / (loggedInSeconds / 3600),
   };
 }
@@ -726,7 +955,10 @@ function calculatePerformance(
 function formattedTotals(durations: DurationTotals) {
   return DURATION_KEYS.reduce(
     (acc, key) => {
-      acc[key] = formatDurationSeconds(durations[key]).hms;
+      acc[key] =
+        durations[key] === null
+          ? "N/A"
+          : formatDurationSeconds(durations[key]).hms;
       return acc;
     },
     {} as Record<keyof DurationTotals, string>,
@@ -736,7 +968,10 @@ function formattedTotals(durations: DurationTotals) {
 function decimalHours(durations: DurationTotals) {
   return DURATION_KEYS.reduce(
     (acc, key) => {
-      acc[key] = formatDurationSeconds(durations[key]).decimalHoursLabel;
+      acc[key] =
+        durations[key] === null
+          ? "N/A"
+          : formatDurationSeconds(durations[key]).decimalHoursLabel;
       return acc;
     },
     {} as Record<keyof DurationTotals, string>,
@@ -780,6 +1015,7 @@ function buildAgentSummary(builder: AgentBuilder): AgentPreviewSummary {
     teamNames: builder.teamNames,
     accountStatus: builder.accountStatus,
     warningMessage: builder.warningMessage,
+    granularity: builder.granularity,
     csvRowCount: builder.csvRowCount,
     validRowCount: builder.validRowCount,
     invalidRowCount: builder.invalidRowCount,
@@ -792,14 +1028,18 @@ function buildAgentSummary(builder: AgentBuilder): AgentPreviewSummary {
     performance,
     rowCounts: builder.rowCounts,
     importStatus: importStatusForAgent(builder),
-    hourlyRows: builder.hourlyRows,
+    hourlyRows:
+      builder.granularity === "hourly" ? builder.sourceRows : [],
     calculationDetails: {
-      hourlyRowsIncluded: builder.validRowCount,
+      hourlyRowsIncluded:
+        builder.granularity === "hourly" ? builder.validRowCount : 0,
       invalidRowsExcluded: builder.invalidRowCount,
       earliestDateHour: builder.earliest,
       latestDateHour: builder.latest,
       formulas: [
-        "Duration totals are the sum of valid hourly rows.",
+        builder.granularity === "daily"
+          ? "Duration totals use the supplied daily aggregate row."
+          : "Duration totals are the sum of valid hourly rows.",
         "Talk Percentage = Talk Seconds / Logged In Seconds * 100",
         "Ready Percentage = Ready Seconds / Logged In Seconds * 100",
         "Wrap Percentage = Wrap Seconds / Logged In Seconds * 100",
@@ -898,6 +1138,9 @@ function buildFileSummary(input: {
 function emptyPreview(input: {
   fileHash: string;
   duplicateFile: boolean;
+  granularity: ImportGranularity | null;
+  selectedReportingDate: string | null;
+  filenameRange: AgentHoursFilenameRange | null;
   parseError?: string;
   headers: string[];
   missingHeaders: string[];
@@ -910,6 +1153,9 @@ function emptyPreview(input: {
   });
 
   return {
+    granularity: input.granularity,
+    selectedReportingDate: input.selectedReportingDate,
+    filenameRange: input.filenameRange,
     fileHash: input.fileHash,
     duplicateFile: input.duplicateFile,
     parseError: input.parseError,
@@ -927,7 +1173,9 @@ function emptyPreview(input: {
 
 export function previewDialerCsv(input: {
   source: string;
+  fileName?: string;
   fileContent: string;
+  selectedReportingDate?: string | null;
   existingFileHashes: Set<string>;
   mappings: SourceMapping[];
   existingMetrics: ExistingDialerMetric[];
@@ -935,6 +1183,9 @@ export function previewDialerCsv(input: {
 }) {
   const fileHash = sha256(input.fileContent);
   const duplicateFile = input.existingFileHashes.has(fileHash);
+  const selectedReportingDate = input.selectedReportingDate
+    ? parseDialerDate(input.selectedReportingDate)
+    : null;
   let detectedHeaders: string[] = [];
   let records: Record<string, string>[];
 
@@ -952,25 +1203,39 @@ export function previewDialerCsv(input: {
       trim: true,
     }) as Record<string, string>[];
   } catch {
+    const inspected = inspectDialerCsvFormat(input.fileContent);
+
     return emptyPreview({
+      granularity: inspected.granularity,
+      selectedReportingDate,
+      filenameRange: null,
       fileHash,
       duplicateFile,
       parseError: "The CSV is malformed and could not be parsed.",
       headers: detectedHeaders,
-      missingHeaders: validateDialerHeaders(
-        detectedHeaders.map(normalizeDialerHeader),
-      ),
+      missingHeaders: inspected.missingHeaders,
       totalCsvRows: 0,
       summary: emptySummary(),
     });
   }
   const headers = detectedHeaders;
   const normalizedHeaders = detectedHeaders.map(normalizeDialerHeader);
-  const missingHeaders = validateDialerHeaders(normalizedHeaders);
+  const granularity = detectDialerGranularity(normalizedHeaders);
+  const missingHeaders = validateDialerHeaders(
+    normalizedHeaders,
+    granularity,
+  );
+  const filenameRange =
+    granularity === "daily" && input.fileName
+      ? parseAgentHoursFilenameRange(input.fileName)
+      : null;
   const summary = emptySummary();
 
-  if (missingHeaders.length > 0) {
+  if (!granularity || missingHeaders.length > 0) {
     return emptyPreview({
+      granularity,
+      selectedReportingDate,
+      filenameRange,
       fileHash,
       duplicateFile,
       headers,
@@ -989,14 +1254,18 @@ export function previewDialerCsv(input: {
 
   for (const [index, rawRow] of records.entries()) {
     const rowNumber = index + 2;
-    const parsed = parseCsvMetric(rawRow);
+    const parsed = parseCsvMetric(
+      rawRow,
+      granularity,
+      selectedReportingDate,
+    );
     const agentKey =
       "metric" in parsed ? parsed.metric.agentKey : parsed.agentKey;
     const dialerAgentName =
       "metric" in parsed ? parsed.metric.sourceAgentName : parsed.sourceAgentName;
     const builder =
       agentBuilders.get(agentKey) ??
-      createAgentBuilder(agentKey, dialerAgentName);
+      createAgentBuilder(agentKey, dialerAgentName, granularity);
     const mappingLookupResult = mappingLookup.get(agentKey);
 
     builder.csvRowCount += 1;
@@ -1026,8 +1295,17 @@ export function previewDialerCsv(input: {
         rowNumber,
         agentKey,
         dialerAgentName,
-        date: rawRow.date ?? null,
-        hour: rawRow.hour ? Number(rawRow.hour) : null,
+        granularity,
+        date:
+          granularity === "daily"
+            ? selectedReportingDate
+            : rawRow.date ?? null,
+        hour:
+          granularity === "daily"
+            ? null
+            : rawRow.hour
+              ? Number(rawRow.hour)
+              : null,
         calls: null,
         durations: null,
         status: "invalid",
@@ -1045,6 +1323,7 @@ export function previewDialerCsv(input: {
         rowNumber,
         agentKey,
         dialerAgentName,
+        granularity,
         date: parsed.metric.metricDate,
         hour: parsed.metric.metricHour,
         calls: parsed.metric.calls,
@@ -1065,6 +1344,7 @@ export function previewDialerCsv(input: {
         rowNumber,
         agentKey,
         dialerAgentName,
+        granularity,
         date: parsed.metric.metricDate,
         hour: parsed.metric.metricHour,
         calls: parsed.metric.calls,
@@ -1089,6 +1369,7 @@ export function previewDialerCsv(input: {
         rowNumber,
         agentKey,
         dialerAgentName,
+        granularity,
         date: parsed.metric.metricDate,
         hour: parsed.metric.metricHour,
         calls: parsed.metric.calls,
@@ -1114,8 +1395,10 @@ export function previewDialerCsv(input: {
         source: input.source,
         sourceAgentName: parsed.metric.sourceAgentName,
         agentProfileId: mappingLookupResult.mapping.profileId,
+        granularity: parsed.metric.granularity,
         metricDate: parsed.metric.metricDate,
         metricHour: parsed.metric.metricHour,
+        metricKey: parsed.metric.metricKey,
         calls: parsed.metric.calls,
         teamIdSnapshot:
           mappingLookupResult.mapping.teamIds[snapshotIndex] ?? null,
@@ -1140,6 +1423,7 @@ export function previewDialerCsv(input: {
         rowNumber,
         agentKey,
         dialerAgentName,
+        granularity,
         date: parsed.metric.metricDate,
         hour: parsed.metric.metricHour,
         calls: parsed.metric.calls,
@@ -1153,7 +1437,7 @@ export function previewDialerCsv(input: {
       };
     }
 
-    builder.hourlyRows.push(row);
+    builder.sourceRows.push(row);
     rows.push(row);
     agentBuilders.set(agentKey, builder);
   }
@@ -1173,6 +1457,9 @@ export function previewDialerCsv(input: {
   });
 
   return {
+    granularity,
+    selectedReportingDate,
+    filenameRange,
     fileHash,
     duplicateFile,
     headers,

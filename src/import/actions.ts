@@ -62,17 +62,31 @@ export async function previewImportAction(formData: FormData) {
   const reportingDate = formData.get("reportingDate");
 
   if (typeof reportingDate !== "string" || reportingDate.length === 0) {
-    redirect("/import?error=reporting_date");
+    redirect("/import?error=agent_hours_reporting_date");
   }
 
   const content = Buffer.from(await file.arrayBuffer());
-  const { batchId } = await createDialerPreviewBatch({
-    actor: user,
-    source: "dialer",
-    fileName: file.name,
-    fileContent: content,
-    selectedReportingDate: reportingDate,
-  });
+  let batchId: string;
+
+  try {
+    const created = await createDialerPreviewBatch({
+      actor: user,
+      source: "dialer",
+      fileName: file.name,
+      fileContent: content,
+      selectedReportingDate: reportingDate,
+    });
+    batchId = created.batchId;
+  } catch (error) {
+    if (
+      error instanceof ImportConfirmationError &&
+      error.code === "invalid_reporting_date"
+    ) {
+      redirect("/import?error=agent_hours_reporting_date");
+    }
+
+    redirect("/import?error=file");
+  }
 
   redirect(`/import?preview=${batchId}`);
 }

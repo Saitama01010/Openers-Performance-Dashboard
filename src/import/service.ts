@@ -40,8 +40,10 @@ import {
 import {
   normalizeAgentName,
   parseDialerDate,
+  inspectDialerCsvFormat,
   previewDialerCsv,
   sha256,
+  type ImportGranularity,
   type ImportPreview,
   type SourceMapping,
 } from "@/import/dialer";
@@ -78,9 +80,11 @@ export type ImportHistoryRow = {
   fileHash: string;
   fileSizeBytes: number;
   importType: string;
+  granularity: ImportGranularity;
   source: string;
   reportingStartDate: string | null;
   reportingEndDate: string | null;
+  selectedReportingDate: string | null;
   uploadedBy: string;
   uploadedAt: Date;
   rowCount: number;
@@ -160,8 +164,13 @@ function validateReason(reasonInput: string | undefined, label: string) {
 }
 
 function selectedReportingDateFromBatch(batch: {
+  selectedReportingDate?: string | null;
   previewSummary: Record<string, unknown> | null;
 }) {
+  if (batch.selectedReportingDate) {
+    return String(batch.selectedReportingDate);
+  }
+
   const value = batch.previewSummary?.selectedReportingDate;
   return typeof value === "string" ? value : null;
 }
@@ -498,6 +507,8 @@ async function persistProcessedBatch(input: {
         scopeKey: group.scopeKey,
         source: group.scope.source,
         importType: group.scope.importType,
+        granularity:
+          metrics[0]?.granularity ?? ("hourly" as ImportGranularity),
         reportingDate: group.scope.reportingDate,
         teamId: group.scope.teamId,
         dialerId: group.scope.dialerId,
@@ -557,6 +568,7 @@ async function persistProcessedBatch(input: {
         sourceAgentName: row.dialerAgentName,
         normalizedAgentName: row.agentKey,
         matchedAgentProfileId: row.metric?.agentProfileId ?? null,
+        granularity: row.granularity,
         metricDate: row.date,
         metricHour: row.hour,
         calls: row.calls,
@@ -566,6 +578,8 @@ async function persistProcessedBatch(input: {
         ringingSeconds: row.durations?.ringingSeconds ?? null,
         wrapSeconds: row.durations?.wrapSeconds ?? null,
         pausedSeconds: row.durations?.pausedSeconds ?? null,
+        systemPauseSeconds: row.durations?.systemPauseSeconds ?? null,
+        netSeconds: row.durations?.netSeconds ?? null,
         idleSeconds: row.durations?.idleSeconds ?? null,
         untrackedSeconds: row.durations?.untrackedSeconds ?? null,
         teamIdSnapshot: row.metric?.teamIdSnapshot ?? null,
@@ -609,7 +623,7 @@ async function persistProcessedBatch(input: {
         versionId,
         row.metric.agentProfileId,
         row.metric.metricDate,
-        row.metric.metricHour,
+        row.metric.metricKey,
       ].join(":");
 
       if (duplicateMetricKeys.has(metricKey)) {
@@ -624,8 +638,10 @@ async function persistProcessedBatch(input: {
         agentProfileId: row.metric.agentProfileId,
         batchId: input.batchId,
         versionId,
+        granularity: row.metric.granularity,
         metricDate: row.metric.metricDate,
         metricHour: row.metric.metricHour,
+        metricKey: row.metric.metricKey,
         calls: row.metric.calls,
         loggedInSeconds: row.metric.loggedInSeconds,
         readySeconds: row.metric.readySeconds,
@@ -633,6 +649,8 @@ async function persistProcessedBatch(input: {
         ringingSeconds: row.metric.ringingSeconds,
         wrapSeconds: row.metric.wrapSeconds,
         pausedSeconds: row.metric.pausedSeconds,
+        systemPauseSeconds: row.metric.systemPauseSeconds,
+        netSeconds: row.metric.netSeconds,
         idleSeconds: row.metric.idleSeconds,
         untrackedSeconds: row.metric.untrackedSeconds,
         teamIdSnapshot: row.metric.teamIdSnapshot,
@@ -697,6 +715,8 @@ async function persistProcessedBatch(input: {
         unmatchedAgentCount,
         reportingStartDate,
         reportingEndDate,
+        selectedReportingDate: input.selectedReportingDate,
+        granularity: input.preview.granularity ?? "hourly",
         previewSummary: previewSummary({
           preview: input.preview,
           validation: input.validation,
@@ -735,6 +755,8 @@ async function persistProcessedBatch(input: {
         unmatchedAgentCount,
         reportingStartDate,
         reportingEndDate,
+        selectedReportingDate: input.selectedReportingDate,
+        granularity: input.preview.granularity,
         errorCount: input.validation.errors.length,
         warningCount: input.validation.warnings.length,
         noticeCount: input.validation.notices.length,
@@ -799,10 +821,15 @@ async function processDialerBatch(input: {
       }),
       resolveParsingActor(input.actor, batch),
     ]);
+    const selectedReportingDate =
+      input.selectedReportingDate ??
+      selectedReportingDateFromBatch(batch);
     const preview = previewDialerCsv({
       actor: parsingActor,
       source: batch.source,
+      fileName: batch.fileName,
       fileContent: batch.rawFileContent,
+      selectedReportingDate,
       existingFileHashes: new Set(
         duplicateImports.map(() => batch.fileHash),
       ),
@@ -824,9 +851,6 @@ async function processDialerBatch(input: {
     const currentMetrics = activeMetrics.filter((metric) =>
       scopeKeys.has(metric.scopeKey),
     );
-    const selectedReportingDate =
-      input.selectedReportingDate ??
-      selectedReportingDateFromBatch(batch);
     const validation = validateImport({
       preview,
       fileContent: batch.rawFileContent,
@@ -922,6 +946,15 @@ export async function createDialerPreviewBatch(input: {
   const fileContent = fileBuffer.toString("utf8");
   const fileHash = sha256(fileBuffer);
   const importType = input.importType ?? DIALER_IMPORT_TYPE;
+  const format = inspectDialerCsvFormat(fileContent);
+
+  if (format.granularity === "daily" && !selectedReportingDate) {
+    throw new ImportConfirmationError(
+      "Choose the reporting date represented by this Agent Hours file.",
+      "invalid_reporting_date",
+    );
+  }
+
   const storageLocation = `database://dialer_import_batches/${batchId}/raw_file_content`;
 
   await getDb().transaction(async (tx) => {
@@ -929,6 +962,7 @@ export async function createDialerPreviewBatch(input: {
       id: batchId,
       source: input.source,
       importType,
+      granularity: format.granularity ?? "hourly",
       dialerId: input.dialerId ?? null,
       fileName: input.fileName,
       fileHash,
@@ -937,6 +971,7 @@ export async function createDialerPreviewBatch(input: {
       storageLocation,
       status: "uploaded",
       uploadedById: input.actor.id,
+      selectedReportingDate,
       rawFileContent: fileContent,
       previewSummary: { selectedReportingDate },
     });
@@ -949,6 +984,7 @@ export async function createDialerPreviewBatch(input: {
       metadata: {
         source: input.source,
         importType,
+        granularity: format.granularity,
         dialerId: input.dialerId ?? null,
         fileName: input.fileName,
         fileHash,
@@ -1229,6 +1265,8 @@ export async function publishDialerImportBatch(input: {
         previousImportIds: Array.from(previousBatchIds),
         scopeKeys,
         versionIds: versions.map((version) => version.id),
+        granularity: batch.granularity,
+        selectedReportingDate: batch.selectedReportingDate,
         warningsPresent: warnings.length > 0,
         warningCount: warnings.length,
         warnings,
@@ -1586,10 +1624,12 @@ export async function listImportHistory(
         fileHash: dialerImportBatches.fileHash,
         fileSizeBytes: dialerImportBatches.fileSizeBytes,
         importType: dialerImportBatches.importType,
+        granularity: dialerImportBatches.granularity,
         source: dialerImportBatches.source,
         dialerId: dialerImportBatches.dialerId,
         reportingStartDate: dialerImportBatches.reportingStartDate,
         reportingEndDate: dialerImportBatches.reportingEndDate,
+        selectedReportingDate: dialerImportBatches.selectedReportingDate,
         uploadedById: dialerImportBatches.uploadedById,
         createdAt: dialerImportBatches.createdAt,
         rowCount: dialerImportBatches.rowCount,
@@ -1669,9 +1709,11 @@ export async function listImportHistory(
       fileHash: batch.fileHash,
       fileSizeBytes: batch.fileSizeBytes,
       importType: batch.importType,
+      granularity: batch.granularity,
       source: batch.source,
       reportingStartDate: batch.reportingStartDate,
       reportingEndDate: batch.reportingEndDate,
+      selectedReportingDate: batch.selectedReportingDate,
       uploadedBy: userNames.get(batch.uploadedById) ?? batch.uploadedById,
       uploadedAt: batch.createdAt,
       rowCount: batch.rowCount,
@@ -1707,6 +1749,7 @@ export async function getImportDetails(actor: Actor, batchId: string) {
       id: dialerImportBatches.id,
       source: dialerImportBatches.source,
       importType: dialerImportBatches.importType,
+      granularity: dialerImportBatches.granularity,
       dialerId: dialerImportBatches.dialerId,
       fileName: dialerImportBatches.fileName,
       fileHash: dialerImportBatches.fileHash,
@@ -1721,6 +1764,7 @@ export async function getImportDetails(actor: Actor, batchId: string) {
       unmatchedAgentCount: dialerImportBatches.unmatchedAgentCount,
       reportingStartDate: dialerImportBatches.reportingStartDate,
       reportingEndDate: dialerImportBatches.reportingEndDate,
+      selectedReportingDate: dialerImportBatches.selectedReportingDate,
       previewSummary: dialerImportBatches.previewSummary,
       validationErrors: dialerImportBatches.validationErrors,
       validationWarnings: dialerImportBatches.validationWarnings,
@@ -1756,6 +1800,7 @@ export async function getImportDetails(actor: Actor, batchId: string) {
         id: dialerDatasetVersions.id,
         scopeKey: dialerDatasetVersions.scopeKey,
         reportingDate: dialerDatasetVersions.reportingDate,
+        granularity: dialerDatasetVersions.granularity,
         teamId: dialerDatasetVersions.teamId,
         teamName: teams.name,
         versionNumber: dialerDatasetVersions.versionNumber,

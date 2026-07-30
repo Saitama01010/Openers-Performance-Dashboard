@@ -88,6 +88,25 @@ describe("compact import preview interface contract", () => {
     expect(component).toContain(" total agents");
   });
 
+  it("renders the daily reporting date and aggregate-only metric columns without hourly detail", () => {
+    const component = source(
+      "src/app/import/import-preview-summary.tsx",
+    );
+    const uploadPage = source("src/app/import/page.tsx");
+
+    expect(uploadPage).toContain("File reporting date");
+    expect(uploadPage).toContain(
+      "Choose the date represented by the totals in this CSV.",
+    );
+    expect(component).toContain("Daily Agent Hours report for");
+    expect(component).toContain('"Reporting date"');
+    expect(component).toContain('"System Pause"');
+    expect(component).toContain('"Net"');
+    expect(component).toContain(
+      "const durationColumns = isDaily",
+    );
+  });
+
   it("places one loading-aware publish action before the agent table", () => {
     const component = source(
       "src/app/import/import-preview-summary.tsx",

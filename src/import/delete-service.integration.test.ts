@@ -159,6 +159,7 @@ async function createVersionChain(
       versionId,
       metricDate: "2099-02-01",
       metricHour: 0,
+      metricKey: "hour:00",
       calls: index + 1,
       loggedInSeconds: 3600,
       rowHash: newId().replaceAll("-", "").padEnd(64, "0").slice(0, 64),
@@ -339,6 +340,7 @@ describe("permanent import deletion", () => {
       versionId,
       metricDate: "2099-03-01",
       metricHour: 0,
+      metricKey: "hour:00",
       rowHash: newId().replaceAll("-", "").padEnd(64, "0").slice(0, 64),
       teamIdSnapshot: teamId,
     });
@@ -499,6 +501,54 @@ describe("permanent import deletion", () => {
         .from(dialerImportBatches)
         .where(eq(dialerImportBatches.id, chain.batches[2])),
     ).toHaveLength(0);
+  });
+
+  it("deletes an active daily aggregate version and activates the previous daily fallback", async () => {
+    const admin = await createActor("admin");
+    const chain = await createVersionChain(admin, [
+      "superseded",
+      "active",
+    ]);
+    await getDb()
+      .update(dialerImportBatches)
+      .set({
+        granularity: "daily",
+        selectedReportingDate: "2099-02-01",
+      })
+      .where(inArray(dialerImportBatches.id, chain.batches));
+    await getDb()
+      .update(dialerDatasetVersions)
+      .set({ granularity: "daily" })
+      .where(inArray(dialerDatasetVersions.id, chain.versions));
+    await getDb()
+      .update(dialerAgentHourlyMetrics)
+      .set({
+        granularity: "daily",
+        metricHour: null,
+        metricKey: "daily",
+        ringingSeconds: null,
+        systemPauseSeconds: 30,
+        netSeconds: 3300,
+        idleSeconds: null,
+        untrackedSeconds: null,
+      })
+      .where(inArray(dialerAgentHourlyMetrics.versionId, chain.versions));
+
+    await deleteImport(admin, chain.batches[1], true);
+
+    const [scope] = await getDb()
+      .select()
+      .from(dialerDatasetScopes)
+      .where(eq(dialerDatasetScopes.scopeKey, chain.scopeKey));
+    const [fallback] = await getDb()
+      .select()
+      .from(dialerDatasetVersions)
+      .where(eq(dialerDatasetVersions.id, chain.versions[0]));
+    expect(scope.activeVersionId).toBe(chain.versions[0]);
+    expect(fallback).toMatchObject({
+      granularity: "daily",
+      status: "active",
+    });
   });
 
   it("skips draft and rejected versions when selecting the automatic fallback", async () => {

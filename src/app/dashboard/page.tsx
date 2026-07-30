@@ -172,7 +172,10 @@ export default async function DashboardPage({
                 </div>
                 <StatusBadge tone="info">Calls</StatusBadge>
               </div>
-              <HourlyActivityChart rows={dashboard.hourlyBreakdown} />
+              <HourlyActivityChart
+                dailyAggregatePresent={dashboard.hourlyDetailUnavailable}
+                rows={dashboard.hourlyBreakdown}
+              />
             </section>
 
             <section className="ui-card">

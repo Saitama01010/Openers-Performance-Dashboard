@@ -1,0 +1,3 @@
+Agent,Logged In (sec),Ready (sec),Talk (sec),Wrap (sec),Paused (sec),System Pause (sec),Net (sec),Calls
+Agent Alpha,198252,75684,68920,25321,29153,1200,169099,4293
+Agent Beta,197175,74000,68000,24000,32523,950,164652,3809

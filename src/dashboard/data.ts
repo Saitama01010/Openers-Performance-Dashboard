@@ -27,18 +27,20 @@ export type DashboardTotals = {
   loggedInSeconds: number;
   readySeconds: number;
   talkSeconds: number;
-  ringingSeconds: number;
+  ringingSeconds: number | null;
   wrapSeconds: number;
   pausedSeconds: number;
-  idleSeconds: number;
-  untrackedSeconds: number;
+  systemPauseSeconds: number | null;
+  netSeconds: number | null;
+  idleSeconds: number | null;
+  untrackedSeconds: number | null;
   rowCount: number;
 };
 
 export type DashboardMetric = {
   label: string;
   value: string;
-  rawValue: number;
+  rawValue: number | null;
 };
 
 export type DashboardAgentPerformanceRow = DashboardTotals & {
@@ -84,6 +86,7 @@ export type DashboardData = {
   totals: DashboardTotals;
   agentRows: DashboardAgentPerformanceRow[];
   hourlyBreakdown: DashboardHourlyBreakdownRow[];
+  hourlyDetailUnavailable: boolean;
   dataFreshness: {
     latestMetricDate: string | null;
     latestMetricUpdatedAt: Date | null;
@@ -114,11 +117,13 @@ const EMPTY_TOTALS: DashboardTotals = {
   loggedInSeconds: 0,
   readySeconds: 0,
   talkSeconds: 0,
-  ringingSeconds: 0,
+  ringingSeconds: null,
   wrapSeconds: 0,
   pausedSeconds: 0,
-  idleSeconds: 0,
-  untrackedSeconds: 0,
+  systemPauseSeconds: null,
+  netSeconds: null,
+  idleSeconds: null,
+  untrackedSeconds: null,
   rowCount: 0,
 };
 
@@ -126,7 +131,20 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
-function normalizeTotals(row?: Partial<Record<keyof DashboardTotals, unknown>>) {
+function optionalTotal(
+  row: Record<string, unknown>,
+  valueKey: string,
+  availableKey: string,
+) {
+  const rowCount = toNumber(row.rowCount);
+  const availableCount = toNumber(row[availableKey]);
+
+  return rowCount > 0 && availableCount === rowCount
+    ? toNumber(row[valueKey])
+    : null;
+}
+
+function normalizeTotals(row?: Record<string, unknown>) {
   if (!row) return { ...EMPTY_TOTALS };
 
   return {
@@ -134,11 +152,25 @@ function normalizeTotals(row?: Partial<Record<keyof DashboardTotals, unknown>>) 
     loggedInSeconds: toNumber(row.loggedInSeconds),
     readySeconds: toNumber(row.readySeconds),
     talkSeconds: toNumber(row.talkSeconds),
-    ringingSeconds: toNumber(row.ringingSeconds),
+    ringingSeconds: optionalTotal(
+      row,
+      "ringingSeconds",
+      "ringingAvailableRows",
+    ),
     wrapSeconds: toNumber(row.wrapSeconds),
     pausedSeconds: toNumber(row.pausedSeconds),
-    idleSeconds: toNumber(row.idleSeconds),
-    untrackedSeconds: toNumber(row.untrackedSeconds),
+    systemPauseSeconds: optionalTotal(
+      row,
+      "systemPauseSeconds",
+      "systemPauseAvailableRows",
+    ),
+    netSeconds: optionalTotal(row, "netSeconds", "netAvailableRows"),
+    idleSeconds: optionalTotal(row, "idleSeconds", "idleAvailableRows"),
+    untrackedSeconds: optionalTotal(
+      row,
+      "untrackedSeconds",
+      "untrackedAvailableRows",
+    ),
     rowCount: toNumber(row.rowCount),
   } satisfies DashboardTotals;
 }
@@ -152,6 +184,9 @@ function secondsToDuration(seconds: number) {
 }
 
 function formatTotals(row: DashboardTotals) {
+  const optionalDuration = (seconds: number | null) =>
+    seconds === null ? "N/A" : secondsToDuration(seconds);
+
   return [
     { label: "Calls", value: String(row.calls), rawValue: row.calls },
     {
@@ -171,7 +206,7 @@ function formatTotals(row: DashboardTotals) {
     },
     {
       label: "Ringing time",
-      value: secondsToDuration(row.ringingSeconds),
+      value: optionalDuration(row.ringingSeconds),
       rawValue: row.ringingSeconds,
     },
     {
@@ -185,13 +220,23 @@ function formatTotals(row: DashboardTotals) {
       rawValue: row.pausedSeconds,
     },
     {
+      label: "System Pause",
+      value: optionalDuration(row.systemPauseSeconds),
+      rawValue: row.systemPauseSeconds,
+    },
+    {
+      label: "Net",
+      value: optionalDuration(row.netSeconds),
+      rawValue: row.netSeconds,
+    },
+    {
       label: "Idle time",
-      value: secondsToDuration(row.idleSeconds),
+      value: optionalDuration(row.idleSeconds),
       rawValue: row.idleSeconds,
     },
     {
       label: "Untracked time",
-      value: secondsToDuration(row.untrackedSeconds),
+      value: optionalDuration(row.untrackedSeconds),
       rawValue: row.untrackedSeconds,
     },
   ] satisfies DashboardMetric[];
@@ -301,12 +346,20 @@ async function getDashboardTotals(scope: DashboardScope) {
       loggedInSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.loggedInSeconds}), 0)`,
       readySeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.readySeconds}), 0)`,
       talkSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.talkSeconds}), 0)`,
-      ringingSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.ringingSeconds}), 0)`,
+      ringingSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.ringingSeconds})`,
+      ringingAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.ringingSeconds})`,
       wrapSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.wrapSeconds}), 0)`,
       pausedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.pausedSeconds}), 0)`,
-      idleSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.idleSeconds}), 0)`,
-      untrackedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.untrackedSeconds}), 0)`,
+      systemPauseSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.systemPauseSeconds})`,
+      systemPauseAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.systemPauseSeconds})`,
+      netSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.netSeconds})`,
+      netAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.netSeconds})`,
+      idleSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.idleSeconds})`,
+      idleAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.idleSeconds})`,
+      untrackedSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.untrackedSeconds})`,
+      untrackedAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.untrackedSeconds})`,
       rowCount: sql<number>`count(*)`,
+      dailyRowCount: sql<number>`coalesce(sum(case when ${dialerAgentHourlyMetrics.granularity} = 'daily' then 1 else 0 end), 0)`,
       activeScopeCount: sql<number>`count(distinct ${dialerDatasetScopes.scopeKey})`,
     })
     .from(dialerAgentHourlyMetrics)
@@ -322,6 +375,7 @@ async function getDashboardTotals(scope: DashboardScope) {
   return {
     totals: normalizeTotals(row),
     activeScopeCount: toNumber(row?.activeScopeCount),
+    dailyRowCount: toNumber(row?.dailyRowCount),
   };
 }
 
@@ -335,11 +389,18 @@ async function getMetricAggregates(scope: DashboardScope) {
       loggedInSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.loggedInSeconds}), 0)`,
       readySeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.readySeconds}), 0)`,
       talkSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.talkSeconds}), 0)`,
-      ringingSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.ringingSeconds}), 0)`,
+      ringingSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.ringingSeconds})`,
+      ringingAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.ringingSeconds})`,
       wrapSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.wrapSeconds}), 0)`,
       pausedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.pausedSeconds}), 0)`,
-      idleSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.idleSeconds}), 0)`,
-      untrackedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.untrackedSeconds}), 0)`,
+      systemPauseSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.systemPauseSeconds})`,
+      systemPauseAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.systemPauseSeconds})`,
+      netSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.netSeconds})`,
+      netAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.netSeconds})`,
+      idleSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.idleSeconds})`,
+      idleAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.idleSeconds})`,
+      untrackedSeconds: sql<number | null>`sum(${dialerAgentHourlyMetrics.untrackedSeconds})`,
+      untrackedAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.untrackedSeconds})`,
       rowCount: sql<number>`count(*)`,
     })
     .from(dialerAgentHourlyMetrics)
@@ -500,17 +561,28 @@ async function getHourlyBreakdown(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
-    .where(scope.metricWhere)
+    .where(
+      and(
+        scope.metricWhere,
+        eq(dialerAgentHourlyMetrics.granularity, "hourly"),
+      ),
+    )
     .groupBy(dialerAgentHourlyMetrics.metricHour)
     .orderBy(asc(dialerAgentHourlyMetrics.metricHour));
 
-  return rows.map((row) => ({
-    hour: row.hour,
-    calls: toNumber(row.calls),
-    loggedInSeconds: toNumber(row.loggedInSeconds),
-    talkSeconds: toNumber(row.talkSeconds),
-    rowCount: toNumber(row.rowCount),
-  })) satisfies DashboardHourlyBreakdownRow[];
+  return rows.flatMap((row) =>
+    row.hour === null
+      ? []
+      : [
+          {
+            hour: row.hour,
+            calls: toNumber(row.calls),
+            loggedInSeconds: toNumber(row.loggedInSeconds),
+            talkSeconds: toNumber(row.talkSeconds),
+            rowCount: toNumber(row.rowCount),
+          },
+        ],
+  ) satisfies DashboardHourlyBreakdownRow[];
 }
 
 async function getDataFreshness(scope: DashboardScope) {
@@ -565,7 +637,7 @@ export async function getDashboardData(
 ) {
   const scope = await buildDashboardScope(actor);
   const [
-    { totals, activeScopeCount },
+    { totals, activeScopeCount, dailyRowCount },
     agentRows,
     hourlyBreakdown,
     dataFreshness,
@@ -586,6 +658,7 @@ export async function getDashboardData(
     totals,
     agentRows,
     hourlyBreakdown,
+    hourlyDetailUnavailable: dailyRowCount > 0,
     dataFreshness,
     reconciliation: reconcileAgentRows(totals, agentRows),
   } satisfies DashboardData;

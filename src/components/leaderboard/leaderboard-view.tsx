@@ -4,6 +4,13 @@ import { MetricPanel } from "@/components/dashboard/performance-visuals";
 import type { OverviewDateRange } from "@/dashboard/date-range";
 import { formatNumber } from "@/import/format";
 import type { LeaderboardData } from "@/leaderboard/data";
+import {
+  nextLeaderboardSort,
+  sortLeaderboardDisplayRows,
+  type LeaderboardSortColumn,
+  type LeaderboardSortState,
+} from "@/leaderboard/sorting";
+import { CLOSED_DEALS_UNCONFIGURED_MESSAGE } from "@/sheets/closed-deals";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -28,17 +35,126 @@ function clearFiltersHref(range: OverviewDateRange) {
   return `/leaderboard?${params.toString()}`;
 }
 
+function sortHref(
+  data: LeaderboardData,
+  dateRange: OverviewDateRange,
+  currentSort: LeaderboardSortState,
+  column: LeaderboardSortColumn,
+) {
+  const nextSort = nextLeaderboardSort(currentSort, column);
+  const params = new URLSearchParams({ range: dateRange.key });
+
+  if (dateRange.key === "custom") {
+    params.set("from", dateRange.from);
+    params.set("to", dateRange.to);
+  }
+  if (data.filters.query) params.set("q", data.filters.query);
+  if (data.filters.teamId) params.set("teamId", data.filters.teamId);
+  if (nextSort) {
+    params.set("sort", nextSort.column);
+    params.set("direction", nextSort.direction);
+  }
+
+  return `/leaderboard?${params.toString()}`;
+}
+
+function sortAriaLabel(
+  label: string,
+  sort: LeaderboardSortState,
+  column: LeaderboardSortColumn,
+) {
+  if (!sort || sort.column !== column) {
+    return `${label} not sorted. Sort descending.`;
+  }
+  if (sort.direction === "desc") {
+    return `${label} sorted descending. Sort ascending.`;
+  }
+  return `${label} sorted ascending. Clear sorting.`;
+}
+
+function ariaSort(
+  sort: LeaderboardSortState,
+  column: LeaderboardSortColumn,
+) {
+  if (sort?.column !== column) return "none";
+  return sort.direction === "asc" ? "ascending" : "descending";
+}
+
+function SortLink({
+  column,
+  compact = false,
+  data,
+  dateRange,
+  label,
+  sort,
+}: {
+  column: LeaderboardSortColumn;
+  compact?: boolean;
+  data: LeaderboardData;
+  dateRange: OverviewDateRange;
+  label: string;
+  sort: LeaderboardSortState;
+}) {
+  const state = sort?.column === column ? sort.direction : "none";
+
+  return (
+    <Link
+      aria-label={sortAriaLabel(label, sort, column)}
+      className={`leaderboard-sort-link${
+        compact ? " leaderboard-sort-link--compact" : ""
+      }`}
+      data-active={state === "none" ? undefined : ""}
+      href={sortHref(data, dateRange, sort, column)}
+      scroll={false}
+    >
+      <span>{label}</span>
+      <svg
+        aria-hidden="true"
+        className="leaderboard-sort-link__indicator"
+        data-state={state}
+        viewBox="0 0 12 14"
+      >
+        <path className="leaderboard-sort-link__up" d="m3 5 3-3 3 3" />
+        <path className="leaderboard-sort-link__down" d="m3 9 3 3 3-3" />
+      </svg>
+    </Link>
+  );
+}
+
+function ClosedDealsUnavailable() {
+  return (
+    <span
+      className="leaderboard-unavailable-value"
+      title={CLOSED_DEALS_UNCONFIGURED_MESSAGE}
+    >
+      Unavailable
+    </span>
+  );
+}
+
 export function LeaderboardView({
   data,
   dateRange,
+  sort = null,
 }: {
   data: LeaderboardData;
   dateRange: OverviewDateRange;
+  sort?: LeaderboardSortState;
 }) {
   const totalTransfers =
     data.status === "ready"
       ? data.rows.reduce((total, row) => total + row.transferCount, 0)
       : null;
+  const displayRows =
+    data.status === "ready"
+      ? sortLeaderboardDisplayRows(
+          data.rows.map((row) => ({
+            ...row,
+            closedDealCount: null,
+          })),
+          sort,
+        )
+      : [];
 
   return (
     <>
@@ -89,7 +205,13 @@ export function LeaderboardView({
         </div>
       </section>
 
-      <section className="ui-card ui-card--padded leaderboard-filter-card">
+      <section
+        aria-labelledby="leaderboard-filters-heading"
+        className="leaderboard-filter-section"
+      >
+        <h2 className="sr-only" id="leaderboard-filters-heading">
+          Filter LeaderBoard
+        </h2>
         <form
           aria-label="Leaderboard filters"
           className="leaderboard-toolbar"
@@ -102,29 +224,43 @@ export function LeaderboardView({
               <input defaultValue={dateRange.to} name="to" type="hidden" />
             </>
           ) : null}
-          <label className="leaderboard-toolbar__search">
-            Search
-            <input
-              defaultValue={data.filters.query ?? ""}
-              name="q"
-              placeholder="Real Name or American Name"
-              type="search"
-            />
-          </label>
-          <label>
-            Team
-            <select
-              defaultValue={data.filters.teamId ?? ""}
-              name="teamId"
-            >
-              <option value="">All teams</option>
-              {data.teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {sort ? (
+            <>
+              <input defaultValue={sort.column} name="sort" type="hidden" />
+              <input
+                defaultValue={sort.direction}
+                name="direction"
+                type="hidden"
+              />
+            </>
+          ) : null}
+          <div className="leaderboard-toolbar__control leaderboard-toolbar__control--search">
+            <label>
+              Search
+              <input
+                defaultValue={data.filters.query ?? ""}
+                name="q"
+                placeholder="Real Name or American Name"
+                type="search"
+              />
+            </label>
+          </div>
+          <div className="leaderboard-toolbar__control leaderboard-toolbar__control--team">
+            <label>
+              Team
+              <select
+                defaultValue={data.filters.teamId ?? ""}
+                name="teamId"
+              >
+                <option value="">All teams</option>
+                {data.teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="leaderboard-toolbar__actions">
             <button className="ui-button ui-button--primary" type="submit">
               Apply filters
@@ -221,24 +357,76 @@ export function LeaderboardView({
                   <th scope="col">Real Name</th>
                   <th scope="col">American Name</th>
                   <th scope="col">Team</th>
-                  <th scope="col">Transfers</th>
+                  <th
+                    aria-sort={ariaSort(sort, "transfers")}
+                    className="numeric leaderboard-sort-heading"
+                    scope="col"
+                  >
+                    <SortLink
+                      column="transfers"
+                      data={data}
+                      dateRange={dateRange}
+                      label="Transfers"
+                      sort={sort}
+                    />
+                  </th>
+                  <th
+                    aria-sort={ariaSort(sort, "closed-deals")}
+                    className="numeric leaderboard-sort-heading"
+                    scope="col"
+                  >
+                    <SortLink
+                      column="closed-deals"
+                      data={data}
+                      dateRange={dateRange}
+                      label="Closed Deals"
+                      sort={sort}
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((row) => (
+                {displayRows.map((row) => (
                   <tr key={row.profileId}>
                     <td className="numeric">{row.rank}</td>
                     <th scope="row">{row.realName}</th>
                     <td>{row.americanName}</td>
                     <td>{row.teamName ?? "Unassigned"}</td>
                     <td className="numeric">{row.transferCount}</td>
+                    <td className="numeric">
+                      <ClosedDealsUnavailable />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <div
+            aria-label="Leaderboard sorting"
+            className="leaderboard-mobile-sort md:hidden"
+          >
+            <p>Sort rows</p>
+            <div>
+              <SortLink
+                column="transfers"
+                compact
+                data={data}
+                dateRange={dateRange}
+                label="Transfers"
+                sort={sort}
+              />
+              <SortLink
+                column="closed-deals"
+                compact
+                data={data}
+                dateRange={dateRange}
+                label="Closed Deals"
+                sort={sort}
+              />
+            </div>
+          </div>
           <ol className="leaderboard-mobile-list md:hidden">
-            {data.rows.map((row) => (
+            {displayRows.map((row) => (
               <li key={row.profileId}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -251,12 +439,18 @@ export function LeaderboardView({
                       {row.teamName ?? "Unassigned"}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-semibold">
-                      {row.transferCount}
-                    </p>
-                    <p className="text-xs text-muted">Transfers</p>
-                  </div>
+                  <dl className="leaderboard-mobile-metrics">
+                    <div>
+                      <dt>Transfers</dt>
+                      <dd>{row.transferCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Closed Deals</dt>
+                      <dd>
+                        <ClosedDealsUnavailable />
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
               </li>
             ))}

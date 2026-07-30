@@ -15,5 +15,9 @@ describe("LeaderBoard route contract", () => {
     expect(page).not.toContain('user.role === "agent"');
     expect(page).not.toContain('user.role !== "admin"');
     expect(page).toContain("<DashboardShell user={user}>");
+    expect(page).toContain("resolveLeaderboardSort(params)");
+    expect(page).toContain("sort={sort}");
+    expect(page).toContain("sort: sort?.column");
+    expect(page).toContain("direction: sort?.direction");
   });
 });

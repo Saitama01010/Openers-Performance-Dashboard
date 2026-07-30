@@ -4,6 +4,11 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/auth/session";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import {
+  AnimatedClosedDealsBarChart,
+  type ClosedDealsPerformer,
+} from "@/components/dashboard/overview-animations";
+import { OverviewDateFilter } from "@/components/dashboard/overview-date-filter";
+import {
   EmptyTableRow,
   PageHeader,
   StatusBadge,
@@ -14,11 +19,14 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import {
   ActivityStateGrid,
   formatCompactDuration,
-  HourlyActivityChart,
   MetricPanel,
   ProductivityMix,
 } from "@/components/dashboard/performance-visuals";
 import { getDashboardData } from "@/dashboard/data";
+import {
+  resolveOverviewDateRange,
+  type OverviewDateRange,
+} from "@/dashboard/date-range";
 import {
   formatDurationSeconds,
   formatNumber,
@@ -26,6 +34,7 @@ import {
   formatPercentage,
 } from "@/import/format";
 import { roleLabel } from "@/presentation/labels";
+import { CLOSED_DEALS_UNCONFIGURED_MESSAGE } from "@/sheets/closed-deals";
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +49,30 @@ function formatDate(value: string | null) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
+function formatDateRange(range: Pick<OverviewDateRange, "from" | "to">) {
+  if (range.from === range.to) return formatDate(range.from);
+  return `${formatDate(range.from)} – ${formatDate(range.to)}`;
+}
+
+function dashboardRangeHref(
+  range: OverviewDateRange,
+  showAgentsWithNoData: boolean,
+) {
+  const params = new URLSearchParams({ range: range.key });
+  if (range.key === "custom") {
+    params.set("from", range.from);
+    params.set("to", range.to);
+  }
+  if (showAgentsWithNoData) params.set("showNoData", "1");
+  return `/dashboard?${params.toString()}`;
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ showNoData?: string }>;
+  searchParams: Promise<
+    Record<string, string | string[] | undefined>
+  >;
 }) {
   const user = await getCurrentUser();
 
@@ -52,9 +81,13 @@ export default async function DashboardPage({
   }
 
   const params = await searchParams;
+  const dateRange = resolveOverviewDateRange(params);
   const showAgentsWithNoData =
     params.showNoData === "1" || params.showNoData === "true";
-  const dashboard = await getDashboardData(user, { showAgentsWithNoData });
+  const dashboard = await getDashboardData(user, {
+    dateRange,
+    showAgentsWithNoData,
+  });
   const loggedInHours = dashboard.totals.loggedInSeconds / 3600;
   const callsPerHour =
     loggedInHours > 0 ? dashboard.totals.calls / loggedInHours : null;
@@ -67,20 +100,27 @@ export default async function DashboardPage({
     dashboard.reconciliation.loggedInSecondsMatch &&
     dashboard.reconciliation.talkSecondsMatch;
   const previewAgents = dashboard.agentRows.slice(0, 8);
+  const closedDealsRows: ClosedDealsPerformer[] = [];
 
   return (
     <DashboardShell user={user}>
       <section className="dashboard-page overview-page">
         <PageHeader
           actions={
-            <div className="page-header__action-group">
-              <Link className="ui-button ui-button--secondary" href="/agents">
-                View agents
-              </Link>
-              <Link className="ui-button ui-button--primary" href="/performance">
-                View performance
-                <DashboardIcon name="arrowRight" />
-              </Link>
+            <div className="overview-header-actions">
+              <OverviewDateFilter
+                range={dateRange}
+                showAgentsWithNoData={showAgentsWithNoData}
+              />
+              <div className="page-header__action-group">
+                <Link className="ui-button ui-button--secondary" href="/agents">
+                  View agents
+                </Link>
+                <Link className="ui-button ui-button--primary" href="/performance">
+                  View performance
+                  <DashboardIcon name="arrowRight" />
+                </Link>
+              </div>
             </div>
           }
           description="Monitor activity, understand time allocation, and verify the active data inside your authorized scope."
@@ -103,6 +143,13 @@ export default async function DashboardPage({
             ) : null}
           </StatusBanner>
         ) : null}
+        {dashboard.status === "ACTIVE_IMPORT" &&
+        dashboard.totals.rowCount === 0 ? (
+          <StatusBanner tone="info">
+            No active metrics fall within {formatDateRange(dateRange)}. Choose
+            another reporting period to view imported activity.
+          </StatusBanner>
+        ) : null}
 
         <div className="overview-layout">
           <div className="overview-main">
@@ -113,18 +160,26 @@ export default async function DashboardPage({
                   <h2 id="core-performance-heading">Current operating picture</h2>
                 </div>
                 <p>
-                  Active data through{" "}
-                  <strong>{formatDate(dashboard.dataFreshness.latestMetricDate)}</strong>
+                  {dateRange.label}{" "}
+                  <strong>{formatDateRange(dateRange)}</strong>
                 </p>
               </div>
               <div className="metric-panel-grid">
                 <MetricPanel
+                  animatedValue={{
+                    format: "count",
+                    value: dashboard.totals.calls,
+                  }}
                   detail="Total calls in this scope"
                   icon="calls"
                   label="Calls"
                   value={formatNumber(dashboard.totals.calls)}
                 />
                 <MetricPanel
+                  animatedValue={{
+                    format: "duration",
+                    value: dashboard.totals.loggedInSeconds,
+                  }}
                   detail="Total active time in the system"
                   icon="freshness"
                   label="Logged-in time"
@@ -134,6 +189,10 @@ export default async function DashboardPage({
                   )}
                 />
                 <MetricPanel
+                  animatedValue={{
+                    format: "decimal",
+                    value: callsPerHour,
+                  }}
                   detail="Calls per logged-in hour"
                   icon="performance"
                   label="Calls per hour"
@@ -141,6 +200,10 @@ export default async function DashboardPage({
                   value={formatOptionalNumber(callsPerHour)}
                 />
                 <MetricPanel
+                  animatedValue={{
+                    format: "percentage",
+                    value: talkPercentage,
+                  }}
                   detail="Talk time divided by logged-in time"
                   icon="talk"
                   label="Talk percentage"
@@ -155,26 +218,26 @@ export default async function DashboardPage({
             </section>
 
             <section
-              aria-labelledby="hourly-activity-heading"
+              aria-labelledby="closed-deals-heading"
               className="ui-card overview-chart-card"
             >
               <div className="ui-card__header">
                 <div>
                   <h2
                     className="ui-card__title"
-                    id="hourly-activity-heading"
+                    id="closed-deals-heading"
                   >
-                    Hourly activity
+                    Top 5 performers in closed deals
                   </h2>
                   <p className="ui-card__subtitle">
-                    Call volume by hour in the active reporting scope.
+                    Closed-deal outcomes for {dateRange.label.toLowerCase()}.
                   </p>
                 </div>
-                <StatusBadge tone="info">Calls</StatusBadge>
+                <StatusBadge tone="warning">Awaiting source</StatusBadge>
               </div>
-              <HourlyActivityChart
-                dailyAggregatePresent={dashboard.hourlyDetailUnavailable}
-                rows={dashboard.hourlyBreakdown}
+              <AnimatedClosedDealsBarChart
+                emptyMessage={CLOSED_DEALS_UNCONFIGURED_MESSAGE}
+                rows={closedDealsRows}
               />
             </section>
 
@@ -191,8 +254,8 @@ export default async function DashboardPage({
                     className="ui-link-action"
                     href={
                       showAgentsWithNoData
-                        ? "/dashboard"
-                        : "/dashboard?showNoData=1"
+                        ? dashboardRangeHref(dateRange, false)
+                        : dashboardRangeHref(dateRange, true)
                     }
                   >
                     {showAgentsWithNoData
@@ -208,7 +271,7 @@ export default async function DashboardPage({
                 <table className="ui-table">
                   <caption>
                     Agent totals and calculated rates in the active reporting
-                    scope
+                    scope for {formatDateRange(dateRange)}
                   </caption>
                   <thead>
                     <tr>
@@ -312,7 +375,11 @@ export default async function DashboardPage({
                   </p>
                 </div>
               </div>
-              <ActivityStateGrid totals={dashboard.totals} />
+              <ActivityStateGrid
+                animateValues
+                comparison={dashboard.comparison}
+                totals={dashboard.totals}
+              />
             </section>
 
             <section
@@ -321,18 +388,28 @@ export default async function DashboardPage({
             >
               <div className="ui-card__header">
                 <div>
-                  <h2
-                    className="ui-card__title"
-                    id="productivity-mix-heading"
-                  >
-                    Productivity mix
-                  </h2>
+                  <div className="title-with-info">
+                    <h2
+                      className="ui-card__title"
+                      id="productivity-mix-heading"
+                    >
+                      Productivity mix
+                    </h2>
+                    <span
+                      aria-label="Productivity mix information"
+                      className="title-with-info__icon"
+                      role="img"
+                      title="Recorded activity states as a share of total recorded time."
+                    >
+                      <DashboardIcon name="info" />
+                    </span>
+                  </div>
                   <p className="ui-card__subtitle">
                     Share of recorded activity time.
                   </p>
                 </div>
               </div>
-              <ProductivityMix totals={dashboard.totals} />
+              <ProductivityMix totals={dashboard.totals} variant="donut" />
             </section>
 
             <section aria-labelledby="data-trust-heading">

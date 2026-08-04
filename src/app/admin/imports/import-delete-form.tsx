@@ -23,6 +23,8 @@ type ImportDeleteFormProps = {
   status: string;
   team: string;
   uploadDate: string;
+  compactTrigger?: boolean;
+  returnPage?: number;
 };
 
 function formatBytes(bytes: number) {
@@ -71,6 +73,8 @@ export function ImportDeleteForm({
   status,
   team,
   uploadDate,
+  compactTrigger = false,
+  returnPage,
 }: ImportDeleteFormProps) {
   const [confirmation, setConfirmation] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -86,7 +90,7 @@ export function ImportDeleteForm({
     : "DELETE IMPORT";
 
   function openDialog() {
-    if (!assessment.allowed || (active && !lifecycle)) return;
+    if (!assessment.allowed) return;
     dialogRef.current?.showModal();
     requestAnimationFrame(() => cancelRef.current?.focus());
   }
@@ -99,15 +103,18 @@ export function ImportDeleteForm({
   return (
     <form action={deleteImportAction}>
       <input name="batchId" type="hidden" value={batchId} />
+      {returnPage ? (
+        <input name="returnPage" type="hidden" value={returnPage} />
+      ) : null}
       <button
-        className="ui-button ui-button--danger"
-        disabled={!assessment.allowed || (active && !lifecycle)}
+        className={`ui-button ui-button--danger${compactTrigger ? " ui-button--compact" : ""}`}
+        disabled={!assessment.allowed}
         onClick={openDialog}
         ref={triggerRef}
         title={assessment.reason ?? "Permanently delete this import"}
         type="button"
       >
-        Delete
+        Permanently delete
       </button>
       {!assessment.allowed && assessment.reason ? (
         <p className="mt-1 max-w-64 text-xs text-muted">
@@ -139,11 +146,13 @@ export function ImportDeleteForm({
               Permanently delete this import?
             </h2>
             <p className="ui-dialog__description" id={descriptionId}>
-              {active
+              The CSV file, raw stored content, parsed import rows, validation
+              and import errors, version-owned metrics, and dataset version
+              will be permanently removed. This action cannot be undone. {active
                 ? lifecycle?.automaticFallbacks.length
-                  ? "The import will be permanently deleted. Its immediately previous valid version will automatically become active and appear on the dashboard. This action cannot be undone."
-                  : "The import will be permanently deleted. No previous valid import exists, so this dataset will have no active import after deletion. This action cannot be undone."
-                : "This import will be permanently deleted. The current active dashboard version will not change. This action cannot be undone."}
+                  ? "The immediately previous valid version for each exact dataset scope will become active."
+                  : "If an immediately previous valid version exists for an exact dataset scope, it will become active; otherwise that scope will have no active version."
+                : "The current active dashboard version will not change."}
             </p>
           </div>
         </div>

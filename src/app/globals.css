@@ -648,6 +648,14 @@ input[type="file"]:not(:disabled) {
   opacity: 0.5;
 }
 
+.ui-button--compact {
+  font-size: 0.75rem;
+  min-height: 2rem;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
+  white-space: nowrap;
+}
+
 .ui-button--primary {
   background: var(--primary);
   color: var(--primary-foreground);
@@ -1039,6 +1047,51 @@ input[type="file"]:not(:disabled) {
 .ui-table .numeric {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.import-history-table {
+  min-width: 88rem;
+}
+
+.import-history-table th,
+.import-history-table td {
+  padding: 0.55rem 0.65rem;
+}
+
+.import-history-table td {
+  height: auto;
+  vertical-align: top;
+}
+
+.import-history-table__date,
+.import-history-table__actions {
+  white-space: nowrap;
+}
+
+.import-history-table__file {
+  max-width: 18rem;
+  min-width: 12rem;
+}
+
+.import-history-file__name {
+  display: -webkit-box;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.import-history-actions {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+}
+
+.import-history-actions form {
+  flex: 0 0 auto;
 }
 
 .empty-table-cell {

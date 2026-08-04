@@ -46,13 +46,28 @@ export type FlagFilters = {
 };
 
 async function resolveFlagRoster(actor: Actor, filters: FlagFilters) {
-  const [scopedAgents, managers] = await Promise.all([
+  const [scopedAgents, visibleManagers] = await Promise.all([
     listScopedActiveAgents(actor),
     actor.role === "agent"
       ? Promise.resolve([])
       : listOrganizationActiveManagers(actor),
   ]);
+  const managers = actor.role === "manager"
+    ? visibleManagers.filter((manager) => manager.id === actor.id)
+    : visibleManagers;
   const teams = uniqueScopedTeams(scopedAgents);
+  if (
+    filters.managerId &&
+    !managers.some((manager) => manager.id === filters.managerId)
+  ) {
+    throw new Error("Forbidden");
+  }
+  if (
+    filters.profileId &&
+    !scopedAgents.some((agent) => agent.id === filters.profileId)
+  ) {
+    throw new Error("Forbidden");
+  }
   const validTeam =
     actor.role === "agent" ||
     !filters.teamId ||

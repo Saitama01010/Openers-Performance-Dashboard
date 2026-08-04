@@ -32,7 +32,8 @@ describe("shared dashboard filters", () => {
     expect(dateFilter).toContain("router.replace");
     expect(dateFilter).toContain('next.delete("from")');
     expect(dateFilter).toContain('next.delete("to")');
-    expect(filterToolbar).toContain("new URLSearchParams(searchParams.toString())");
+    expect(filterToolbar).toContain("new URLSearchParams(currentSearch)");
+    expect(filterToolbar).toContain("dashboardFilterHref(");
     expect(filterToolbar).toContain("router.replace");
     expect(filterToolbar).toContain('next.delete(name)');
     expect(filterToolbar).toContain('next.delete("page")');

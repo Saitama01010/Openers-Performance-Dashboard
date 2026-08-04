@@ -70,7 +70,6 @@ export default async function PerformanceFlagsPage({
             },
             ...(actor.role === "admin"
               ? [{
-                  kind: "combobox" as const,
                   label: "Manager",
                   name: "manager",
                   value: first(params.manager),
@@ -84,7 +83,6 @@ export default async function PerformanceFlagsPage({
                 }]
               : []),
             {
-              kind: "combobox",
               label: "Agent",
               name: "profile",
               value: first(params.profile),

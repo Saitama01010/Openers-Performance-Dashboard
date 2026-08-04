@@ -32,6 +32,25 @@ describe("coaching and flags UI contract", () => {
     expect(performancePage).toContain("min per net counted hour, above the");
   });
 
+  it("renders Manager and Agent as real single-select controls", () => {
+    const page = performancePage;
+    const managerFilter = page.slice(
+      page.indexOf('label: "Manager"'),
+      page.indexOf('label: "Agent"'),
+    );
+    const agentFilter = page.slice(
+      page.indexOf('label: "Agent"'),
+      page.indexOf('label: "Wrap flag type"'),
+    );
+
+    expect(managerFilter).toContain('label: "All managers"');
+    expect(agentFilter).toContain('label: "All agents"');
+    expect(managerFilter).not.toContain('kind: "combobox"');
+    expect(agentFilter).not.toContain('kind: "combobox"');
+    expect(managerFilter).toContain("value: manager.id");
+    expect(agentFilter).toContain("value: agent.id");
+  });
+
   it("uses exactly the requested four Transfer Flag headers and no fake unavailable rows", () => {
     for (const label of ["Agent", "Team", "Closed Deals This Week", "Flag Type"]) {
       expect(transferPage).toContain(`>${label}<`);

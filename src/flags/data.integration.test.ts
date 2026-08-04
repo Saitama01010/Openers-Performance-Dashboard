@@ -263,6 +263,66 @@ describe("flag data authorization and active-version integration", () => {
     expect(managerData.summary).toMatchObject({ scopedAgents: 0 });
   });
 
+  it("returns only organization-scoped Manager and Agent options for an administrator", async () => {
+    const organizationId = await createOrganization();
+    const otherOrganizationId = await createOrganization();
+    const adminId = await createProfile(organizationId, "admin");
+    const managerId = await createProfile(organizationId, "manager");
+    const agentId = await createProfile(organizationId, "agent");
+    const otherManagerId = await createProfile(otherOrganizationId, "manager");
+    const otherAgentId = await createProfile(otherOrganizationId, "agent");
+    const teamId = await createTeam(organizationId);
+    const otherTeamId = await createTeam(otherOrganizationId);
+    await assign(teamId, managerId, "manager");
+    await assign(teamId, agentId, "agent");
+    await assign(otherTeamId, otherManagerId, "manager");
+    await assign(otherTeamId, otherAgentId, "agent");
+
+    const data = await getPerformanceFlagsData(
+      actor(adminId, "admin", organizationId),
+      { dateRange: { from: week.start, to: week.end } },
+    );
+
+    expect(data.managers.map((manager) => manager.id)).toEqual([managerId]);
+    expect(data.agents.map((agent) => agent.id)).toEqual([agentId]);
+    expect(data.teams.map((team) => team.id)).toEqual([teamId]);
+  });
+
+  it("limits manager Agent options to assigned active teams and rejects a forged profile ID", async () => {
+    const organizationId = await createOrganization();
+    const managerId = await createProfile(organizationId, "manager");
+    const otherManagerId = await createProfile(organizationId, "manager");
+    const agentId = await createProfile(organizationId, "agent");
+    const otherAgentId = await createProfile(organizationId, "agent");
+    const teamId = await createTeam(organizationId);
+    const otherTeamId = await createTeam(organizationId);
+    await assign(teamId, managerId, "manager");
+    await assign(teamId, agentId, "agent");
+    await assign(otherTeamId, otherManagerId, "manager");
+    await assign(otherTeamId, otherAgentId, "agent");
+    const managerActor = actor(managerId, "manager", organizationId, [teamId]);
+
+    const data = await getPerformanceFlagsData(managerActor, {
+      dateRange: { from: week.start, to: week.end },
+    });
+
+    expect(data.managers.map((manager) => manager.id)).toEqual([managerId]);
+    expect(data.agents.map((agent) => agent.id)).toEqual([agentId]);
+    expect(data.teams.map((team) => team.id)).toEqual([teamId]);
+    await expect(
+      getPerformanceFlagsData(managerActor, {
+        dateRange: { from: week.start, to: week.end },
+        profileId: otherAgentId,
+      }),
+    ).rejects.toThrow("Forbidden");
+    await expect(
+      getPerformanceFlagsData(managerActor, {
+        dateRange: { from: week.start, to: week.end },
+        managerId: otherManagerId,
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
   it("returns only agents who actually triggered a performance flag", async () => {
     const organizationId = await createOrganization();
     const adminId = await createProfile(organizationId, "admin");

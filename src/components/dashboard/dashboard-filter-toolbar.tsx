@@ -16,6 +16,20 @@ export type DashboardFilterDefinition = {
   value?: string;
 };
 
+export function dashboardFilterHref(
+  pathname: string,
+  currentSearch: string,
+  name: string,
+  value: string,
+) {
+  const next = new URLSearchParams(currentSearch);
+  if (value) next.set(name, value);
+  else next.delete(name);
+  next.delete("page");
+  const query = next.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
 function SearchableFilter({
   disabled,
   filter,
@@ -84,12 +98,11 @@ export function DashboardFilterToolbar({
   const [isPending, startTransition] = useTransition();
 
   function updateFilter(name: string, value: string) {
-    const next = new URLSearchParams(searchParams.toString());
-    if (value) next.set(name, value);
-    else next.delete(name);
-    next.delete("page");
     startTransition(() => {
-      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+      router.replace(
+        dashboardFilterHref(pathname, searchParams.toString(), name, value),
+        { scroll: false },
+      );
     });
   }
 

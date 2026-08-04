@@ -28,6 +28,7 @@ import {
   teamMemberships,
   teams,
 } from "@/db/schema";
+import { activeProfileWhere } from "@/users/visibility";
 
 export type DashboardTotals = {
   calls: number;
@@ -314,7 +315,7 @@ async function currentManagerAgentProfileIds(actor: Actor) {
         eq(teamMemberships.active, true),
         isNull(teamMemberships.endedAt),
         visibleTeamWhere(actor),
-        eq(profiles.organizationId, actorOrganizationId(actor)),
+        activeProfileWhere(actorOrganizationId(actor)),
         eq(profiles.role, "agent"),
       ),
     );
@@ -400,7 +401,15 @@ async function getDashboardTotals(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
-    .where(scope.metricWhere);
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(
+      scope.metricWhere,
+      activeProfileWhere(actorOrganizationId(scope.actor)),
+      eq(profiles.role, "agent"),
+    ));
 
   return {
     totals: normalizeTotals(row),
@@ -441,7 +450,15 @@ async function getMetricAggregates(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
-    .where(scope.metricWhere)
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(
+      scope.metricWhere,
+      activeProfileWhere(actorOrganizationId(scope.actor)),
+      eq(profiles.role, "agent"),
+    ))
     .groupBy(dialerAgentHourlyMetrics.agentProfileId)
     .orderBy(desc(sql`sum(${dialerAgentHourlyMetrics.calls})`));
 
@@ -466,7 +483,8 @@ async function getProfilesById(profileIds: string[], actor: Actor) {
     .from(profiles)
     .where(and(
       inArray(profiles.id, profileIds),
-      eq(profiles.organizationId, actorOrganizationId(actor)),
+      activeProfileWhere(actorOrganizationId(actor)),
+      eq(profiles.role, "agent"),
     ));
 }
 
@@ -541,34 +559,29 @@ async function getAgentPerformanceRows(
   const aggregateByProfile = new Map(
     metricAggregates.map((row) => [row.profileId, row]),
   );
-  const allProfileIds = Array.from(
-    new Set([...profileIds, ...profilesById.keys()]),
-  );
+  const allProfileIds = Array.from(profilesById.keys());
   const currentTeamNames = await getCurrentTeamNames(allProfileIds, scope.actor);
 
-  const rows = allProfileIds.map((profileId) => {
+  const rows = allProfileIds.flatMap((profileId) => {
     const aggregate = aggregateByProfile.get(profileId);
     const profile = profilesById.get(profileId);
+    if (!profile) return [];
     const totals = aggregate?.totals ?? { ...EMPTY_TOTALS };
     const rates = rateMetrics(totals);
-    const agentName =
-      profile?.name ?? aggregate?.sourceAgentName ?? "Deleted user";
 
-    return {
+    return [{
       ...totals,
       ...rates,
       profileId,
-      agentName,
+      agentName: profile.name,
       teamName:
         aggregate?.teamName ??
         currentTeamNames.get(profileId)?.join(", ") ??
         "No team",
-      accountStatus: profile?.accountStatus ?? "deactivated",
+      accountStatus: profile.accountStatus,
       hasMetrics: Boolean(aggregate),
-      isLocalTestAccount: profile
-        ? localTestAccount(profile)
-        : false,
-    } satisfies DashboardAgentPerformanceRow;
+      isLocalTestAccount: localTestAccount(profile),
+    } satisfies DashboardAgentPerformanceRow];
   });
 
   return rows.sort((left, right) => {
@@ -595,9 +608,15 @@ async function getHourlyBreakdown(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
     .where(
       and(
         scope.metricWhere,
+        activeProfileWhere(actorOrganizationId(scope.actor)),
+        eq(profiles.role, "agent"),
         eq(dialerAgentHourlyMetrics.granularity, "hourly"),
       ),
     )
@@ -633,7 +652,15 @@ async function getDataFreshness(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
-    .where(scope.metricWhere);
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(
+      scope.metricWhere,
+      activeProfileWhere(actorOrganizationId(scope.actor)),
+      eq(profiles.role, "agent"),
+    ));
 
   return {
     latestMetricDate: row?.latestMetricDate

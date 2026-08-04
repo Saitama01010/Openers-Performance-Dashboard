@@ -62,6 +62,7 @@ import {
 } from "@/import/validation";
 import { newId } from "@/lib/ids";
 import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
+import { activeProfileWhere } from "@/users/visibility";
 
 export type StoredImportPreview = {
   batchId: string;
@@ -198,7 +199,7 @@ async function getMappings(source: string, actor: Actor) {
         eq(sourceUserMappings.source, source),
         eq(sourceUserMappings.active, true),
         isNull(teamMemberships.endedAt),
-        eq(profiles.organizationId, actorOrganizationId(actor)),
+        activeProfileWhere(actorOrganizationId(actor)),
         visibleTeamWhere(actor),
       ),
     );

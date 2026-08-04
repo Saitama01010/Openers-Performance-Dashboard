@@ -11,10 +11,22 @@ import {
 import {
   archiveTeamsForCleanup,
   inspectTeamCleanup,
+  teamCleanupConfirmation,
+  teamCleanupDigest,
 } from "@/admin/team-cleanup";
 import type { Actor } from "@/auth/authorization";
 import { getDb } from "@/db";
-import { auditLogs, organizations, profiles, teams } from "@/db/schema";
+import {
+  auditLogs,
+  dialerAgentHourlyMetrics,
+  dialerDatasetVersions,
+  dialerImportBatches,
+  dialerImportRows,
+  organizations,
+  profiles,
+  teamMemberships,
+  teams,
+} from "@/db/schema";
 import { newId } from "@/lib/ids";
 
 vi.mock("server-only", () => ({}));
@@ -22,6 +34,10 @@ vi.mock("server-only", () => ({}));
 const organizationIds: string[] = [];
 const profileIds: string[] = [];
 const teamIds: string[] = [];
+const importBatchIds: string[] = [];
+const versionIds: string[] = [];
+const metricIds: string[] = [];
+const importRowIds: string[] = [];
 let admin: Actor;
 
 beforeEach(async () => {
@@ -48,6 +64,22 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  if (metricIds.length > 0) {
+    await getDb().delete(dialerAgentHourlyMetrics)
+      .where(inArray(dialerAgentHourlyMetrics.id, metricIds.splice(0)));
+  }
+  if (importRowIds.length > 0) {
+    await getDb().delete(dialerImportRows)
+      .where(inArray(dialerImportRows.id, importRowIds.splice(0)));
+  }
+  if (versionIds.length > 0) {
+    await getDb().delete(dialerDatasetVersions)
+      .where(inArray(dialerDatasetVersions.id, versionIds.splice(0)));
+  }
+  if (importBatchIds.length > 0) {
+    await getDb().delete(dialerImportBatches)
+      .where(inArray(dialerImportBatches.id, importBatchIds.splice(0)));
+  }
   if (profileIds.length > 0 || teamIds.length > 0) {
     await getDb()
       .delete(auditLogs)
@@ -57,6 +89,9 @@ afterEach(async () => {
       ));
   }
   if (teamIds.length > 0) {
+    await getDb()
+      .delete(teamMemberships)
+      .where(inArray(teamMemberships.teamId, teamIds));
     await getDb().delete(teams).where(inArray(teams.id, teamIds.splice(0)));
   }
   if (profileIds.length > 0) {
@@ -160,7 +195,7 @@ describe("team production visibility and mutation safety", () => {
       .where(inArray(teams.id, [teamId]));
 
     expect(summary).toEqual([
-      expect.objectContaining({ teamId, dependentUsers: 0, metrics: 0 }),
+      expect.objectContaining({ teamId, historicalMemberships: 0, metrics: 0 }),
     ]);
     expect(unchanged.active).toBe(true);
     expect(unchanged.archivedAt).toBeNull();
@@ -170,11 +205,100 @@ describe("team production visibility and mutation safety", () => {
   it("requires exact confirmation before transactionally archiving explicit IDs", async () => {
     const teamId = await createTeam(admin, `Cleanup Execute ${newId()}`);
     teamIds.push(teamId);
+    const memberId = newId();
+    profileIds.push(memberId);
+    await getDb().insert(profiles).values({
+      id: memberId,
+      organizationId: admin.organizationId,
+      email: `${memberId}@example.test`,
+      name: "Cleanup Member",
+      role: "agent",
+      active: true,
+      accountStatus: "active",
+      passwordHash: "test-hash",
+    });
+    const membershipId = newId();
+    await getDb().insert(teamMemberships).values({
+      id: membershipId,
+      profileId: memberId,
+      teamId,
+      role: "agent",
+      active: true,
+    });
+    const importBatchId = newId();
+    const versionId = newId();
+    const metricId = newId();
+    const importRowId = newId();
+    importBatchIds.push(importBatchId);
+    versionIds.push(versionId);
+    metricIds.push(metricId);
+    importRowIds.push(importRowId);
+    await getDb().insert(dialerImportBatches).values({
+      id: importBatchId,
+      source: "dialer",
+      fileName: `cleanup-${importBatchId}.csv`,
+      fileHash: importBatchId.replaceAll("-", "").padEnd(64, "0"),
+      uploadedById: admin.id,
+      rawFileContent: "Agent,Calls\nCleanup Member,1",
+    });
+    await getDb().insert(dialerDatasetVersions).values({
+      id: versionId,
+      importBatchId,
+      scopeKey: `cleanup|${teamId}|${versionId}`,
+      source: "dialer",
+      importType: "agent_hours_performance",
+      reportingDate: "2099-08-01",
+      teamId,
+      versionNumber: 1,
+    });
+    await getDb().insert(dialerAgentHourlyMetrics).values({
+      id: metricId,
+      source: "dialer",
+      sourceAgentName: "Cleanup Member",
+      agentProfileId: memberId,
+      batchId: importBatchId,
+      versionId,
+      metricDate: "2099-08-01",
+      metricHour: 9,
+      metricKey: "09:00",
+      calls: 1,
+      teamIdSnapshot: teamId,
+      teamNameSnapshot: "Cleanup Team",
+      rowHash: metricId.replaceAll("-", "").padEnd(64, "0"),
+    });
+    await getDb().insert(dialerImportRows).values({
+      id: importRowId,
+      batchId: importBatchId,
+      versionId,
+      rowNumber: 1,
+      sourceAgentName: "Cleanup Member",
+      normalizedAgentName: "cleanup member",
+      matchedAgentProfileId: memberId,
+      metricDate: "2099-08-01",
+      metricHour: 9,
+      calls: 1,
+      teamIdSnapshot: teamId,
+      matchingStatus: "mapped",
+      validationStatus: "valid",
+    });
+    const dryRun = await inspectTeamCleanup({
+      organizationId: admin.organizationId!,
+      teamIds: [teamId],
+    });
+    expect(dryRun[0]).toMatchObject({ imports: 1, metrics: 1, importRows: 1 });
+    const expectedDigest = teamCleanupDigest(dryRun);
+    const confirmation = teamCleanupConfirmation({
+      organizationId: admin.organizationId!,
+      expectedCount: 1,
+      expectedDigest,
+    });
 
     await expect(
       archiveTeamsForCleanup({
         actorId: admin.id,
         confirmation: "ARCHIVE:wrong-id",
+        expectedCount: 1,
+        expectedDigest,
         organizationId: admin.organizationId!,
         teamIds: [teamId],
       }),
@@ -182,7 +306,9 @@ describe("team production visibility and mutation safety", () => {
 
     await archiveTeamsForCleanup({
       actorId: admin.id,
-      confirmation: `ARCHIVE:${teamId}`,
+      confirmation,
+      expectedCount: 1,
+      expectedDigest,
       organizationId: admin.organizationId!,
       teamIds: [teamId],
     });
@@ -192,6 +318,61 @@ describe("team production visibility and mutation safety", () => {
       .where(inArray(teams.id, [teamId]));
     expect(archived.active).toBe(false);
     expect(archived.archivedAt).toBeInstanceOf(Date);
-    expect(archived.deletedAt).toBeInstanceOf(Date);
+    expect(archived.deletedAt).toBeNull();
+    const [endedMembership] = await getDb()
+      .select()
+      .from(teamMemberships)
+      .where(inArray(teamMemberships.id, [membershipId]));
+    expect(endedMembership.active).toBe(false);
+    expect(endedMembership.endedAt).toBeInstanceOf(Date);
+    expect(await getDb().select({ id: dialerAgentHourlyMetrics.id })
+      .from(dialerAgentHourlyMetrics)
+      .where(inArray(dialerAgentHourlyMetrics.id, [metricId]))).toHaveLength(1);
+    expect(await getDb().select({ id: dialerImportRows.id })
+      .from(dialerImportRows)
+      .where(inArray(dialerImportRows.id, [importRowId]))).toHaveLength(1);
+  });
+
+  it("invalidates cleanup approval when dependency counts change", async () => {
+    const teamId = await createTeam(admin, `Cleanup Changed ${newId()}`);
+    teamIds.push(teamId);
+    const dryRun = await inspectTeamCleanup({
+      organizationId: admin.organizationId!,
+      teamIds: [teamId],
+    });
+    const expectedDigest = teamCleanupDigest(dryRun);
+    const confirmation = teamCleanupConfirmation({
+      organizationId: admin.organizationId!,
+      expectedCount: 1,
+      expectedDigest,
+    });
+    const memberId = newId();
+    profileIds.push(memberId);
+    await getDb().insert(profiles).values({
+      id: memberId,
+      organizationId: admin.organizationId,
+      email: `${memberId}@example.test`,
+      name: "Changed Cleanup Member",
+      role: "agent",
+      active: true,
+      accountStatus: "active",
+      passwordHash: "test-hash",
+    });
+    await getDb().insert(teamMemberships).values({
+      id: newId(),
+      profileId: memberId,
+      teamId,
+      role: "agent",
+      active: true,
+    });
+
+    await expect(archiveTeamsForCleanup({
+      actorId: admin.id,
+      confirmation,
+      expectedCount: 1,
+      expectedDigest,
+      organizationId: admin.organizationId!,
+      teamIds: [teamId],
+    })).rejects.toThrow("dependency counts changed");
   });
 });

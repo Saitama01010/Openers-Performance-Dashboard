@@ -39,7 +39,8 @@ import {
   validatePermissionOverrides,
   type PermissionOverrideInput,
 } from "@/admin/policy";
-import { parseBulkUserIds } from "@/admin/bulk-user-deletion";
+import { parseBulkUserIds, parseUserIds } from "@/admin/bulk-user-deletion";
+import { sortedIdDigest } from "@/admin/remediation-confirmation";
 import { getDb } from "@/db";
 import {
   accountInvitationTokens,
@@ -74,6 +75,7 @@ import {
   teamBelongsToActorWhere,
   visibleTeamWhere,
 } from "@/teams/visibility";
+import { activeProfileWhere } from "@/users/visibility";
 
 export type InvitationStatus =
   | "not invited"
@@ -626,18 +628,16 @@ export async function getAdminReferenceData(actor: Actor) {
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
       .where(and(
-        eq(profiles.organizationId, actorOrganizationId(actor)),
+        activeProfileWhere(actorOrganizationId(actor)),
         eq(profiles.role, "agent"),
-        eq(profiles.accountStatus, "active"),
       ))
       .orderBy(asc(profiles.name)),
     getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
       .where(and(
-        eq(profiles.organizationId, actorOrganizationId(actor)),
+        activeProfileWhere(actorOrganizationId(actor)),
         eq(profiles.role, "manager"),
-        eq(profiles.accountStatus, "active"),
       ))
       .orderBy(asc(profiles.name)),
   ]);
@@ -1032,18 +1032,40 @@ export async function bulkSendInvitations(actor: Actor, userIds: string[]) {
   return outcomes;
 }
 
-export async function permanentlyDeleteUsers(
+export type PermanentDeletionApproval = {
+  confirmation: string;
+  expectedCount: number;
+  expectedDigest: string;
+  requiredAccountStatus: "deleted";
+};
+
+export async function permanentlyDeleteValidatedUsers(
   actor: Actor,
-  input: { userIds: unknown },
+  input: { userIds: unknown; approval?: PermanentDeletionApproval },
 ) {
   assertAdmin(actor);
-  const userIds = parseBulkUserIds(input.userIds);
+  const userIds = parseUserIds(input.userIds);
 
   if (userIds.includes(actor.id.toLowerCase())) {
     throw new Error("You cannot permanently delete your own account.");
   }
 
   return getDb().transaction(async (tx) => {
+    const actorRows = await tx
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(and(
+        eq(profiles.id, actor.id),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+        eq(profiles.role, "admin"),
+        activeProfileWhere(actorOrganizationId(actor)),
+      ))
+      .limit(1)
+      .for("update");
+    if (!actorRows[0]) {
+      throw new Error("An active administrator is required.");
+    }
+
     const rows = await tx
       .select()
       .from(profiles)
@@ -1055,6 +1077,37 @@ export async function permanentlyDeleteUsers(
 
     if (rows.length !== userIds.length) {
       throw new Error("One or more selected users were not found.");
+    }
+
+    if (input.approval) {
+      const currentTargetRows = await tx
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(and(
+          eq(profiles.organizationId, actorOrganizationId(actor)),
+          eq(profiles.accountStatus, input.approval.requiredAccountStatus),
+        ))
+        .orderBy(profiles.id)
+        .for("update");
+      const currentIds = currentTargetRows.map((row) => row.id).sort();
+      const currentDigest = sortedIdDigest(currentIds);
+      const expectedConfirmation =
+        `PURGE_LEGACY_DELETED:${actorOrganizationId(actor)}:` +
+        `${input.approval.expectedCount}:${input.approval.expectedDigest}`;
+
+      if (input.approval.confirmation !== expectedConfirmation) {
+        throw new Error(`Confirmation must exactly equal ${expectedConfirmation}`);
+      }
+      if (
+        currentIds.length !== input.approval.expectedCount ||
+        currentDigest !== input.approval.expectedDigest ||
+        currentDigest !== sortedIdDigest(userIds) ||
+        rows.some((profile) => profile.accountStatus !== "deleted")
+      ) {
+        throw new Error(
+          "The legacy deleted-profile target set changed after dry run; run the dry run again.",
+        );
+      }
     }
 
     const activeAdminCount = await getActiveAdminCountForUpdate(
@@ -1257,6 +1310,15 @@ export async function permanentlyDeleteUsers(
     });
 
     return { deletedIds: userIds };
+  });
+}
+
+export async function permanentlyDeleteUsers(
+  actor: Actor,
+  input: { userIds: unknown },
+) {
+  return permanentlyDeleteValidatedUsers(actor, {
+    userIds: parseBulkUserIds(input.userIds),
   });
 }
 
@@ -2654,8 +2716,7 @@ export async function listTeams(actor: Actor) {
         and(
           eq(teamMemberships.active, true),
           isNull(teamMemberships.endedAt),
-          ne(profiles.accountStatus, "deleted"),
-          eq(profiles.organizationId, actorOrganizationId(actor)),
+          activeProfileWhere(actorOrganizationId(actor)),
           visibleTeamWhere(actor),
         ),
       )
@@ -2664,18 +2725,16 @@ export async function listTeams(actor: Actor) {
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
       .where(and(
-        eq(profiles.organizationId, actorOrganizationId(actor)),
+        activeProfileWhere(actorOrganizationId(actor)),
         eq(profiles.role, "manager"),
-        eq(profiles.accountStatus, "active"),
       ))
       .orderBy(asc(profiles.name)),
     getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
       .where(and(
-        eq(profiles.organizationId, actorOrganizationId(actor)),
+        activeProfileWhere(actorOrganizationId(actor)),
         eq(profiles.role, "agent"),
-        eq(profiles.accountStatus, "active"),
       ))
       .orderBy(asc(profiles.name)),
   ]);

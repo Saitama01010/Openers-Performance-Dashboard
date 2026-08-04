@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
 import type {
@@ -34,6 +34,7 @@ import {
   TransferSheetConfigurationError,
 } from "@/sheets/transfers";
 import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
+import { activeProfileWhere } from "@/users/visibility";
 
 export type LeaderboardFilters = {
   query?: string;
@@ -149,9 +150,8 @@ export async function listMatchableUsers(actor: Actor) {
     .leftJoin(teams, eq(teams.id, teamMemberships.teamId))
     .where(
       and(
-        ne(profiles.accountStatus, "deleted"),
-        eq(profiles.active, true),
-        eq(profiles.organizationId, actorOrganizationId(actor)),
+        activeProfileWhere(actorOrganizationId(actor)),
+        eq(profiles.role, "agent"),
         visibleTeamWhere(actor),
       ),
     );

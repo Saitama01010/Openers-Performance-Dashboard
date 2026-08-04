@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTransferFlagRows,
   calculatePerformanceFlags,
   classifyTransferFlag,
+  splitTransferFlagWeeks,
   transferFlagFromSource,
 } from "@/flags/domain";
 
@@ -46,5 +48,41 @@ describe("transfer flags", () => {
         matchedClosedDeals: undefined,
       }),
     ).toEqual({ closedDeals: null, classification: null });
+  });
+
+  it("evaluates a one-day selection from Monday through the selected day", () => {
+    expect(
+      splitTransferFlagWeeks({
+        dateRange: { from: "2026-07-28", to: "2026-07-28" },
+        availableDealDates: [],
+        today: "2026-08-04",
+      }),
+    ).toEqual([
+      { start: "2026-07-27", end: "2026-08-02", through: "2026-07-28" },
+    ]);
+  });
+
+  it("returns only flagged weekly buckets and can repeat one agent across weeks", () => {
+    const weeks = splitTransferFlagWeeks({
+      dateRange: { from: "2026-07-28", to: "2026-08-09" },
+      availableDealDates: [],
+      today: "2026-08-04",
+    });
+    const rows = buildTransferFlagRows({
+      agents: [{ id: "agent-1", name: "Agent One", teamNames: ["East"] }],
+      deals: [
+        { agentId: "agent-1", date: "2026-07-28" },
+        { agentId: "agent-1", date: "2026-08-03" },
+        { agentId: "agent-1", date: "2026-08-04" },
+      ],
+      weeks,
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.classification)).toEqual(["strong", "improvement"]);
+    expect(rows.map((row) => row.week)).toEqual([
+      { start: "2026-07-27", end: "2026-08-02" },
+      { start: "2026-08-03", end: "2026-08-09" },
+    ]);
   });
 });

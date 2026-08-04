@@ -23,7 +23,7 @@ import {
 } from "@/agents/scope";
 import type { CoachingCategory } from "@/coaching/domain";
 import { buildCoachingLeaderboardRows } from "@/coaching/leaderboard";
-import type { WeekWindow } from "@/coaching/week";
+import type { DashboardDateWindow } from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
   coachingSessionParticipants,
@@ -37,7 +37,7 @@ export type CoachingRoomFilters = {
   teamId?: string;
   agentProfileId?: string;
   category?: CoachingCategory;
-  week?: WeekWindow;
+  dateRange?: DashboardDateWindow;
   page: number;
   pageSize: number;
 };
@@ -105,10 +105,14 @@ export async function getCoachingRoomData(
       ? eq(coachingSessionParticipants.agentProfileId, filters.agentProfileId)
       : undefined,
     filters.category ? eq(coachingSessions.category, filters.category) : undefined,
-    filters.week
+    filters.dateRange
       ? and(
-          sql`${coachingSessions.sessionDate} >= ${filters.week.start}`,
-          sql`${coachingSessions.sessionDate} <= ${filters.week.end}`,
+          filters.dateRange.from
+            ? sql`${coachingSessions.sessionDate} >= ${filters.dateRange.from}`
+            : undefined,
+          filters.dateRange.to
+            ? sql`${coachingSessions.sessionDate} <= ${filters.dateRange.to}`
+            : undefined,
         )
       : undefined,
     actor.role === "admin" && filters.coachProfileId && !requestedCoachIsInvalid
@@ -254,8 +258,8 @@ export type CoachingLeaderboardSort = "coverage" | "coached" | "manager";
 export async function getCoachingLeaderboardData(
   actor: Actor,
   input: {
-    week: WeekWindow;
-    query?: string;
+    dateRange: DashboardDateWindow;
+    managerId?: string;
     teamId?: string;
     sort: CoachingLeaderboardSort;
     direction: "asc" | "desc";
@@ -269,12 +273,11 @@ export async function getCoachingLeaderboardData(
   const allTeams = uniqueScopedTeams(allAgents);
   const validTeamId =
     !input.teamId || allTeams.some((team) => team.id === input.teamId);
-  const query = input.query?.trim().toLocaleLowerCase("en-US") ?? "";
   const managers = allManagers.filter(
     (manager) =>
       validTeamId &&
       (!input.teamId || manager.teams.some((team) => team.id === input.teamId)) &&
-      (!query || manager.name.toLocaleLowerCase("en-US").includes(query)),
+      (!input.managerId || manager.id === input.managerId),
   );
   const managerIds = managers.map((manager) => manager.id);
   const participantRows =
@@ -296,8 +299,12 @@ export async function getCoachingLeaderboardData(
             and(
               eq(coachingSessions.organizationId, actorOrganizationId(actor)),
               inArray(coachingSessions.coachProfileId, managerIds),
-              sql`${coachingSessions.sessionDate} >= ${input.week.start}`,
-              sql`${coachingSessions.sessionDate} <= ${input.week.end}`,
+              input.dateRange.from
+                ? sql`${coachingSessions.sessionDate} >= ${input.dateRange.from}`
+                : undefined,
+              input.dateRange.to
+                ? sql`${coachingSessions.sessionDate} <= ${input.dateRange.to}`
+                : undefined,
               input.teamId
                 ? eq(coachingSessionParticipants.teamIdSnapshot, input.teamId)
                 : undefined,
@@ -328,5 +335,5 @@ export async function getCoachingLeaderboardData(
     return left.managerName.localeCompare(right.managerName);
   });
 
-  return { rows, teams: allTeams, filters: input };
+  return { rows, teams: allTeams, managers: allManagers, filters: input };
 }

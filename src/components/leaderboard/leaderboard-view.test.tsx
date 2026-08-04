@@ -1,7 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/leaderboard",
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const dateRange = {
   key: "this-month" as const,
@@ -31,11 +37,11 @@ describe("LeaderBoard view", () => {
     );
 
     expect(markup).toContain("Google Apps Script has not been configured");
-    expect(markup).toContain("Real Name or American Name");
+    expect(markup).toContain("All agents");
     expect(markup).toContain("All teams");
-    expect(markup).toContain("leaderboard-toolbar__control--search");
-    expect(markup).toContain("leaderboard-toolbar__control--team");
-    expect(markup).toContain('name="range"');
+    expect(markup).toContain("dashboard-filter-toolbar");
+    expect(markup).toContain('role="combobox"');
+    expect(markup).not.toContain("Apply filters");
     expect(markup).toContain("Closed Deals");
     expect(markup).toContain("Conversion Rate %");
     expect(markup).toContain("Unavailable");

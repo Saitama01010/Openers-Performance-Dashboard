@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/auth/session";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { DashboardDateFilter } from "@/components/dashboard/overview-date-filter";
 import {
   EmptyTableRow,
   PageHeader,
@@ -19,6 +20,8 @@ import {
   ProductivityMix,
 } from "@/components/dashboard/performance-visuals";
 import { getDashboardData } from "@/dashboard/data";
+import { resolveOverviewDateRange } from "@/dashboard/date-range";
+import { getEnv } from "@/env";
 import {
   formatDurationSeconds,
   formatNumber,
@@ -28,12 +31,22 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function PerformancePage() {
+export default async function PerformancePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await getCurrentUser();
 
   if (!user) redirect("/login");
 
-  const dashboard = await getDashboardData(user);
+  const params = await searchParams;
+  const dateRange = resolveOverviewDateRange(
+    params,
+    new Date(),
+    getEnv().GOOGLE_SHEETS_TIMEZONE,
+  );
+  const dashboard = await getDashboardData(user, { dateRange });
   const loggedInHours = dashboard.totals.loggedInSeconds / 3600;
   const callsPerHour =
     loggedInHours > 0 ? dashboard.totals.calls / loggedInHours : null;
@@ -47,10 +60,13 @@ export default async function PerformancePage() {
       <section className="dashboard-page">
         <PageHeader
           actions={
-            <Link className="ui-button ui-button--secondary" href="/agents">
-              View agent performance
-              <DashboardIcon name="arrowRight" />
-            </Link>
+            <>
+              <DashboardDateFilter ariaLabel="Performance date filter" pathname="/performance" range={dateRange} />
+              <Link className="ui-button ui-button--secondary" href="/agents">
+                View agent performance
+                <DashboardIcon name="arrowRight" />
+              </Link>
+            </>
           }
           description="Inspect call volume, rates, and time allocation from the same active data used on the overview."
           eyebrow="Analysis"

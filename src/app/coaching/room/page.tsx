@@ -9,12 +9,14 @@ import {
   type CoachingCategory,
 } from "@/coaching/domain";
 import { getCoachingRoomData } from "@/coaching/data";
-import { resolveWeekWindow } from "@/coaching/week";
+import { DashboardFilterToolbar } from "@/components/dashboard/dashboard-filter-toolbar";
+import { DashboardDateFilter } from "@/components/dashboard/overview-date-filter";
 import {
   EmptyTableRow,
   StatusBadge,
   TableScroll,
 } from "@/components/dashboard/dashboard-primitives";
+import { resolveOverviewDateRange } from "@/dashboard/date-range";
 import { getEnv } from "@/env";
 import { dateKeyInTimeZone } from "@/sheets/timestamp";
 
@@ -50,7 +52,11 @@ export default async function CoachingRoomPage({
   if (!actor) redirect("/login");
   if (actor.role === "agent") redirect("/flags");
   const params = await searchParams;
-  const weekValue = first(params.week)?.trim() || undefined;
+  const dateRange = resolveOverviewDateRange(
+    params,
+    new Date(),
+    getEnv().GOOGLE_SHEETS_TIMEZONE,
+  );
   const page = Math.max(
     1,
     Math.floor(Number(first(params.page) ?? "1") || 1),
@@ -60,7 +66,7 @@ export default async function CoachingRoomPage({
     teamId: first(params.team)?.trim() || undefined,
     agentProfileId: first(params.agent)?.trim() || undefined,
     category: category(first(params.category)),
-    week: weekValue ? resolveWeekWindow(weekValue) : undefined,
+    dateRange,
     page,
     pageSize: 20,
   });
@@ -84,56 +90,62 @@ export default async function CoachingRoomPage({
           coaches={data.coaches}
           today={dateKeyInTimeZone(new Date(), timeZone)}
         />
+        <DashboardDateFilter
+          ariaLabel="Coaching Room date filter"
+          pathname="/coaching/room"
+          range={dateRange}
+        />
       </div>
 
-      <form className="feature-filter-grid" method="get">
-        {actor.role === "admin" ? (
-          <label className="ui-label">
-            Coach
-            <select className="ui-select" defaultValue={first(params.coach) ?? ""} name="coach">
-              <option value="">All coaches</option>
-              {data.coaches.map((coach) => (
-                <option key={coach.id} value={coach.id}>{coach.name}</option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        <label className="ui-label">
-          Team
-          <select className="ui-select" defaultValue={first(params.team) ?? ""} name="team">
-            <option value="">All authorized teams</option>
-            {data.teams.map((team) => (
-              <option key={team.id} value={team.id}>{team.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="ui-label">
-          Agent
-          <select className="ui-select" defaultValue={first(params.agent) ?? ""} name="agent">
-            <option value="">All authorized agents</option>
-            {data.agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>{agent.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="ui-label">
-          Category
-          <select className="ui-select" defaultValue={first(params.category) ?? ""} name="category">
-            <option value="">All categories</option>
-            {COACHING_CATEGORIES.map((item) => (
-              <option key={item} value={item}>{COACHING_CATEGORY_LABELS[item]}</option>
-            ))}
-          </select>
-        </label>
-        <label className="ui-label">
-          Week containing
-          <input className="ui-input" defaultValue={weekValue ?? ""} name="week" type="date" />
-        </label>
-        <div className="feature-filter-grid__actions">
-          <button className="ui-button ui-button--primary" type="submit">Apply filters</button>
-          <Link className="ui-button ui-button--secondary" href="/coaching/room">Clear</Link>
-        </div>
-      </form>
+      <DashboardFilterToolbar
+        ariaLabel="Coaching Room filters"
+        filters={[
+          ...(actor.role === "admin" ? [{
+            kind: "combobox" as const,
+            label: "Coach",
+            name: "coach",
+            value: first(params.coach),
+            options: [
+              { label: "All coaches", value: "" },
+              ...data.coaches.map((coach) => ({ label: coach.name, value: coach.id })),
+            ],
+          }] : []),
+          {
+            label: "Team",
+            name: "team",
+            value: first(params.team),
+            options: [
+              { label: "All teams", value: "" },
+              ...data.teams.map((team) => ({ label: team.name, value: team.id })),
+            ],
+          },
+          {
+            kind: "combobox",
+            label: "Agent",
+            name: "agent",
+            value: first(params.agent),
+            options: [
+              { label: "All agents", value: "" },
+              ...data.agents.map((agent) => ({
+                label: `${agent.name} — ${agent.teams.map((team) => team.name).join(", ") || "Unassigned"}`,
+                value: agent.id,
+              })),
+            ],
+          },
+          {
+            label: "Category",
+            name: "category",
+            value: first(params.category),
+            options: [
+              { label: "All categories", value: "" },
+              ...COACHING_CATEGORIES.map((item) => ({
+                label: COACHING_CATEGORY_LABELS[item],
+                value: item,
+              })),
+            ],
+          },
+        ]}
+      />
 
       <section className="ui-card">
         <div className="ui-card__header">

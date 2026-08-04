@@ -106,8 +106,8 @@ export type TransferSummaryData =
     }
   | {
       status: "ready";
-      comparisonLabel: string;
-      comparisonTransfers: number;
+      comparisonLabel: string | null;
+      comparisonTransfers: number | null;
       diagnosticCount: number;
       totalTransfers: number;
     };
@@ -360,13 +360,15 @@ export async function getTransferSummary(
         dateRange,
         ingestion.timeZone,
       ),
-      comparisonTransfers: countScopedTransfers(
-        ingestion.matches,
-        actor,
-        dateRange.comparison,
-        ingestion.timeZone,
-      ),
-      comparisonLabel: dateRange.comparison.label,
+      comparisonTransfers: dateRange.comparison
+        ? countScopedTransfers(
+            ingestion.matches,
+            actor,
+            dateRange.comparison,
+            ingestion.timeZone,
+          )
+        : null,
+      comparisonLabel: dateRange.comparison?.label ?? null,
       diagnosticCount: ingestion.diagnostics.length,
     };
   } catch (error) {

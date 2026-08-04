@@ -288,9 +288,12 @@ function scopeForDateWindow(
   scope: DashboardScope,
   window: DashboardDateWindow,
 ): DashboardScope {
+  if (!window.from && !window.to) return scope;
   const dateWhere = and(
-    gte(dialerAgentHourlyMetrics.metricDate, window.from),
-    lte(dialerAgentHourlyMetrics.metricDate, window.to),
+    window.from
+      ? gte(dialerAgentHourlyMetrics.metricDate, window.from)
+      : undefined,
+    window.to ? lte(dialerAgentHourlyMetrics.metricDate, window.to) : undefined,
   );
 
   return {
@@ -703,7 +706,7 @@ export async function getDashboardData(
   const scope = options.dateRange
     ? scopeForDateWindow(baseScope, options.dateRange)
     : baseScope;
-  const comparisonScope = options.dateRange
+  const comparisonScope = options.dateRange?.comparison
     ? scopeForDateWindow(baseScope, options.dateRange.comparison)
     : null;
   const baseTotalsPromise = getDashboardTotals(baseScope);
@@ -740,7 +743,7 @@ export async function getDashboardData(
     dataFreshness,
     reconciliation: reconcileAgentRows(totals, agentRows),
     comparison:
-      options.dateRange && comparisonResult
+      options.dateRange?.comparison && comparisonResult
         ? {
             hasData: comparisonResult.totals.rowCount > 0,
             label: options.dateRange.comparison.label,

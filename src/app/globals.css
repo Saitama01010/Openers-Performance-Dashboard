@@ -1334,6 +1334,7 @@ input[type="file"]:not(:disabled) {
 
 .overview-date-filter__option {
   align-items: center;
+  background: transparent;
   border: 1px solid transparent;
   border-radius: calc(var(--radius-sm) - 1px);
   color: var(--muted);
@@ -1349,6 +1350,18 @@ input[type="file"]:not(:disabled) {
     border-color var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+button.overview-date-filter__option {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.overview-date-filter__pending {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  margin-inline: 0.35rem;
   white-space: nowrap;
 }
 
@@ -1407,8 +1420,19 @@ input[type="file"]:not(:disabled) {
   width: 100%;
 }
 
-.overview-date-filter__popover .ui-button {
+.overview-date-filter__error,
+.overview-date-filter__hint {
   grid-column: 1 / -1;
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.overview-date-filter__error {
+  color: var(--danger);
+}
+
+.overview-date-filter__hint {
+  color: var(--muted);
 }
 
 .overview-date-filter__custom[open] .overview-date-filter__popover {
@@ -3486,6 +3510,34 @@ input[type="file"]:not(:disabled) {
   gap: 0.5rem;
 }
 
+.dashboard-filter-toolbar {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.dashboard-filter-toolbar__control {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.72rem;
+  font-weight: 700;
+  gap: 0.3rem;
+  min-width: 10rem;
+}
+
+.dashboard-filter-toolbar__control .ui-input,
+.dashboard-filter-toolbar__control .ui-select {
+  min-height: 2.35rem;
+}
+
+.dashboard-filter-toolbar__pending {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+  min-width: 4.5rem;
+}
+
 .feature-filter-grid {
   align-items: end;
   background: var(--surface);
@@ -3504,8 +3556,96 @@ input[type="file"]:not(:disabled) {
 }
 
 .feature-dialog {
-  max-width: 38rem;
+  max-width: min(54rem, calc(100vw - 2rem));
   overflow-y: auto;
+  width: min(54rem, calc(100vw - 2rem));
+}
+
+.feature-agent-picker {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 0.75rem;
+  max-height: min(23rem, 45vh);
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+
+.feature-agent-picker__toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.feature-agent-picker__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.feature-agent-picker__group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.feature-agent-picker__group h3 {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.feature-agent-picker__option {
+  align-items: start;
+  border-radius: var(--radius-sm);
+  display: grid;
+  font-size: 0.85rem;
+  gap: 0.1rem 0.55rem;
+  grid-template-columns: auto 1fr;
+  padding: 0.45rem;
+}
+
+.feature-agent-picker__option:hover {
+  background: var(--surface-subtle);
+}
+
+.feature-agent-picker__option input {
+  margin-top: 0.2rem;
+}
+
+.feature-agent-picker__option span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  grid-column: 2;
+}
+
+.coverage-progress {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 8rem;
+}
+
+.coverage-progress__track {
+  background: var(--surface-subtle);
+  border-radius: 999px;
+  height: 0.45rem;
+  overflow: hidden;
+}
+
+.coverage-progress__fill {
+  animation: coverage-progress-fill 650ms var(--ease-out) both;
+  background: var(--primary);
+  border-radius: inherit;
+  height: 100%;
+  transform-origin: left;
+}
+
+@keyframes coverage-progress-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 
 .feature-form {
@@ -3637,6 +3777,11 @@ input[type="file"]:not(:disabled) {
     justify-content: center;
     width: 100%;
   }
+
+  .dashboard-filter-toolbar,
+  .dashboard-filter-toolbar__control {
+    width: 100%;
+  }
 }
 
 @media (max-width: 20rem) {
@@ -3708,5 +3853,9 @@ input[type="file"]:not(:disabled) {
   .quick-actions svg,
   .table-row-link svg {
     transition: none;
+  }
+
+  .coverage-progress__fill {
+    animation: none;
   }
 }

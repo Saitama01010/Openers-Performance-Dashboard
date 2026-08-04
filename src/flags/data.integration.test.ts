@@ -15,6 +15,7 @@ import {
   teams,
 } from "@/db/schema";
 import { getPerformanceFlagsData, getTransferFlagsData } from "@/flags/data";
+import { resetEnvForTests } from "@/env";
 import { newId } from "@/lib/ids";
 
 vi.mock("server-only", () => ({}));
@@ -91,6 +92,8 @@ function actor(
 async function insertActiveAndInactiveMetrics(input: {
   agentId: string;
   teamId: string;
+  wrapSeconds?: number;
+  pausedSeconds?: number;
 }) {
   const activeVersionId = newId();
   const inactiveVersionId = newId();
@@ -142,9 +145,9 @@ async function insertActiveAndInactiveMetrics(input: {
       metricHour: 9,
       metricKey: "active",
       talkSeconds: 3600,
-      wrapSeconds: 420,
+      wrapSeconds: input.wrapSeconds ?? 420,
       readySeconds: 0,
-      pausedSeconds: 480,
+      pausedSeconds: input.pausedSeconds ?? 480,
       teamIdSnapshot: input.teamId,
       teamNameSnapshot: "Flags Team",
       rowHash: "a".repeat(64),
@@ -221,7 +224,7 @@ describe("flag data authorization and active-version integration", () => {
     const data = await getPerformanceFlagsData(
       actor(agentId, "agent", organizationId, [teamId]),
       {
-        week,
+        dateRange: { from: week.start, to: week.end },
         profileId: agentId,
         teamId: otherTeamId,
         managerId: "another-manager",
@@ -229,15 +232,7 @@ describe("flag data authorization and active-version integration", () => {
       },
     );
 
-    expect(data.rows).toHaveLength(1);
-    expect(data.rows[0]).toMatchObject({
-      agentId,
-      talkSeconds: 3600,
-      wrapSeconds: 420,
-      wrapFlag: false,
-      pauseFlag: false,
-      status: "No active flags",
-    });
+    expect(data.rows).toEqual([]);
     expect(data.summary).toBeNull();
     expect(data.agents).toEqual([]);
     expect(data.teams).toEqual([]);
@@ -256,35 +251,64 @@ describe("flag data authorization and active-version integration", () => {
 
     await expect(
       getPerformanceFlagsData(actor(agentId, "agent", organizationId), {
-        week,
+        dateRange: { from: week.start, to: week.end },
         profileId: "00000000-0000-0000-0000-000000000000",
       }),
     ).rejects.toThrow("Forbidden");
     const managerData = await getPerformanceFlagsData(
       actor(managerId, "manager", organizationId),
-      { week },
+      { dateRange: { from: week.start, to: week.end } },
     );
     expect(managerData.rows).toEqual([]);
     expect(managerData.summary).toMatchObject({ scopedAgents: 0 });
   });
 
+  it("returns only agents who actually triggered a performance flag", async () => {
+    const organizationId = await createOrganization();
+    const adminId = await createProfile(organizationId, "admin");
+    const flaggedId = await createProfile(organizationId, "agent");
+    const unflaggedId = await createProfile(organizationId, "agent");
+    const teamId = await createTeam(organizationId);
+    await assign(teamId, flaggedId, "agent");
+    await assign(teamId, unflaggedId, "agent");
+    await insertActiveAndInactiveMetrics({
+      agentId: flaggedId,
+      teamId,
+      wrapSeconds: 421,
+    });
+    await insertActiveAndInactiveMetrics({ agentId: unflaggedId, teamId });
+
+    const data = await getPerformanceFlagsData(
+      actor(adminId, "admin", organizationId),
+      { dateRange: { from: week.start, to: week.end } },
+    );
+
+    expect(data.rows).toHaveLength(1);
+    expect(data.rows[0]).toMatchObject({
+      agentId: flaggedId,
+      wrapFlag: true,
+      pauseFlag: false,
+    });
+  });
+
   it("does not turn a Closed source failure into a false zero-deal Strong Flag", async () => {
     const organizationId = await createOrganization();
     const agentId = await createProfile(organizationId, "agent");
-
+    const endpoint = process.env.GOOGLE_TRANSFERS_APPS_SCRIPT_URL;
+    const secret = process.env.LEADERBOARD_API_SECRET;
+    process.env.GOOGLE_TRANSFERS_APPS_SCRIPT_URL = "";
+    process.env.LEADERBOARD_API_SECRET = "";
+    resetEnvForTests();
     const data = await getTransferFlagsData(
       actor(agentId, "agent", organizationId),
-      { week },
-    );
+      { dateRange: { from: week.start, to: week.end } },
+    ).finally(() => {
+      process.env.GOOGLE_TRANSFERS_APPS_SCRIPT_URL = endpoint;
+      process.env.LEADERBOARD_API_SECRET = secret;
+      resetEnvForTests();
+    });
     expect(data.source.status).toBe("unavailable");
-    expect(data.rows).toEqual([
-      expect.objectContaining({
-        agentId,
-        closedDeals: null,
-        classification: null,
-        sourceStatus: "unavailable",
-      }),
-    ]);
+    expect(data.rows).toEqual([]);
     expect(data.summary).toBeNull();
     expect(data.agents).toEqual([]);
     expect(data.teams).toEqual([]);

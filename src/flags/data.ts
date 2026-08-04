@@ -10,7 +10,7 @@ import {
   uniqueScopedTeams,
   type ScopedAgent,
 } from "@/agents/scope";
-import type { WeekWindow } from "@/coaching/week";
+import type { DashboardDateWindow } from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
   dialerAgentHourlyMetrics,
@@ -19,8 +19,9 @@ import {
 } from "@/db/schema";
 import {
   calculatePerformanceFlags,
+  buildTransferFlagRows,
   PAUSE_MINUTES_PER_NET_HOUR_LIMIT,
-  transferFlagFromSource,
+  splitTransferFlagWeeks,
   WRAP_MINUTES_PER_TALK_HOUR_LIMIT,
   type TransferFlagClassification,
 } from "@/flags/domain";
@@ -37,7 +38,7 @@ import { actorOrganizationId } from "@/teams/visibility";
 import { activeProfileWhere } from "@/users/visibility";
 
 export type FlagFilters = {
-  week: WeekWindow;
+  dateRange: DashboardDateWindow;
   teamId?: string;
   managerId?: string;
   profileId?: string;
@@ -124,8 +125,18 @@ export async function getPerformanceFlagsData(
           .where(
             and(
               inArray(dialerAgentHourlyMetrics.agentProfileId, agentIds),
-              gte(dialerAgentHourlyMetrics.metricDate, safeFilters.week.start),
-              lte(dialerAgentHourlyMetrics.metricDate, safeFilters.week.end),
+              safeFilters.dateRange.from
+                ? gte(
+                    dialerAgentHourlyMetrics.metricDate,
+                    safeFilters.dateRange.from,
+                  )
+                : undefined,
+              safeFilters.dateRange.to
+                ? lte(
+                    dialerAgentHourlyMetrics.metricDate,
+                    safeFilters.dateRange.to,
+                  )
+                : undefined,
               activeProfileWhere(actorOrganizationId(actor)),
               eq(profiles.role, "agent"),
             ),
@@ -155,7 +166,7 @@ export async function getPerformanceFlagsData(
         agentId: agent.id,
         agentName: agent.name,
         teamNames: agent.teams.map((team) => team.name),
-        week: safeFilters.week,
+        dateRange: safeFilters.dateRange,
         ...metrics,
         ...result,
         wrapThreshold: WRAP_MINUTES_PER_TALK_HOUR_LIMIT,
@@ -169,11 +180,9 @@ export async function getPerformanceFlagsData(
       };
     })
     .filter((row) => {
-      if (actor.role === "agent") return true;
       if (safeFilters.wrap === "flagged" && !row.wrapFlag) return false;
       if (safeFilters.pause === "flagged" && !row.pauseFlag) return false;
-      if (safeFilters.flaggedOnly && row.triggeredFlags.length === 0) return false;
-      return true;
+      return row.triggeredFlags.length > 0;
     });
   const summary =
     !canViewAggregateFlagSummary(actor)
@@ -206,7 +215,7 @@ export async function getTransferFlagsData(
   let source:
     | { status: "ready"; message: null; timeZone: string }
     | { status: "unavailable"; message: string; timeZone: string | null };
-  let counts = new Map<string, number>();
+  const matchedDeals: Array<{ agentId: string; date: string }> = [];
 
   if (!config) {
     source = {
@@ -223,19 +232,18 @@ export async function getTransferFlagsData(
         config,
       );
       if (ingestion.status === "ready") {
-        counts = new Map(roster.agents.map((agent) => [agent.id, 0]));
+        const allowedAgentIds = new Set(roster.agents.map((agent) => agent.id));
         for (const deal of ingestion.closedRecords) {
           if (
             deal.matchStatus !== "matched" ||
             !deal.matchedUserId ||
             !deal.timestamp ||
-            !counts.has(deal.matchedUserId)
+            !allowedAgentIds.has(deal.matchedUserId)
           ) {
             continue;
           }
           const date = dateKeyInTimeZone(deal.timestamp, ingestion.timeZone);
-          if (date < safeFilters.week.start || date > safeFilters.week.end) continue;
-          counts.set(deal.matchedUserId, (counts.get(deal.matchedUserId) ?? 0) + 1);
+          matchedDeals.push({ agentId: deal.matchedUserId, date });
         }
         source = { status: "ready", message: null, timeZone: ingestion.timeZone };
       } else {
@@ -254,28 +262,33 @@ export async function getTransferFlagsData(
     }
   }
 
-  const rows = roster.agents
-    .map((agent) => {
-      const { closedDeals, classification } = transferFlagFromSource({
-        sourceAvailable: source.status === "ready",
-        matchedClosedDeals: counts.get(agent.id),
-      });
-      return {
-        agentId: agent.id,
-        agentName: agent.name,
-        teamNames: agent.teams.map((team) => team.name),
-        week: safeFilters.week,
-        closedDeals,
-        classification,
-        sourceStatus: source.status,
-      };
-    })
-    .filter(
-      (row) =>
-        actor.role === "agent" ||
-        !safeFilters.classification ||
-        row.classification === safeFilters.classification,
-    );
+  const today = dateKeyInTimeZone(
+    new Date(),
+    source.timeZone ?? config?.timeZone ?? "Africa/Cairo",
+  );
+  const weeks = splitTransferFlagWeeks({
+    dateRange: safeFilters.dateRange,
+    availableDealDates: matchedDeals.map((deal) => deal.date),
+    today,
+  });
+
+  const rows = source.status === "ready"
+    ? buildTransferFlagRows({
+        agents: roster.agents.map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          teamNames: agent.teams.map((team) => team.name),
+        })),
+        deals: matchedDeals,
+        weeks,
+      })
+        .filter(
+          (row) =>
+            !safeFilters.classification ||
+            row.classification === safeFilters.classification,
+        )
+        .map((row) => ({ ...row, sourceStatus: source.status }))
+    : [];
   const summary =
     !canViewAggregateFlagSummary(actor) || source.status !== "ready"
       ? null
@@ -285,7 +298,6 @@ export async function getTransferFlagsData(
           improvementFlags: rows.filter(
             (row) => row.classification === "improvement",
           ).length,
-          noFlags: rows.filter((row) => row.classification === "none").length,
         };
 
   return {

@@ -5,14 +5,14 @@ import {
   enforceFlagRequestScope,
 } from "@/flags/authorization";
 
-const week = { start: "2026-08-03", end: "2026-08-09" };
+const dateRange = { from: "2026-08-03", to: "2026-08-09" };
 
 describe("agent flag request scope", () => {
   it("forces self-only scope and strips team and manager filters", () => {
     expect(
       enforceFlagRequestScope(
         { id: "agent-1", role: "agent", teamIds: ["team-1"] },
-        { week, profileId: "agent-1", teamId: "team-2", managerId: "manager-2" },
+        { dateRange, profileId: "agent-1", teamId: "team-2", managerId: "manager-2" },
       ),
     ).toMatchObject({ profileId: "agent-1", teamId: undefined, managerId: undefined });
   });
@@ -21,7 +21,7 @@ describe("agent flag request scope", () => {
     expect(() =>
       enforceFlagRequestScope(
         { id: "agent-1", role: "agent", teamIds: [] },
-        { week, profileId: "agent-2" },
+        { dateRange, profileId: "agent-2" },
       ),
     ).toThrow("Forbidden");
   });

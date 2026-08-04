@@ -1,8 +1,8 @@
 import type { Actor } from "@/auth/authorization";
-import type { WeekWindow } from "@/coaching/week";
+import type { DashboardDateWindow } from "@/dashboard/date-range";
 
 type AgentScopedFlagFilters = {
-  week: WeekWindow;
+  dateRange: DashboardDateWindow;
   teamId?: string;
   managerId?: string;
   profileId?: string;

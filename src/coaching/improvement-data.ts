@@ -20,8 +20,8 @@ import {
   calendarDayDifference,
   coachingMeasurementWindows,
   isPostCoachingWindowComplete,
-  type WeekWindow,
 } from "@/coaching/week";
+import type { DashboardDateWindow } from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
   coachingSessionParticipants,
@@ -56,7 +56,7 @@ const EMPTY_METRICS: MetricTotals = {
 export async function getCoachingImprovementData(
   actor: Actor,
   input: {
-    week: WeekWindow;
+    dateRange: DashboardDateWindow;
     teamId?: string;
     managerId?: string;
     now?: Date;
@@ -111,11 +111,18 @@ export async function getCoachingImprovementData(
             desc(coachingSessions.id),
           );
   const latestByAgent = new Map<string, (typeof sessionRows)[number]>();
-  const coachedThisWeek = new Set<string>();
+  const latestSelectedByAgent = new Map<string, (typeof sessionRows)[number]>();
+  const coachedInRange = new Set<string>();
   for (const row of sessionRows) {
     const sessionDate = String(row.sessionDate);
-    if (sessionDate >= input.week.start && sessionDate <= input.week.end) {
-      coachedThisWeek.add(row.agentProfileId);
+    const selected =
+      (!input.dateRange.from || sessionDate >= input.dateRange.from) &&
+      (!input.dateRange.to || sessionDate <= input.dateRange.to);
+    if (selected) {
+      coachedInRange.add(row.agentProfileId);
+      if (!latestSelectedByAgent.has(row.agentProfileId)) {
+        latestSelectedByAgent.set(row.agentProfileId, row);
+      }
     }
     if (!latestByAgent.has(row.agentProfileId)) {
       latestByAgent.set(row.agentProfileId, row);
@@ -128,7 +135,7 @@ export async function getCoachingImprovementData(
   );
   const managerNames = new Map(managers.map((manager) => [manager.id, manager.name]));
   const overdue = agents
-    .filter((agent) => !coachedThisWeek.has(agent.id))
+    .filter((agent) => !coachedInRange.has(agent.id))
     .map((agent) => {
       const last = latestByAgent.get(agent.id);
       return {
@@ -148,7 +155,7 @@ export async function getCoachingImprovementData(
       };
     });
 
-  const latestSessions = Array.from(latestByAgent.values());
+  const latestSessions = Array.from(latestSelectedByAgent.values());
   const windows = latestSessions.map((session) => ({
     agentId: session.agentProfileId,
     ...coachingMeasurementWindows(String(session.sessionDate)),

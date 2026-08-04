@@ -1050,7 +1050,7 @@ input[type="file"]:not(:disabled) {
 }
 
 .import-history-table {
-  min-width: 88rem;
+  min-width: 54rem;
 }
 
 .import-history-table th,
@@ -1068,21 +1068,6 @@ input[type="file"]:not(:disabled) {
   white-space: nowrap;
 }
 
-.import-history-table__file {
-  max-width: 18rem;
-  min-width: 12rem;
-}
-
-.import-history-file__name {
-  display: -webkit-box;
-  font-weight: 600;
-  line-height: 1.25;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .import-history-actions {
   align-items: flex-start;
   display: flex;
@@ -1092,6 +1077,12 @@ input[type="file"]:not(:disabled) {
 
 .import-history-actions form {
   flex: 0 0 auto;
+}
+
+.import-delete-dialog {
+  max-width: 24rem;
+  overflow-x: hidden;
+  white-space: normal;
 }
 
 .empty-table-cell {

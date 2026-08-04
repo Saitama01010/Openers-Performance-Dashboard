@@ -97,47 +97,27 @@ export default async function AdminImportsPage({
             <caption>Permanent dialer CSV import history</caption>
             <thead>
               <tr>
-                <th scope="col">Uploaded</th>
-                <th scope="col">File</th>
+                <th scope="col">Uploaded Date</th>
                 <th scope="col">Type</th>
-                <th scope="col">Reporting period</th>
-                <th scope="col">Team</th>
-                <th scope="col">Uploaded by</th>
-                <th scope="col">Rows</th>
-                <th scope="col">Matched</th>
-                <th scope="col">Unmatched</th>
+                <th scope="col">Reporting Period</th>
+                <th scope="col">Uploaded By</th>
                 <th scope="col">Status</th>
                 <th scope="col">Published</th>
-                <th scope="col">Active</th>
-                <th scope="col">Rollback</th>
                 <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
               {history.rows.length === 0 ? (
                 <EmptyTableRow
-                  colSpan={14}
+                  colSpan={7}
                   description="Upload a CSV to create the first permanent import record."
                   title="No imports"
                 />
               ) : (
                 history.rows.map((row) => (
                   <tr key={row.id}>
-                    <td className="import-history-table__date">{fmt(row.uploadedAt)}</td>
-                    <td className="import-history-table__file">
-                      <span
-                        aria-label={`File: ${row.fileName}`}
-                        className="import-history-file__name"
-                        title={row.fileName}
-                      >
-                        {row.fileName}
-                      </span>
-                      <span className="block font-mono text-xs text-muted">
-                        {row.fileHash.slice(0, 12)}…
-                      </span>
-                      <span className="block text-xs text-muted">
-                        {row.fileSizeBytes.toLocaleString("en-US")} stored bytes
-                      </span>
+                    <td className="import-history-table__date">
+                      {fmt(row.uploadedAt)}
                     </td>
                     <td>
                       <span className="block">
@@ -153,44 +133,21 @@ export default async function AdminImportsPage({
                         row.reportingEndDate,
                       )}
                     </td>
-                    <td>{row.teams.join(", ") || "-"}</td>
                     <td>{row.uploadedBy}</td>
-                    <td className="numeric">
-                      <span className="block font-mono">{row.rowCount}</span>
-                      <span className="block text-xs text-muted">
-                        {row.deletion.counts.totalRecords} cleanup records
-                      </span>
-                    </td>
-                    <td className="font-mono numeric">{row.matchedAgentCount}</td>
-                    <td className="font-mono numeric">{row.unmatchedAgentCount}</td>
                     <td>
                       <StatusBadge tone={statusTone(row.status)}>
                         {importStatusLabel(row.status)}
                       </StatusBadge>
                     </td>
                     <td className="import-history-table__date">{fmt(row.publishedAt)}</td>
-                    <td>{row.activeVersionCount > 0 ? "Yes" : "No"}</td>
-                    <td>{row.rollbackStatus ?? "-"}</td>
                     <td className="import-history-table__actions">
                       <div className="import-history-actions">
-                        <ImportDeleteForm
-                          assessment={row.deletion}
-                          batchId={row.id}
-                          compactTrigger
-                          dialer={row.dialerId ?? "Default"}
-                          fileName={row.fileName}
-                          importType={row.importType}
-                          lifecycle={lifecycleByBatchId.get(row.id)}
-                          reportingPeriod={reportingPeriod(
-                            row.reportingStartDate,
-                            row.reportingEndDate,
-                          )}
-                          returnPage={history.page}
-                          rowCount={row.rowCount}
-                          status={row.status}
-                          team={row.teams.join(", ") || "Company"}
-                          uploadDate={fmt(row.uploadedAt)}
-                        />
+                        <Link
+                          className="ui-button ui-button--secondary ui-button--compact"
+                          href={`/admin/imports/${row.id}`}
+                        >
+                          View Details
+                        </Link>
                         {lifecycleByBatchId.get(row.id)?.canDeactivate ? (
                           <ActiveImportDialog
                             batchId={row.id}
@@ -211,12 +168,12 @@ export default async function AdminImportsPage({
                             uploadDate={fmt(row.uploadedAt)}
                           />
                         ) : null}
-                        <Link
-                          className="ui-button ui-button--secondary ui-button--compact"
-                          href={`/admin/imports/${row.id}`}
-                        >
-                          View Details
-                        </Link>
+                        <ImportDeleteForm
+                          assessment={row.deletion}
+                          batchId={row.id}
+                          compactTrigger
+                          returnPage={history.page}
+                        />
                       </div>
                     </td>
                   </tr>

@@ -82,6 +82,15 @@ export default async function AdminUsersPage({
       getUnmappedDialerNames(actor),
     ]);
   const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));
+  const userQueryKey = JSON.stringify({
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    q: params.q ?? "",
+    role: params.role ?? "",
+    status: params.status ?? "",
+    invitation: params.invitation ?? "",
+    teamId: params.teamId ?? "",
+  });
 
   return (
     <section className="dashboard-page space-y-6">
@@ -159,13 +168,14 @@ export default async function AdminUsersPage({
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="font-semibold">Accounts</h2>
           <p className="text-sm text-muted">
-            Page {pagination.page} of {totalPages}, {pagination.total} total
+            Page {pagination.page} of {totalPages} · {pagination.total} users
           </p>
         </div>
         {users.length === 0 ? (
           <p className="p-5 text-sm text-muted">No users match the current filters.</p>
         ) : (
           <AdminUserTable
+            key={userQueryKey}
             activeTeams={referenceData.teams
               .filter((team) => team.active)
               .map((team) => ({ id: team.id, name: team.name }))}

@@ -13,7 +13,7 @@ jobs:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_DATABASE: openers_dashboard
+          MYSQL_DATABASE: openers_dashboard_test
           MYSQL_USER: openers
           MYSQL_PASSWORD: openers_password
           MYSQL_ROOT_PASSWORD: root_password
@@ -25,7 +25,9 @@ jobs:
           --health-timeout=5s
           --health-retries=12
     env:
-      DATABASE_URL: mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard
+      DATABASE_URL: mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard_test
+      DATABASE_ENVIRONMENT: test
+      DEPLOYMENT_ENVIRONMENT: test
       SESSION_SECRET: ci-only-session-secret-at-least-32-characters
       APP_URL: http://localhost:3000
       EMAIL_PROVIDER: console

@@ -4,6 +4,11 @@ export type Actor = {
   id: string;
   role: Role;
   teamIds: string[];
+  /**
+   * Older internal callers omit this and are scoped to the migrated default
+   * organization. Authenticated requests always receive the persisted value.
+   */
+  organizationId?: string;
 };
 
 export type ScopedProfile = {

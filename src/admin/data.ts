@@ -4,6 +4,7 @@ import {
   and,
   asc,
   count,
+  countDistinct,
   desc,
   eq,
   gt,
@@ -38,12 +39,16 @@ import {
   validatePermissionOverrides,
   type PermissionOverrideInput,
 } from "@/admin/policy";
-import { parseBulkUserIds } from "@/admin/bulk-user-deletion";
+import { parseBulkUserIds, parseUserIds } from "@/admin/bulk-user-deletion";
+import { sortedIdDigest } from "@/admin/remediation-confirmation";
 import { getDb } from "@/db";
 import {
   accountInvitationTokens,
   auditLogs,
+  dialerAgentHourlyMetrics,
+  dialerDatasetVersions,
   dialerImportBatches,
+  dialerImportRows,
   emailDeliveryAttempts,
   importErrors,
   passwordResetTokens,
@@ -52,6 +57,8 @@ import {
   sourceUserMappings,
   teamMemberships,
   teams,
+  transfersFixtures,
+  userImportBatches,
   userPermissionOverrides,
 } from "@/db/schema";
 import { getEnv } from "@/env";
@@ -62,6 +69,13 @@ import {
   passwordResetEmail,
 } from "@/email/provider";
 import { newId } from "@/lib/ids";
+import {
+  actorOrganizationId,
+  normalizeTeamName,
+  teamBelongsToActorWhere,
+  visibleTeamWhere,
+} from "@/teams/visibility";
+import { activeProfileWhere } from "@/users/visibility";
 
 export type InvitationStatus =
   | "not invited"
@@ -235,6 +249,7 @@ async function writeAudit(input: {
 
 async function getActiveAdminCountForUpdate(
   tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  organizationId: string,
 ) {
   const rows = await tx
     .select({ id: profiles.id })
@@ -244,6 +259,7 @@ async function getActiveAdminCountForUpdate(
         eq(profiles.role, "admin"),
         eq(profiles.accountStatus, "active"),
         eq(profiles.active, true),
+        eq(profiles.organizationId, organizationId),
       ),
     )
     .for("update");
@@ -377,8 +393,11 @@ async function sendAccessRevokedNotice(input: {
   return result;
 }
 
-function listWhere(filters: AdminUserListFilters) {
-  const conditions: SQL[] = [ne(profiles.accountStatus, "deleted")];
+function listWhere(actor: Actor, filters: AdminUserListFilters) {
+  const conditions: SQL[] = [
+    ne(profiles.accountStatus, "deleted"),
+    eq(profiles.organizationId, actorOrganizationId(actor)),
+  ];
 
   if (filters.query) {
     const search = `%${filters.query}%`;
@@ -409,10 +428,15 @@ function listWhere(filters: AdminUserListFilters) {
   if (filters.teamId) {
     conditions.push(sql`exists (
       select 1 from team_memberships memberships
+      inner join teams scoped_team on scoped_team.id = memberships.team_id
       where memberships.profile_id = ${profiles.id}
       and memberships.team_id = ${filters.teamId}
       and memberships.ended_at is null
       and memberships.active = true
+      and scoped_team.organization_id = ${actorOrganizationId(actor)}
+      and scoped_team.active = true
+      and scoped_team.archived_at is null
+      and scoped_team.deleted_at is null
     )`);
   }
 
@@ -479,7 +503,7 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
 
   const page = Math.max(1, filters.page);
   const pageSize = Math.min(50, Math.max(5, filters.pageSize));
-  const where = listWhere(filters);
+  const where = listWhere(actor, filters);
   const [rows, totalRows, teamRows] = await Promise.all([
     getDb()
       .select({
@@ -496,11 +520,18 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
       })
       .from(profiles)
       .where(where)
-      .orderBy(desc(profiles.createdAt))
+      .orderBy(desc(profiles.createdAt), desc(profiles.id))
       .limit(pageSize)
       .offset((page - 1) * pageSize),
-    getDb().select({ total: count() }).from(profiles).where(where),
-    getDb().select({ id: teams.id, name: teams.name }).from(teams).orderBy(asc(teams.name)),
+    getDb()
+      .select({ total: countDistinct(profiles.id) })
+      .from(profiles)
+      .where(where),
+    getDb()
+      .select({ id: teams.id, name: teams.name })
+      .from(teams)
+      .where(visibleTeamWhere(actor))
+      .orderBy(asc(teams.name), asc(teams.id)),
   ]);
   const userIds = rows.map((row) => row.id);
 
@@ -526,6 +557,7 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
           inArray(teamMemberships.profileId, userIds),
           isNull(teamMemberships.endedAt),
           eq(teamMemberships.active, true),
+          visibleTeamWhere(actor),
         ),
       ),
     getDb()
@@ -590,34 +622,50 @@ export async function getAdminReferenceData(actor: Actor) {
     getDb()
       .select({ id: teams.id, name: teams.name, active: teams.active })
       .from(teams)
+      .where(visibleTeamWhere(actor))
       .orderBy(asc(teams.name)),
     getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
-      .where(and(eq(profiles.role, "agent"), eq(profiles.accountStatus, "active")))
+      .where(and(
+        activeProfileWhere(actorOrganizationId(actor)),
+        eq(profiles.role, "agent"),
+      ))
       .orderBy(asc(profiles.name)),
     getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
-      .where(and(eq(profiles.role, "manager"), eq(profiles.accountStatus, "active")))
+      .where(and(
+        activeProfileWhere(actorOrganizationId(actor)),
+        eq(profiles.role, "manager"),
+      ))
       .orderBy(asc(profiles.name)),
   ]);
 
   return { teams: teamRows, agents: agentRows, managers: managerRows };
 }
 
-async function validateTeamForAssignment(teamId?: string) {
+async function validateTeamForAssignment(actor: Actor, teamId?: string) {
   if (!teamId) throw new Error("Select a team before changing this user to this role.");
 
   const rows = await getDb()
     .select({ id: teams.id, active: teams.active })
     .from(teams)
-    .where(eq(teams.id, teamId))
+    .where(and(eq(teams.id, teamId), visibleTeamWhere(actor)))
     .limit(1);
   const team = rows[0];
 
   if (!team) throw new Error("Team was not found.");
-  if (!team.active) throw new Error("Inactive teams cannot receive users.");
+}
+
+function isRetryableTransactionError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; cause?: unknown };
+  return (
+    candidate.code === "ER_LOCK_DEADLOCK" ||
+    candidate.code === "ER_LOCK_WAIT_TIMEOUT" ||
+    (candidate.cause !== error && isRetryableTransactionError(candidate.cause))
+  );
 }
 
 async function hasActiveDialerMapping(
@@ -742,7 +790,7 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
   if (input.role === "agent" && !input.teamId) {
     throw new Error("Select a team before changing this user to agent.");
   }
-  await validateTeamForAssignment(input.teamId);
+  await validateTeamForAssignment(actor, input.teamId);
   if (!input.dialerName?.trim()) {
     throw new Error("Dialer agent name is required.");
   }
@@ -779,6 +827,7 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
   await getDb().transaction(async (tx) => {
     await tx.insert(profiles).values({
       id: profileId,
+      organizationId: actorOrganizationId(actor),
       email,
       name,
       shift,
@@ -983,32 +1032,88 @@ export async function bulkSendInvitations(actor: Actor, userIds: string[]) {
   return outcomes;
 }
 
-export async function permanentlyDeleteUsers(
+export type PermanentDeletionApproval = {
+  confirmation: string;
+  expectedCount: number;
+  expectedDigest: string;
+  requiredAccountStatus: "deleted";
+};
+
+export async function permanentlyDeleteValidatedUsers(
   actor: Actor,
-  input: { userIds: unknown },
+  input: { userIds: unknown; approval?: PermanentDeletionApproval },
 ) {
   assertAdmin(actor);
-  const userIds = parseBulkUserIds(input.userIds);
+  const userIds = parseUserIds(input.userIds);
 
   if (userIds.includes(actor.id.toLowerCase())) {
     throw new Error("You cannot permanently delete your own account.");
   }
 
   return getDb().transaction(async (tx) => {
+    const actorRows = await tx
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(and(
+        eq(profiles.id, actor.id),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+        eq(profiles.role, "admin"),
+        activeProfileWhere(actorOrganizationId(actor)),
+      ))
+      .limit(1)
+      .for("update");
+    if (!actorRows[0]) {
+      throw new Error("An active administrator is required.");
+    }
+
     const rows = await tx
       .select()
       .from(profiles)
-      .where(inArray(profiles.id, userIds))
+      .where(and(
+        inArray(profiles.id, userIds),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .for("update");
 
-    if (
-      rows.length !== userIds.length ||
-      rows.some((profile) => profile.accountStatus === "deleted")
-    ) {
+    if (rows.length !== userIds.length) {
       throw new Error("One or more selected users were not found.");
     }
 
-    const activeAdminCount = await getActiveAdminCountForUpdate(tx);
+    if (input.approval) {
+      const currentTargetRows = await tx
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(and(
+          eq(profiles.organizationId, actorOrganizationId(actor)),
+          eq(profiles.accountStatus, input.approval.requiredAccountStatus),
+        ))
+        .orderBy(profiles.id)
+        .for("update");
+      const currentIds = currentTargetRows.map((row) => row.id).sort();
+      const currentDigest = sortedIdDigest(currentIds);
+      const expectedConfirmation =
+        `PURGE_LEGACY_DELETED:${actorOrganizationId(actor)}:` +
+        `${input.approval.expectedCount}:${input.approval.expectedDigest}`;
+
+      if (input.approval.confirmation !== expectedConfirmation) {
+        throw new Error(`Confirmation must exactly equal ${expectedConfirmation}`);
+      }
+      if (
+        currentIds.length !== input.approval.expectedCount ||
+        currentDigest !== input.approval.expectedDigest ||
+        currentDigest !== sortedIdDigest(userIds) ||
+        rows.some((profile) => profile.accountStatus !== "deleted")
+      ) {
+        throw new Error(
+          "The legacy deleted-profile target set changed after dry run; run the dry run again.",
+        );
+      }
+    }
+
+    const activeAdminCount = await getActiveAdminCountForUpdate(
+      tx,
+      actorOrganizationId(actor),
+    );
     const selectedActiveAdminCount = rows.filter(
       (profile) =>
         profile.role === "admin" &&
@@ -1022,44 +1127,108 @@ export async function permanentlyDeleteUsers(
       throw new Error("The final active admin cannot be changed.");
     }
 
-    const now = new Date();
-    const mappingRows = await tx
-      .select({
-        profileId: sourceUserMappings.profileId,
-        sourceAgentName: sourceUserMappings.sourceAgentName,
-      })
-      .from(sourceUserMappings)
-      .where(
-        and(
-          inArray(sourceUserMappings.profileId, userIds),
-          eq(sourceUserMappings.isPrimary, true),
-          eq(sourceUserMappings.active, true),
-        ),
-      );
-    const membershipRows = await tx
-      .select({
-        profileId: teamMemberships.profileId,
-        teamName: teams.name,
-      })
-      .from(teamMemberships)
-      .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
-      .where(
-        and(
-          inArray(teamMemberships.profileId, userIds),
-          eq(teamMemberships.active, true),
-          isNull(teamMemberships.endedAt),
-        ),
-      );
-    const mappingByProfile = new Map(
-      mappingRows.map((row) => [row.profileId, row.sourceAgentName]),
+    const emails = rows.flatMap((profile) =>
+      profile.email ? [profile.email] : [],
     );
-    const teamByProfile = new Map(
-      membershipRows.map((row) => [row.profileId, row.teamName]),
+    const [metricReferences, importRowReferences] = await Promise.all([
+      tx
+        .select({
+          versionId: dialerAgentHourlyMetrics.versionId,
+          batchId: dialerAgentHourlyMetrics.batchId,
+        })
+        .from(dialerAgentHourlyMetrics)
+        .where(inArray(dialerAgentHourlyMetrics.agentProfileId, userIds)),
+      tx
+        .select({
+          versionId: dialerImportRows.versionId,
+          batchId: dialerImportRows.batchId,
+        })
+        .from(dialerImportRows)
+        .where(inArray(dialerImportRows.matchedAgentProfileId, userIds)),
+    ]);
+    const affectedVersionIds = Array.from(
+      new Set(
+        [...metricReferences, ...importRowReferences].flatMap((row) =>
+          row.versionId ? [row.versionId] : [],
+        ),
+      ),
+    );
+    const affectedBatchIds = Array.from(
+      new Set(
+        [...metricReferences, ...importRowReferences].flatMap((row) =>
+          row.batchId ? [row.batchId] : [],
+        ),
+      ),
     );
 
+    // Preserve shared import history while removing references to the account.
+    await tx
+      .update(userImportBatches)
+      .set({ uploadedById: actor.id })
+      .where(inArray(userImportBatches.uploadedById, userIds));
+    await tx
+      .update(dialerImportBatches)
+      .set({ uploadedById: actor.id })
+      .where(inArray(dialerImportBatches.uploadedById, userIds));
+    await tx
+      .update(dialerImportBatches)
+      .set({ confirmedById: null })
+      .where(inArray(dialerImportBatches.confirmedById, userIds));
+    await tx
+      .update(dialerImportBatches)
+      .set({ publishedById: null })
+      .where(inArray(dialerImportBatches.publishedById, userIds));
+    await tx
+      .update(dialerImportBatches)
+      .set({ legacyWarningReviewerId: null })
+      .where(inArray(dialerImportBatches.legacyWarningReviewerId, userIds));
+    await tx
+      .update(dialerImportBatches)
+      .set({ rejectedById: null })
+      .where(inArray(dialerImportBatches.rejectedById, userIds));
+    await tx
+      .update(dialerImportBatches)
+      .set({ rolledBackById: null })
+      .where(inArray(dialerImportBatches.rolledBackById, userIds));
+
+    await tx
+      .update(teamMemberships)
+      .set({ createdById: null })
+      .where(inArray(teamMemberships.createdById, userIds));
+    await tx
+      .update(sourceUserMappings)
+      .set({ approvedById: null })
+      .where(inArray(sourceUserMappings.approvedById, userIds));
+    await tx
+      .update(sourceUserMappings)
+      .set({ deactivatedById: null })
+      .where(inArray(sourceUserMappings.deactivatedById, userIds));
+    await tx
+      .update(accountInvitationTokens)
+      .set({ createdById: null })
+      .where(inArray(accountInvitationTokens.createdById, userIds));
+    await tx
+      .update(passwordResetTokens)
+      .set({ createdById: null })
+      .where(inArray(passwordResetTokens.createdById, userIds));
+
+    await tx
+      .delete(dialerAgentHourlyMetrics)
+      .where(inArray(dialerAgentHourlyMetrics.agentProfileId, userIds));
+    await tx
+      .delete(dialerImportRows)
+      .where(inArray(dialerImportRows.matchedAgentProfileId, userIds));
+    await tx
+      .delete(transfersFixtures)
+      .where(inArray(transfersFixtures.agentProfileId, userIds));
     await tx
       .delete(emailDeliveryAttempts)
-      .where(inArray(emailDeliveryAttempts.profileId, userIds));
+      .where(or(
+        inArray(emailDeliveryAttempts.profileId, userIds),
+        emails.length > 0
+          ? inArray(emailDeliveryAttempts.recipientEmail, emails)
+          : undefined,
+      ));
     await tx
       .delete(accountInvitationTokens)
       .where(inArray(accountInvitationTokens.profileId, userIds));
@@ -1071,67 +1240,85 @@ export async function permanentlyDeleteUsers(
       .delete(userPermissionOverrides)
       .where(inArray(userPermissionOverrides.profileId, userIds));
     await tx
-      .update(teamMemberships)
-      .set({ active: false, endedAt: now })
-      .where(
-        and(
-          inArray(teamMemberships.profileId, userIds),
-          isNull(teamMemberships.endedAt),
-        ),
-      );
+      .delete(sourceUserMappings)
+      .where(inArray(sourceUserMappings.profileId, userIds));
     await tx
-      .update(sourceUserMappings)
-      .set({
-        active: false,
-        isPrimary: false,
-        activeMappingKey: null,
-        primaryMappingKey: null,
-        deactivatedById: actor.id,
-        deactivatedAt: now,
-      })
-      .where(
-        and(
-          inArray(sourceUserMappings.profileId, userIds),
-          eq(sourceUserMappings.active, true),
-        ),
-      );
+      .delete(teamMemberships)
+      .where(inArray(teamMemberships.profileId, userIds));
     await tx
-      .update(profiles)
-      .set({
-        email: null,
-        passwordHash: null,
-        encryptedTemporaryPassword: null,
-        passwordState: "permanent",
-        active: false,
-        accountStatus: "deleted",
-        mustResetPassword: false,
-        lastLoginAt: null,
-        accessRevokedAt: now,
-        deletedAt: now,
-      })
-      .where(inArray(profiles.id, userIds));
-    await tx.insert(auditLogs).values(
-      rows.map((profile) => ({
-        id: newId(),
-        actorProfileId: actor.id,
-        action: "user.deleted",
-        entityType: "profile",
-        entityId: profile.id,
-        metadata: {
-          historicalIdentity: {
-            displayName: profile.name,
-            dialerName: mappingByProfile.get(profile.id) ?? null,
-            team: teamByProfile.get(profile.id) ?? null,
-            shift: profile.shift,
-            role: profile.role,
-            deletedAt: now.toISOString(),
-            status: "Deleted user",
-          },
-        },
-      })),
-    );
+      .delete(auditLogs)
+      .where(or(
+        inArray(auditLogs.actorProfileId, userIds),
+        inArray(auditLogs.entityId, userIds),
+      ));
+
+    for (const versionId of affectedVersionIds) {
+      const [totals] = await tx
+        .select({
+          rowCount: count(),
+          matchedAgentCount: countDistinct(dialerAgentHourlyMetrics.agentProfileId),
+          totalCalls: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.calls}), 0)`,
+          totalLoggedInSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.loggedInSeconds}), 0)`,
+          totalTalkSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.talkSeconds}), 0)`,
+          totalWrapSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.wrapSeconds}), 0)`,
+        })
+        .from(dialerAgentHourlyMetrics)
+        .where(eq(dialerAgentHourlyMetrics.versionId, versionId));
+      await tx
+        .update(dialerDatasetVersions)
+        .set({
+          rowCount: Number(totals?.rowCount ?? 0),
+          matchedAgentCount: Number(totals?.matchedAgentCount ?? 0),
+          totalCalls: Number(totals?.totalCalls ?? 0),
+          totalLoggedInSeconds: Number(totals?.totalLoggedInSeconds ?? 0),
+          totalTalkSeconds: Number(totals?.totalTalkSeconds ?? 0),
+          totalWrapSeconds: Number(totals?.totalWrapSeconds ?? 0),
+        })
+        .where(eq(dialerDatasetVersions.id, versionId));
+    }
+
+    for (const batchId of affectedBatchIds) {
+      const [totals] = await tx
+        .select({
+          rowCount: count(),
+          matchedAgentCount: sql<number>`count(distinct case when ${dialerImportRows.matchedAgentProfileId} is not null then ${dialerImportRows.matchedAgentProfileId} end)`,
+          unmatchedAgentCount: sql<number>`count(distinct case when ${dialerImportRows.matchedAgentProfileId} is null then ${dialerImportRows.normalizedAgentName} end)`,
+        })
+        .from(dialerImportRows)
+        .where(eq(dialerImportRows.batchId, batchId));
+      await tx
+        .update(dialerImportBatches)
+        .set({
+          rowCount: Number(totals?.rowCount ?? 0),
+          matchedAgentCount: Number(totals?.matchedAgentCount ?? 0),
+          unmatchedAgentCount: Number(totals?.unmatchedAgentCount ?? 0),
+        })
+        .where(eq(dialerImportBatches.id, batchId));
+    }
+
+    await tx.delete(profiles).where(inArray(profiles.id, userIds));
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: actor.id,
+      action: "user.permanently_deleted",
+      entityType: "profile_batch",
+      metadata: {
+        deletedCount: userIds.length,
+        affectedVersionCount: affectedVersionIds.length,
+        affectedImportCount: affectedBatchIds.length,
+      },
+    });
 
     return { deletedIds: userIds };
+  });
+}
+
+export async function permanentlyDeleteUsers(
+  actor: Actor,
+  input: { userIds: unknown },
+) {
+  return permanentlyDeleteValidatedUsers(actor, {
+    userIds: parseBulkUserIds(input.userIds),
   });
 }
 
@@ -1158,7 +1345,10 @@ export async function getAdminUserDetails(actor: Actor, userId: string) {
   const profileRows = await getDb()
     .select()
     .from(profiles)
-    .where(eq(profiles.id, userId))
+    .where(and(
+      eq(profiles.id, userId),
+      eq(profiles.organizationId, actorOrganizationId(actor)),
+    ))
     .limit(1);
   const profile = profileRows[0];
 
@@ -1227,6 +1417,7 @@ export async function getAdminUserDetails(actor: Actor, userId: string) {
     getDb()
       .select({ id: teams.id, name: teams.name, active: teams.active })
       .from(teams)
+      .where(visibleTeamWhere(actor))
       .orderBy(asc(teams.name)),
   ]);
 
@@ -1364,7 +1555,10 @@ export async function updateUserShift(
         accountStatus: profiles.accountStatus,
       })
       .from(profiles)
-      .where(eq(profiles.id, input.userId))
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
     const profile = profileRows[0];
@@ -1569,7 +1763,10 @@ export async function moveUserToTeam(
         accountStatus: profiles.accountStatus,
       })
       .from(profiles)
-      .where(eq(profiles.id, input.userId))
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
     const profile = profileRows[0];
@@ -1584,7 +1781,7 @@ export async function moveUserToTeam(
     const teamRows = await tx
       .select({ id: teams.id, name: teams.name, active: teams.active })
       .from(teams)
-      .where(eq(teams.id, input.teamId))
+      .where(and(eq(teams.id, input.teamId), visibleTeamWhere(actor)))
       .limit(1)
       .for("update");
     const team = teamRows[0];
@@ -1695,7 +1892,9 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
   if (input.role === "agent" && !input.teamId) {
     throw new Error("Select a team before changing this user to agent.");
   }
-  if (roleRequiresTeam(input.role)) await validateTeamForAssignment(input.teamId);
+  if (roleRequiresTeam(input.role)) {
+    await validateTeamForAssignment(actor, input.teamId);
+  }
 
   validatePermissionOverrides(input.permissionOverrides, input.role);
 
@@ -1732,7 +1931,10 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
 
     if (duplicateRows[0]) throw new Error("A user with this email already exists.");
 
-    const activeAdminCount = await getActiveAdminCountForUpdate(tx);
+    const activeAdminCount = await getActiveAdminCountForUpdate(
+      tx,
+      actorOrganizationId(actor),
+    );
     assertCanRemoveAdmin({
       targetRole: profile.role,
       targetStatus: profile.accountStatus,
@@ -2000,7 +2202,10 @@ export async function setUserAccountStatus(actor: Actor, input: {
       throw new Error("Deleted users cannot be reactivated.");
     }
 
-    const activeAdminCount = await getActiveAdminCountForUpdate(tx);
+    const activeAdminCount = await getActiveAdminCountForUpdate(
+      tx,
+      actorOrganizationId(actor),
+    );
     assertCanRemoveAdmin({
       targetRole: profile.role,
       targetStatus: profile.accountStatus,
@@ -2429,21 +2634,55 @@ export async function ignoreUnmappedDialerName(actor: Actor, input: {
 export async function createTeam(actor: Actor, nameInput: string) {
   assertAdmin(actor);
   const name = trimText(nameInput);
+  const normalizedName = normalizeTeamName(name);
 
   if (name.length < 2) throw new Error("Team name is required.");
 
   const id = newId();
-  await getDb().transaction(async (tx) => {
-    await tx.insert(teams).values({ id, name, active: true });
-    await tx.insert(auditLogs).values({
-      id: newId(),
-      actorProfileId: actor.id,
-      action: "team.created",
-      entityType: "team",
-      entityId: id,
-      metadata: { after: { id, name, active: true } },
+  async function insertTeam() {
+    return getDb().transaction(async (tx) => {
+      const duplicate = await tx
+        .select({ id: teams.id })
+        .from(teams)
+        .where(and(
+          eq(teams.organizationId, actorOrganizationId(actor)),
+          sql`lower(${teams.name}) = ${normalizedName}`,
+          isNull(teams.deletedAt),
+        ))
+        .limit(1)
+        .for("update");
+      if (duplicate[0]) throw new Error("A team with this name already exists.");
+
+      await tx.insert(teams).values({
+        id,
+        organizationId: actorOrganizationId(actor),
+        name,
+        active: true,
+      });
+      await tx.insert(auditLogs).values({
+        id: newId(),
+        actorProfileId: actor.id,
+        action: "team.created",
+        entityType: "team",
+        entityId: id,
+        metadata: { after: { id, name, active: true } },
+      });
     });
-  });
+  }
+
+  try {
+    try {
+      await insertTeam();
+    } catch (error) {
+      if (!isRetryableTransactionError(error)) throw error;
+      await insertTeam();
+    }
+  } catch (error) {
+    if (isDuplicateEntryError(error)) {
+      throw new Error("A team with this name already exists.");
+    }
+    throw error;
+  }
 
   return id;
 }
@@ -2452,7 +2691,11 @@ export async function listTeams(actor: Actor) {
   assertAdmin(actor);
 
   const [teamRows, membershipRows, managers, agents] = await Promise.all([
-    getDb().select().from(teams).orderBy(asc(teams.name)),
+    getDb()
+      .select()
+      .from(teams)
+      .where(visibleTeamWhere(actor))
+      .orderBy(asc(teams.name), asc(teams.id)),
     getDb()
       .select({
         id: teamMemberships.id,
@@ -2468,23 +2711,31 @@ export async function listTeams(actor: Actor) {
       })
       .from(teamMemberships)
       .innerJoin(profiles, eq(profiles.id, teamMemberships.profileId))
+      .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
       .where(
         and(
           eq(teamMemberships.active, true),
           isNull(teamMemberships.endedAt),
-          ne(profiles.accountStatus, "deleted"),
+          activeProfileWhere(actorOrganizationId(actor)),
+          visibleTeamWhere(actor),
         ),
       )
       .orderBy(asc(profiles.name)),
     getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
-      .where(and(eq(profiles.role, "manager"), eq(profiles.accountStatus, "active")))
+      .where(and(
+        activeProfileWhere(actorOrganizationId(actor)),
+        eq(profiles.role, "manager"),
+      ))
       .orderBy(asc(profiles.name)),
     getDb()
       .select({ id: profiles.id, name: profiles.name, email: profiles.email })
       .from(profiles)
-      .where(and(eq(profiles.role, "agent"), eq(profiles.accountStatus, "active")))
+      .where(and(
+        activeProfileWhere(actorOrganizationId(actor)),
+        eq(profiles.role, "agent"),
+      ))
       .orderBy(asc(profiles.name)),
   ]);
 
@@ -2515,7 +2766,7 @@ export async function renameTeam(actor: Actor, input: { teamId: string; name: st
     const rows = await tx
       .select()
       .from(teams)
-      .where(eq(teams.id, input.teamId))
+      .where(and(eq(teams.id, input.teamId), teamBelongsToActorWhere(actor)))
       .limit(1)
       .for("update");
     const team = rows[0];
@@ -2544,7 +2795,7 @@ export async function setTeamStatus(actor: Actor, input: {
     const rows = await tx
       .select()
       .from(teams)
-      .where(eq(teams.id, input.teamId))
+      .where(and(eq(teams.id, input.teamId), teamBelongsToActorWhere(actor)))
       .limit(1)
       .for("update");
     const team = rows[0];
@@ -2574,7 +2825,7 @@ export async function assignTeamManager(actor: Actor, input: {
   managerId: string;
 }) {
   assertAdmin(actor);
-  await validateTeamForAssignment(input.teamId);
+  await validateTeamForAssignment(actor, input.teamId);
 
   await getDb().transaction(async (tx) => {
     const managerRows = await tx
@@ -2583,6 +2834,7 @@ export async function assignTeamManager(actor: Actor, input: {
       .where(
         and(
           eq(profiles.id, input.managerId),
+          eq(profiles.organizationId, actorOrganizationId(actor)),
           eq(profiles.role, "manager"),
           eq(profiles.accountStatus, "active"),
         ),
@@ -2626,7 +2878,7 @@ export async function moveAgentToTeam(actor: Actor, input: {
   teamId: string;
 }) {
   assertAdmin(actor);
-  await validateTeamForAssignment(input.teamId);
+  await validateTeamForAssignment(actor, input.teamId);
 
   await getDb().transaction(async (tx) => {
     const agentRows = await tx
@@ -2635,6 +2887,7 @@ export async function moveAgentToTeam(actor: Actor, input: {
       .where(
         and(
           eq(profiles.id, input.agentId),
+          eq(profiles.organizationId, actorOrganizationId(actor)),
           eq(profiles.role, "agent"),
           eq(profiles.accountStatus, "active"),
         ),
@@ -2677,9 +2930,21 @@ export async function removeTeamMembership(actor: Actor, membershipId: string) {
 
   await getDb().transaction(async (tx) => {
     const rows = await tx
-      .select()
+      .select({
+        id: teamMemberships.id,
+        teamId: teamMemberships.teamId,
+        profileId: teamMemberships.profileId,
+        role: teamMemberships.role,
+        active: teamMemberships.active,
+        startedAt: teamMemberships.startedAt,
+        endedAt: teamMemberships.endedAt,
+      })
       .from(teamMemberships)
-      .where(eq(teamMemberships.id, membershipId))
+      .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
+      .where(and(
+        eq(teamMemberships.id, membershipId),
+        teamBelongsToActorWhere(actor),
+      ))
       .limit(1)
       .for("update");
     const membership = rows[0];

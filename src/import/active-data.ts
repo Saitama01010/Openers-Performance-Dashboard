@@ -1,14 +1,15 @@
 import "server-only";
 
-import { inArray, sql } from "drizzle-orm";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
   dialerAgentHourlyMetrics,
   dialerDatasetScopes,
+  profiles,
 } from "@/db/schema";
 import type { ComparableMetric } from "@/import/versioning";
+import { activeProfileWhere } from "@/users/visibility";
 
 export type ActiveDialerMetric = ComparableMetric & {
   rowHash: string;
@@ -48,7 +49,12 @@ export async function listActiveDialerMetrics() {
         dialerDatasetScopes.activeVersionId,
         dialerAgentHourlyMetrics.versionId,
       ),
-    );
+    )
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(activeProfileWhere(), eq(profiles.role, "agent")));
 
   return rows.map((row) => ({
     ...row,
@@ -86,7 +92,11 @@ export async function getActiveDialerMetricTotals(
         dialerAgentHourlyMetrics.versionId,
       ),
     )
-    .where(where);
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(where, activeProfileWhere(), eq(profiles.role, "agent")));
 
   return row;
 }

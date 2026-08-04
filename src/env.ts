@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { testDatabaseSafetyError } from "@/db/safety";
 
 const optionalTrimmedString = z.preprocess((value) => {
   if (typeof value !== "string") return value;
@@ -54,6 +55,12 @@ const timezone = z
 const envSchema = z
   .object({
     DATABASE_URL: z.string().url(),
+    DATABASE_ENVIRONMENT: z
+      .enum(["development", "test", "preview", "production"])
+      .default("development"),
+    DEPLOYMENT_ENVIRONMENT: z
+      .enum(["development", "test", "preview", "production"])
+      .optional(),
     SESSION_SECRET: z.string().min(32),
     APP_URL: z.string().url().default("http://localhost:3000"),
     EMAIL_PROVIDER: z.enum(["console", "resend"]).default("console"),
@@ -75,6 +82,29 @@ const envSchema = z
       .default("development"),
   })
   .superRefine((env, ctx) => {
+    const deploymentEnvironment = env.DEPLOYMENT_ENVIRONMENT ?? env.NODE_ENV;
+    if (env.DATABASE_ENVIRONMENT !== deploymentEnvironment) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DATABASE_ENVIRONMENT"],
+        message:
+          "DATABASE_ENVIRONMENT must match DEPLOYMENT_ENVIRONMENT (or NODE_ENV when no deployment environment is configured).",
+      });
+    }
+
+    const databaseSafetyError = testDatabaseSafetyError({
+      databaseUrl: env.DATABASE_URL,
+      databaseEnvironment: env.DATABASE_ENVIRONMENT,
+      nodeEnvironment: env.NODE_ENV,
+    });
+    if (databaseSafetyError) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DATABASE_URL"],
+        message: databaseSafetyError,
+      });
+    }
+
     if (env.EMAIL_PROVIDER === "console" && env.NODE_ENV === "production") {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

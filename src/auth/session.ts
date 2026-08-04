@@ -118,6 +118,9 @@ export async function getCurrentUser() {
         eq(teamMemberships.profileId, user.id),
         isNull(teamMemberships.endedAt),
         eq(teams.active, true),
+        isNull(teams.archivedAt),
+        isNull(teams.deletedAt),
+        eq(teams.organizationId, user.organizationId),
       ),
     );
 
@@ -127,5 +130,6 @@ export async function getCurrentUser() {
     name: user.name,
     role: user.role,
     teamIds: memberships.map((membership) => membership.teamId),
+    organizationId: user.organizationId,
   };
 }

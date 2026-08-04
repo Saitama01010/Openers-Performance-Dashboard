@@ -12,6 +12,7 @@ import {
 import {
   permissions,
   profiles,
+  organizations,
   rolePermissions,
   roles,
   sourceUserMappings,
@@ -19,6 +20,10 @@ import {
   teams,
 } from "../src/db/schema";
 import { hashPassword } from "../src/auth/password";
+import {
+  DEFAULT_ORGANIZATION_ID,
+  DEFAULT_ORGANIZATION_NAME,
+} from "../src/tenancy/constants";
 
 const ids = {
   admin: "00000000-0000-4000-8000-000000000001",
@@ -92,6 +97,17 @@ async function upsertMembership(input: {
 }
 
 async function main() {
+  await getDb()
+    .insert(organizations)
+    .values({
+      id: DEFAULT_ORGANIZATION_ID,
+      name: DEFAULT_ORGANIZATION_NAME,
+      active: true,
+    })
+    .onDuplicateKeyUpdate({
+      set: { name: DEFAULT_ORGANIZATION_NAME, active: true },
+    });
+
   await getDb()
     .insert(roles)
     .values([

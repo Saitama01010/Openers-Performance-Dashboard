@@ -3,13 +3,13 @@ const UUID_PATTERN =
 
 export const MAX_BULK_USER_DELETION = 100;
 
-export function parseBulkUserIds(value: unknown) {
+export function parseUserIds(value: unknown, maximum = Number.MAX_SAFE_INTEGER) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error("Select at least one user.");
   }
-  if (value.length > MAX_BULK_USER_DELETION) {
+  if (value.length > maximum) {
     throw new Error(
-      `Select no more than ${MAX_BULK_USER_DELETION} users at a time.`,
+      `Select no more than ${maximum} users at a time.`,
     );
   }
 
@@ -21,4 +21,8 @@ export function parseBulkUserIds(value: unknown) {
   });
 
   return Array.from(new Set(ids));
+}
+
+export function parseBulkUserIds(value: unknown) {
+  return parseUserIds(value, MAX_BULK_USER_DELETION);
 }

@@ -55,6 +55,11 @@ export async function DELETE(request: Request) {
 
     revalidatePath("/admin/users");
     revalidatePath("/admin/teams");
+    revalidatePath("/agents");
+    revalidatePath("/dashboard");
+    revalidatePath("/leaderboard");
+    revalidatePath("/performance");
+    revalidatePath("/teams/performance");
     for (const userId of result.deletedIds) {
       revalidatePath(`/admin/users/${userId}`);
     }

@@ -8,7 +8,7 @@ Authorization fails closed and is enforced server-side.
 | Manager | Active assigned teams | Active assigned teams |
 | Agent | Self | None |
 
-Role grants are stored in `role_permissions`. Explicit per-user allow or deny rows may override only Team Management (`teams.*`) and Imports (`imports.*`) permissions. A missing grant is a denial. User, Metrics, and Other permissions always use role defaults; the provisioning migration removes legacy overrides in those namespaces and runtime evaluation ignores them defensively.
+Role grants are stored in `role_permissions`. Explicit per-user allow or deny rows may override only Team Management (`teams.*`) and Imports (`imports.*`) permissions. A missing grant is a denial. User, Metrics, Coaching, Flags, and Other permissions always use role defaults; the provisioning migration removes legacy overrides in those namespaces and runtime evaluation ignores them defensively.
 
 A manager with no active team receives an empty profile scope. An assigned team with no profiles also produces an empty scope; neither condition removes the database filter. Deactivated and revoked profiles cannot use existing sessions. Route visibility is not an authorization control.
 
@@ -23,9 +23,38 @@ The Phase 2 catalog is seeded from `src/admin/policy.ts`:
   `imports.delete`, and `imports.restore`, plus compatibility grants
   `imports.company` and `imports.team`
 - Metrics: `metrics.view_own`, `metrics.view_team`, `metrics.view_company`, plus compatibility grants `metrics.self`, `metrics.team`, and `metrics.company`
+- Coaching: `coaching.view_team`, `coaching.create_team`,
+  `coaching.view_company`, `coaching.create_company`
+- Flags: `flags.view_own`, `flags.view_team`, `flags.view_company`
 - Other: `leaderboard.view`, `leaderboards.view`, `audit.view`, `audit.view_company`, `integrations.manage`, `commissions.manage`, `flags.manage`
 
 Admins receive all defaults. Managers receive team-scoped import/metric grants and leaderboard view. Agents receive own-metric and leaderboard grants.
+
+## Coaching Sessions and Flags
+
+Coaching and flag permissions are role defaults and are not eligible for
+per-user overrides. This prevents an individual override from silently
+broadening a manager or agent to organization scope. Missing grants deny
+access, and every page, data function, and coaching mutation re-reads or
+re-validates the authenticated actor.
+
+| Role | Coaching | Coaching creation | Manager coverage leaderboard | Flags |
+| --- | --- | --- | --- | --- |
+| Admin | Organization | Organization; administrator or active same-organization manager may be credited | Organization | Organization |
+| Manager | Assigned active teams; empty when no active teams | Assigned active teams; coach is forced to self | Denied | Assigned active teams; empty when no active teams |
+| Agent | Denied | Denied | Denied | Self only |
+
+Administrators use `coaching.view_company`, `coaching.create_company`, and
+`flags.view_company`. Managers use `coaching.view_team`,
+`coaching.create_team`, and `flags.view_team`. Agents use only
+`flags.view_own`. The existing `flags.manage` permission remains a feature-flag
+administration capability and does not grant access to operational agent flag
+results.
+
+For agent flag requests, profile scope is fixed to the authenticated profile
+before browser-controlled filters are considered. Team and manager filters are
+discarded, another profile ID is rejected without an existence signal, and
+company or team summaries are omitted from the response.
 
 Managers may upload, review, reject, and publish warning-free drafts containing
 only their currently assigned teams. Only administrators can override import
@@ -46,6 +75,9 @@ Admin-only permissions include:
 - `audit.view_company`
 - `metrics.view_company`
 - `metrics.company`
+- `coaching.view_company`
+- `coaching.create_company`
+- `flags.view_company`
 - `imports.delete`
 - `imports.deactivate`
 - `imports.restore`

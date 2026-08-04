@@ -45,6 +45,8 @@ import { getDb } from "@/db";
 import {
   accountInvitationTokens,
   auditLogs,
+  coachingSessionParticipants,
+  coachingSessions,
   dialerAgentHourlyMetrics,
   dialerDatasetVersions,
   dialerImportBatches,
@@ -1160,6 +1162,25 @@ export async function permanentlyDeleteValidatedUsers(
         ),
       ),
     );
+    const [ownedCoachingRows, coachingParticipantRows] = await Promise.all([
+      tx
+        .select({ id: coachingSessions.id })
+        .from(coachingSessions)
+        .where(
+          or(
+            inArray(coachingSessions.createdByProfileId, userIds),
+            inArray(coachingSessions.coachProfileId, userIds),
+          ),
+        ),
+      tx
+        .select({ sessionId: coachingSessionParticipants.sessionId })
+        .from(coachingSessionParticipants)
+        .where(inArray(coachingSessionParticipants.agentProfileId, userIds)),
+    ]);
+    const ownedCoachingSessionIds = ownedCoachingRows.map((row) => row.id);
+    const participantSessionIds = Array.from(
+      new Set(coachingParticipantRows.map((row) => row.sessionId)),
+    );
 
     // Preserve shared import history while removing references to the account.
     await tx
@@ -1245,6 +1266,47 @@ export async function permanentlyDeleteValidatedUsers(
     await tx
       .delete(teamMemberships)
       .where(inArray(teamMemberships.profileId, userIds));
+    if (ownedCoachingSessionIds.length > 0) {
+      await tx
+        .delete(coachingSessionParticipants)
+        .where(
+          inArray(
+            coachingSessionParticipants.sessionId,
+            ownedCoachingSessionIds,
+          ),
+        );
+      await tx
+        .delete(coachingSessions)
+        .where(inArray(coachingSessions.id, ownedCoachingSessionIds));
+    }
+    await tx
+      .delete(coachingSessionParticipants)
+      .where(inArray(coachingSessionParticipants.agentProfileId, userIds));
+    const remainingCandidateIds = participantSessionIds.filter(
+      (id) => !ownedCoachingSessionIds.includes(id),
+    );
+    let emptiedCoachingSessionIds: string[] = [];
+    if (remainingCandidateIds.length > 0) {
+      const remainingRows = await tx
+        .select({
+          sessionId: coachingSessionParticipants.sessionId,
+          total: count(),
+        })
+        .from(coachingSessionParticipants)
+        .where(
+          inArray(coachingSessionParticipants.sessionId, remainingCandidateIds),
+        )
+        .groupBy(coachingSessionParticipants.sessionId);
+      const nonEmptyIds = new Set(remainingRows.map((row) => row.sessionId));
+      emptiedCoachingSessionIds = remainingCandidateIds.filter(
+        (id) => !nonEmptyIds.has(id),
+      );
+      if (emptiedCoachingSessionIds.length > 0) {
+        await tx
+          .delete(coachingSessions)
+          .where(inArray(coachingSessions.id, emptiedCoachingSessionIds));
+      }
+    }
     await tx
       .delete(auditLogs)
       .where(or(
@@ -1306,6 +1368,8 @@ export async function permanentlyDeleteValidatedUsers(
         deletedCount: userIds.length,
         affectedVersionCount: affectedVersionIds.length,
         affectedImportCount: affectedBatchIds.length,
+        removedCoachingSessionCount:
+          ownedCoachingSessionIds.length + emptiedCoachingSessionIds.length,
       },
     });
 

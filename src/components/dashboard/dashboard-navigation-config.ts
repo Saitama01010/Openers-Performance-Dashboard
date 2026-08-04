@@ -19,6 +19,18 @@ const importItem: DashboardNavItem = {
   label: "Imports",
 };
 
+const coachingItem: DashboardNavItem = {
+  href: "/coaching",
+  icon: "coaching",
+  label: "Coaching Sessions",
+};
+
+const flagsItem: DashboardNavItem = {
+  href: "/flags",
+  icon: "flag",
+  label: "Flags",
+};
+
 const adminItems: DashboardNavItem[] = [
   { href: "/admin/imports", icon: "freshness", label: "Import history" },
   { href: "/admin/users", icon: "users", label: "Users & access" },
@@ -43,8 +55,9 @@ export function navigationForRole(role: Role, userId: string) {
             icon: "agent" as const,
             label: "My performance",
           },
+          flagsItem,
         ]
-      : [...primaryItems, importItem];
+      : [...primaryItems, coachingItem, flagsItem, importItem];
 
   return [
     { label: "Workspace", items: workspaceItems },

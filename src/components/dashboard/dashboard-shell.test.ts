@@ -15,6 +15,7 @@ describe("dashboard shell navigation by role", () => {
       "/performance",
       "/leaderboard",
       "/agents/profile-1",
+      "/flags",
     ]);
   });
 
@@ -25,6 +26,8 @@ describe("dashboard shell navigation by role", () => {
       "/leaderboard",
       "/agents",
       "/teams/performance",
+      "/coaching",
+      "/flags",
       "/import",
     ]);
   });
@@ -34,9 +37,16 @@ describe("dashboard shell navigation by role", () => {
 
     expect(adminDestinations).toContain("/import");
     expect(adminDestinations).toContain("/leaderboard");
+    expect(adminDestinations).toContain("/coaching");
+    expect(adminDestinations).toContain("/flags");
     expect(adminDestinations).toContain("/admin/users");
     expect(adminDestinations).toContain("/admin/permissions");
     expect(adminDestinations).toContain("/admin/audit");
+  });
+
+  it("shows Flags but never Coaching Sessions to agents", () => {
+    expect(destinations("agent")).toContain("/flags");
+    expect(destinations("agent")).not.toContain("/coaching");
   });
 
   it("shows the complete LeaderBoard route to every authenticated role", () => {

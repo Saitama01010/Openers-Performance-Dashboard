@@ -12,6 +12,8 @@ import { getDb } from "@/db";
 import {
   accountInvitationTokens,
   auditLogs,
+  coachingSessionParticipants,
+  coachingSessions,
   dialerAgentHourlyMetrics,
   dialerImportBatches,
   dialerImportRows,
@@ -48,6 +50,8 @@ export type LegacyDeletedProfileSummary = {
     emailDeliveryRecords: number;
     userImportBatches: number;
     dialerImportActorReferences: number;
+    coachingSessions: number;
+    coachingParticipations: number;
   };
 };
 
@@ -101,6 +105,8 @@ export async function inspectLegacyDeletedProfiles(input: {
         emailDeliveryRecords: 0,
         userImportBatches: 0,
         dialerImportActorReferences: 0,
+        coachingSessions: 0,
+        coachingParticipations: 0,
       },
     };
   }
@@ -119,6 +125,8 @@ export async function inspectLegacyDeletedProfiles(input: {
     emailRows,
     userImports,
     dialerImports,
+    coachingRows,
+    coachingParticipants,
   ] = await Promise.all([
     db.select({ total: count() }).from(teamMemberships)
       .where(inArray(teamMemberships.profileId, profileIds)),
@@ -174,6 +182,13 @@ export async function inspectLegacyDeletedProfiles(input: {
         inArray(dialerImportBatches.rejectedById, profileIds),
         inArray(dialerImportBatches.rolledBackById, profileIds),
       )),
+    db.select({ total: count() }).from(coachingSessions)
+      .where(or(
+        inArray(coachingSessions.createdByProfileId, profileIds),
+        inArray(coachingSessions.coachProfileId, profileIds),
+      )),
+    db.select({ total: count() }).from(coachingSessionParticipants)
+      .where(inArray(coachingSessionParticipants.agentProfileId, profileIds)),
   ]);
 
   return {
@@ -202,6 +217,8 @@ export async function inspectLegacyDeletedProfiles(input: {
       emailDeliveryRecords: numberValue(emailRows[0]?.total),
       userImportBatches: numberValue(userImports[0]?.total),
       dialerImportActorReferences: numberValue(dialerImports[0]?.total),
+      coachingSessions: numberValue(coachingRows[0]?.total),
+      coachingParticipations: numberValue(coachingParticipants[0]?.total),
     },
   };
 }

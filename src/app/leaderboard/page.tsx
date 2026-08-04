@@ -7,6 +7,7 @@ import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
 import { PageHeader } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { resolveOverviewDateRange } from "@/dashboard/date-range";
+import { getEnv } from "@/env";
 import { getLeaderboardData } from "@/leaderboard/data";
 import { resolveLeaderboardSort } from "@/leaderboard/sorting";
 
@@ -29,7 +30,11 @@ export default async function LeaderboardPage({
   const params = await searchParams;
   const query = firstValue(params.q)?.trim() || undefined;
   const teamId = firstValue(params.teamId)?.trim() || undefined;
-  const dateRange = resolveOverviewDateRange(params);
+  const dateRange = resolveOverviewDateRange(
+    params,
+    new Date(),
+    getEnv().GOOGLE_SHEETS_TIMEZONE,
+  );
   const sort = resolveLeaderboardSort(params);
   const data = await getLeaderboardData(user, {
     query,

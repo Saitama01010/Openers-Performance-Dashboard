@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ActiveImportDialog } from "@/app/admin/imports/active-import-dialog";
 import { ImportDeleteForm } from "@/app/admin/imports/import-delete-form";
 import { getCurrentUser } from "@/auth/session";
 import {
@@ -9,6 +10,7 @@ import {
   StatusBanner,
   TableScroll,
 } from "@/components/dashboard/dashboard-primitives";
+import { getActiveImportLifecycleOptions } from "@/import/active-lifecycle";
 import { listImportHistory } from "@/import/service";
 import {
   humanizeIdentifier,
@@ -44,10 +46,8 @@ export default async function AdminImportsPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    deleted?: string;
     error?: string;
     page?: string;
-    storageCleanup?: string;
   }>;
 }) {
   const actor = await getCurrentUser();
@@ -62,6 +62,15 @@ export default async function AdminImportsPage({
     page: Number.isInteger(requestedPage) ? requestedPage : 1,
   });
   const totalPages = Math.max(1, Math.ceil(history.total / history.pageSize));
+  const lifecycleEntries = await Promise.all(
+    history.rows
+      .filter((row) => row.activeVersionCount > 0)
+      .map(async (row) => [
+        row.id,
+        await getActiveImportLifecycleOptions(actor, row.id),
+      ] as const),
+  );
+  const lifecycleByBatchId = new Map(lifecycleEntries);
 
   return (
     <section className="dashboard-page">
@@ -76,19 +85,6 @@ export default async function AdminImportsPage({
         title="Import history"
       />
 
-      {params.deleted ? (
-        <StatusBanner tone="success">
-          The import and its exclusively owned rows were permanently deleted,
-          shared records were preserved, and the deletion audit event remains.
-        </StatusBanner>
-      ) : null}
-      {params.storageCleanup === "pending" ? (
-        <StatusBanner tone="warning">
-          Database deletion completed, but external stored-file cleanup is
-          pending. The provider and file location were retained in the durable
-          audit event for operational retry.
-        </StatusBanner>
-      ) : null}
       {params.error ? (
         <StatusBanner tone="danger">
           Import deletion failed: {humanizeIdentifier(params.error)}.
@@ -97,45 +93,31 @@ export default async function AdminImportsPage({
 
       <section className="ui-card">
         <TableScroll label="Import history">
-          <table className="ui-table">
+          <table className="ui-table import-history-table">
             <caption>Permanent dialer CSV import history</caption>
             <thead>
               <tr>
-                <th scope="col">Uploaded</th>
-                <th scope="col">File</th>
+                <th scope="col">Uploaded Date</th>
                 <th scope="col">Type</th>
-                <th scope="col">Reporting period</th>
-                <th scope="col">Team</th>
-                <th scope="col">Uploaded by</th>
-                <th scope="col">Rows</th>
-                <th scope="col">Matched</th>
-                <th scope="col">Unmatched</th>
+                <th scope="col">Reporting Period</th>
+                <th scope="col">Uploaded By</th>
                 <th scope="col">Status</th>
                 <th scope="col">Published</th>
-                <th scope="col">Active</th>
-                <th scope="col">Rollback</th>
                 <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
               {history.rows.length === 0 ? (
                 <EmptyTableRow
-                  colSpan={14}
+                  colSpan={7}
                   description="Upload a CSV to create the first permanent import record."
                   title="No imports"
                 />
               ) : (
                 history.rows.map((row) => (
                   <tr key={row.id}>
-                    <td>{fmt(row.uploadedAt)}</td>
-                    <td>
-                      <span className="block font-medium">{row.fileName}</span>
-                      <span className="block font-mono text-xs text-muted">
-                        {row.fileHash.slice(0, 12)}…
-                      </span>
-                      <span className="block text-xs text-muted">
-                        {row.fileSizeBytes.toLocaleString("en-US")} stored bytes
-                      </span>
+                    <td className="import-history-table__date">
+                      {fmt(row.uploadedAt)}
                     </td>
                     <td>
                       <span className="block">
@@ -151,108 +133,47 @@ export default async function AdminImportsPage({
                         row.reportingEndDate,
                       )}
                     </td>
-                    <td>{row.teams.join(", ") || "-"}</td>
                     <td>{row.uploadedBy}</td>
-                    <td>
-                      <span className="block font-mono">{row.rowCount}</span>
-                      <span className="block text-xs text-muted">
-                        {row.deletion.counts.totalRecords} cleanup records
-                      </span>
-                    </td>
-                    <td className="font-mono">{row.matchedAgentCount}</td>
-                    <td className="font-mono">{row.unmatchedAgentCount}</td>
                     <td>
                       <StatusBadge tone={statusTone(row.status)}>
                         {importStatusLabel(row.status)}
                       </StatusBadge>
                     </td>
-                    <td>{fmt(row.publishedAt)}</td>
-                    <td>{row.activeVersionCount > 0 ? "Yes" : "No"}</td>
-                    <td>{row.rollbackStatus ?? "-"}</td>
-                    <td>
-                      <div className="flex flex-wrap gap-2">
+                    <td className="import-history-table__date">{fmt(row.publishedAt)}</td>
+                    <td className="import-history-table__actions">
+                      <div className="import-history-actions">
                         <Link
-                          className="ui-button ui-button--secondary"
+                          className="ui-button ui-button--secondary ui-button--compact"
                           href={`/admin/imports/${row.id}`}
                         >
-                          View details
+                          View Details
                         </Link>
-                        {[
-                          "draft",
-                          "validation_failed",
-                          "ready_to_publish",
-                        ].includes(row.status) ? (
-                          <Link
-                            className="ui-button ui-button--secondary"
-                            href={`/import?preview=${row.id}`}
-                          >
-                            Review draft
-                          </Link>
+                        {lifecycleByBatchId.get(row.id)?.canDeactivate ? (
+                          <ActiveImportDialog
+                            batchId={row.id}
+                            compactTrigger
+                            dialer={row.dialerId ?? "Default"}
+                            fileName={row.fileName}
+                            importType={row.importType}
+                            lifecycle={lifecycleByBatchId.get(row.id)!}
+                            reportingPeriod={reportingPeriod(
+                              row.reportingStartDate,
+                              row.reportingEndDate,
+                            )}
+                            returnPage={history.page}
+                            rowCount={row.rowCount}
+                            status={row.status}
+                            team={row.teams.join(", ") || "Company"}
+                            triggerLabel="Deactivate"
+                            uploadDate={fmt(row.uploadedAt)}
+                          />
                         ) : null}
-                        <a
-                          className="ui-button ui-button--secondary"
-                          href={`/api/imports/${row.id}/download`}
-                        >
-                          Download
-                        </a>
-                        {row.activeVersionCount > 0 ? (
-                          <>
-                            <Link
-                              className="ui-button ui-button--secondary"
-                              href={`/admin/imports/${row.id}#comparison`}
-                            >
-                              Compare
-                            </Link>
-                            <Link
-                              className="ui-button ui-button--danger"
-                              href={`/admin/imports/${row.id}#deactivate-import`}
-                            >
-                              Deactivate
-                            </Link>
-                            <Link
-                              className="ui-button ui-button--secondary"
-                              href={`/admin/imports/${row.id}#deactivate-import`}
-                            >
-                              Replace active version
-                            </Link>
-                            <Link
-                              className="ui-button ui-button--danger"
-                              href={`/admin/imports/${row.id}#permanent-delete`}
-                            >
-                              Permanently delete
-                            </Link>
-                          </>
-                        ) : (
-                          <>
-                            {[
-                              "deactivated",
-                              "superseded",
-                              "rolled_back",
-                            ].includes(row.status) ? (
-                              <Link
-                                className="ui-button ui-button--secondary"
-                                href={`/admin/imports/${row.id}#restore-import`}
-                              >
-                                Restore
-                              </Link>
-                            ) : null}
-                            <ImportDeleteForm
-                              assessment={row.deletion}
-                              batchId={row.id}
-                              dialer={row.dialerId ?? "Default"}
-                              fileName={row.fileName}
-                              importType={row.importType}
-                              reportingPeriod={reportingPeriod(
-                                row.reportingStartDate,
-                                row.reportingEndDate,
-                              )}
-                              rowCount={row.rowCount}
-                              status={row.status}
-                              team={row.teams.join(", ") || "Company"}
-                              uploadDate={fmt(row.uploadedAt)}
-                            />
-                          </>
-                        )}
+                        <ImportDeleteForm
+                          assessment={row.deletion}
+                          batchId={row.id}
+                          compactTrigger
+                          returnPage={history.page}
+                        />
                       </div>
                     </td>
                   </tr>

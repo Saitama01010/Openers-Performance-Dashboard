@@ -60,3 +60,19 @@ export function assertCanImportForProfile(actor: Actor, target: ScopedProfile) {
     throw new Error("Forbidden");
   }
 }
+
+export function canAccessCoaching(role: Role) {
+  return role === "admin" || role === "manager";
+}
+
+export function canAccessCoachingLeaderboard(role: Role) {
+  return role === "admin";
+}
+
+export function canCreateCoachingSession(role: Role) {
+  return role === "admin" || role === "manager";
+}
+
+export function canAccessFlags(role: Role) {
+  return role === "admin" || role === "manager" || role === "agent";
+}

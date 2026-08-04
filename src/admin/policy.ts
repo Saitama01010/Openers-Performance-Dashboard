@@ -53,6 +53,23 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    name: "Coaching",
+    permissions: [
+      "coaching.view_team",
+      "coaching.create_team",
+      "coaching.view_company",
+      "coaching.create_company",
+    ],
+  },
+  {
+    name: "Flags",
+    permissions: [
+      "flags.view_own",
+      "flags.view_team",
+      "flags.view_company",
+    ],
+  },
+  {
     name: "Other",
     permissions: [
       "leaderboard.view",
@@ -126,6 +143,13 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   "metrics.self": "View own metrics",
   "metrics.team": "View assigned-team metrics",
   "metrics.company": "View company-wide metrics",
+  "coaching.view_team": "View coaching for assigned active teams",
+  "coaching.create_team": "Create coaching for assigned active teams",
+  "coaching.view_company": "View organization-wide coaching",
+  "coaching.create_company": "Create organization-wide coaching",
+  "flags.view_own": "View own performance and transfer flags",
+  "flags.view_team": "View flags for assigned active teams",
+  "flags.view_company": "View organization-wide flags",
   "leaderboard.view": "View leaderboards",
   "leaderboards.view": "View leaderboards",
   "audit.view": "View audit logs",
@@ -216,6 +240,9 @@ export const ADMIN_ONLY_PERMISSIONS = new Set([
   "audit.view_company",
   "metrics.view_company",
   "metrics.company",
+  "coaching.view_company",
+  "coaching.create_company",
+  "flags.view_company",
   "imports.deactivate",
   "imports.delete",
   "imports.restore",
@@ -234,12 +261,16 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, string[]> = {
     "metrics.team",
     "leaderboard.view",
     "leaderboards.view",
+    "coaching.view_team",
+    "coaching.create_team",
+    "flags.view_team",
   ],
   agent: [
     "metrics.view_own",
     "metrics.self",
     "leaderboard.view",
     "leaderboards.view",
+    "flags.view_own",
   ],
 };
 

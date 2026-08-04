@@ -497,15 +497,6 @@ export default async function AdminImportDetailPage({
           <ImportDeleteForm
             assessment={deletion}
             batchId={batch.id}
-            dialer={batch.dialerId ?? "Default"}
-            fileName={batch.fileName}
-            importType={batch.importType}
-            lifecycle={lifecycle}
-            reportingPeriod={reportingPeriod}
-            rowCount={batch.rowCount}
-            status={batch.status}
-            team={teamNames.join(", ") || "Company"}
-            uploadDate={fmt(batch.createdAt)}
           />
         </div>
       </section>

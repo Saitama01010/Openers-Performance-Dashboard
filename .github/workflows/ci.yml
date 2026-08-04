@@ -43,6 +43,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Allow triggers in the disposable test database
+        run: >-
+          node -e "const mysql=require('mysql2/promise');(async()=>{const connection=await mysql.createConnection({host:'127.0.0.1',user:'root',password:'root_password'});await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');await connection.end()})().catch((error)=>{console.error(error);process.exit(1)})"
       - run: npm run lint
       - run: npm run db:generate
       - run: git diff --exit-code -- drizzle

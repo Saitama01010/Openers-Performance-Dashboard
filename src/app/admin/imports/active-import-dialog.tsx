@@ -30,6 +30,9 @@ function formatDuration(seconds: number) {
 
 export type ActiveImportDialogProps = ImportIdentity & {
   lifecycle: ActiveImportLifecycleOptions;
+  compactTrigger?: boolean;
+  returnPage?: number;
+  triggerLabel?: string;
 };
 
 function SubmitButton() {
@@ -214,14 +217,17 @@ export function ActiveImportDialog(props: ActiveImportDialogProps) {
   return (
     <form action={deactivateImportAction}>
       <input name="batchId" type="hidden" value={props.batchId} />
+      {props.returnPage ? (
+        <input name="returnPage" type="hidden" value={props.returnPage} />
+      ) : null}
       <button
-        className="ui-button ui-button--danger"
+        className={`ui-button ui-button--danger${props.compactTrigger ? " ui-button--compact" : ""}`}
         disabled={!props.lifecycle.canDeactivate}
         onClick={() => dialogRef.current?.showModal()}
         ref={triggerRef}
         type="button"
       >
-        Deactivate import
+        {props.triggerLabel ?? "Deactivate import"}
       </button>
       <dialog
         aria-describedby={descriptionId}

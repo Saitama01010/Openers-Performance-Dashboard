@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/auth/session";
+import { DashboardDateFilter } from "@/components/dashboard/overview-date-filter";
 import {
   EmptyTableRow,
   PageHeader,
@@ -10,6 +11,8 @@ import {
 } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { getDashboardData, type DashboardTotals } from "@/dashboard/data";
+import { resolveOverviewDateRange } from "@/dashboard/date-range";
+import { getEnv } from "@/env";
 import {
   formatDurationSeconds,
   formatNumber,
@@ -107,13 +110,23 @@ function aggregateTeams(
     .sort((left, right) => right.calls - left.calls);
 }
 
-export default async function TeamPerformancePage() {
+export default async function TeamPerformancePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await getCurrentUser();
 
   if (!user) redirect("/login");
   if (user.role === "agent") redirect("/performance");
 
-  const dashboard = await getDashboardData(user);
+  const params = await searchParams;
+  const dateRange = resolveOverviewDateRange(
+    params,
+    new Date(),
+    getEnv().GOOGLE_SHEETS_TIMEZONE,
+  );
+  const dashboard = await getDashboardData(user, { dateRange });
   const teams = aggregateTeams(dashboard.agentRows);
   const maximumCalls = Math.max(1, ...teams.map((team) => team.calls));
 
@@ -121,6 +134,7 @@ export default async function TeamPerformancePage() {
     <DashboardShell user={user}>
       <section className="dashboard-page">
         <PageHeader
+          actions={<DashboardDateFilter ariaLabel="Team performance date filter" pathname="/teams/performance" range={dateRange} />}
           description="Compare the team snapshots represented in your active, role-scoped performance data."
           eyebrow="Comparison"
           title="Team performance"

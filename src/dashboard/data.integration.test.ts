@@ -5,6 +5,7 @@ import { inArray } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
 import { getDashboardData } from "@/dashboard/data";
+import { resolveOverviewDateRange } from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
   dialerAgentHourlyMetrics,
@@ -486,5 +487,61 @@ describe("active-version dashboard scope", () => {
     expect(dashboard.agentRows).toHaveLength(1);
     expect(dashboard.comparison?.hasData).toBe(true);
     expect(dashboard.comparison?.totals.calls).toBe(10);
+  });
+
+  it("returns active July 28 metrics for Last Month, All Time, and a custom same-day range", async () => {
+    const adminId = await createProfile("admin", "July Regression Admin");
+    const agentId = await createProfile("agent", "July Regression Agent");
+    const teamId = await createTeam("July Regression Team");
+    await addMembership(agentId, teamId);
+    const scopeKey = `dialer|agent_hours_performance|2026-07-28|team:${teamId}|dialer:default`;
+    scopeKeys.push(scopeKey);
+    const activeVersion = await createVersion({
+      active: true,
+      actorId: adminId,
+      agentId,
+      calls: 28,
+      reportingDate: "2026-07-28",
+      scopeKey,
+      teamId,
+      teamName: "July Regression Team",
+      versionNumber: 1,
+    });
+    await createVersion({
+      active: false,
+      actorId: adminId,
+      agentId,
+      calls: 999,
+      reportingDate: "2026-07-28",
+      scopeKey,
+      teamId,
+      teamName: "July Regression Team",
+      versionNumber: 2,
+    });
+    await getDb().insert(dialerDatasetScopes).values({
+      scopeKey,
+      source: "dialer",
+      importType: "agent_hours_performance",
+      reportingDate: "2026-07-28",
+      teamId,
+      activeVersionId: activeVersion,
+      revision: 1,
+    });
+    const actor = { id: adminId, role: "admin" as const, teamIds: [] };
+    const now = new Date("2026-08-04T12:00:00.000Z");
+    const ranges = [
+      resolveOverviewDateRange({ range: "last-month" }, now),
+      resolveOverviewDateRange({ range: "all-time" }, now),
+      resolveOverviewDateRange(
+        { range: "custom", from: "2026-07-28", to: "2026-07-28" },
+        now,
+      ),
+    ];
+
+    for (const dateRange of ranges) {
+      const dashboard = await getDashboardData(actor, { dateRange });
+      expect(dashboard.totals.calls).toBe(28);
+      expect(dashboard.totals.rowCount).toBe(1);
+    }
   });
 });

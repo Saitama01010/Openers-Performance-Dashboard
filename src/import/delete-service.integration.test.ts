@@ -23,6 +23,7 @@ import {
   getImportDeletionAssessments,
 } from "@/import/delete-service";
 import { getActiveDialerMetricTotals } from "@/import/active-data";
+import { listImportHistory } from "@/import/service";
 import { newId } from "@/lib/ids";
 
 vi.mock("server-only", () => ({}));
@@ -300,6 +301,8 @@ describe("permanent import deletion", () => {
         .from(importErrors)
         .where(eq(importErrors.batchId, batchId)),
     ).toHaveLength(0);
+    const history = await listImportHistory(admin, { pageSize: 100 });
+    expect(history.rows.some((row) => row.id === batchId)).toBe(false);
 
     const [audit] = await getDb()
       .select()
@@ -579,6 +582,25 @@ describe("permanent import deletion", () => {
       .from(dialerDatasetScopes)
       .where(eq(dialerDatasetScopes.scopeKey, chain.scopeKey));
     expect(scope.activeVersionId).toBeNull();
+  });
+
+  it("never activates a historical version from another dataset scope", async () => {
+    const admin = await createActor("admin");
+    const target = await createVersionChain(admin, ["active"]);
+    const unrelated = await createVersionChain(admin, ["superseded", "active"]);
+
+    await deleteImport(admin, target.batches[0], true);
+
+    const [targetScope] = await getDb()
+      .select()
+      .from(dialerDatasetScopes)
+      .where(eq(dialerDatasetScopes.scopeKey, target.scopeKey));
+    const [unrelatedScope] = await getDb()
+      .select()
+      .from(dialerDatasetScopes)
+      .where(eq(dialerDatasetScopes.scopeKey, unrelated.scopeKey));
+    expect(targetScope.activeVersionId).toBeNull();
+    expect(unrelatedScope.activeVersionId).toBe(unrelated.versions[1]);
   });
 
   it("rejects agents, managers, and administrators denied imports.delete", async () => {

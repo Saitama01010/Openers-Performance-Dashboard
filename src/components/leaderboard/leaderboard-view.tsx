@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { DashboardFilterToolbar } from "@/components/dashboard/dashboard-filter-toolbar";
 import { MetricPanel } from "@/components/dashboard/performance-visuals";
 import type { OverviewDateRange } from "@/dashboard/date-range";
 import { formatNumber } from "@/import/format";
@@ -21,17 +22,9 @@ function formatDate(value: string) {
 }
 
 function formatDateRange(range: OverviewDateRange) {
+  if (!range.from || !range.to) return "All available history";
   if (range.from === range.to) return formatDate(range.from);
   return `${formatDate(range.from)} – ${formatDate(range.to)}`;
-}
-
-function clearFiltersHref(range: OverviewDateRange) {
-  const params = new URLSearchParams({ range: range.key });
-  if (range.key === "custom") {
-    params.set("from", range.from);
-    params.set("to", range.to);
-  }
-  return `/leaderboard?${params.toString()}`;
 }
 
 function sortHref(
@@ -43,7 +36,7 @@ function sortHref(
   const nextSort = nextLeaderboardSort(currentSort, column);
   const params = new URLSearchParams({ range: dateRange.key });
 
-  if (dateRange.key === "custom") {
+  if (dateRange.key === "custom" && dateRange.from && dateRange.to) {
     params.set("from", dateRange.from);
     params.set("to", dateRange.to);
   }
@@ -204,74 +197,37 @@ export function LeaderboardView({
         </div>
       </section>
 
-      <section
-        aria-labelledby="leaderboard-filters-heading"
-        className="leaderboard-filter-section"
-      >
+      <section aria-labelledby="leaderboard-filters-heading" className="leaderboard-filter-section">
         <h2 className="sr-only" id="leaderboard-filters-heading">
           Filter LeaderBoard
         </h2>
-        <form
-          aria-label="Leaderboard filters"
-          className="leaderboard-toolbar"
-          method="get"
-        >
-          <input defaultValue={dateRange.key} name="range" type="hidden" />
-          {dateRange.key === "custom" ? (
-            <>
-              <input defaultValue={dateRange.from} name="from" type="hidden" />
-              <input defaultValue={dateRange.to} name="to" type="hidden" />
-            </>
-          ) : null}
-          {sort ? (
-            <>
-              <input defaultValue={sort.column} name="sort" type="hidden" />
-              <input
-                defaultValue={sort.direction}
-                name="direction"
-                type="hidden"
-              />
-            </>
-          ) : null}
-          <div className="leaderboard-toolbar__control leaderboard-toolbar__control--search">
-            <label>
-              Search
-              <input
-                defaultValue={data.filters.query ?? ""}
-                name="q"
-                placeholder="Real Name or American Name"
-                type="search"
-              />
-            </label>
-          </div>
-          <div className="leaderboard-toolbar__control leaderboard-toolbar__control--team">
-            <label>
-              Team
-              <select
-                defaultValue={data.filters.teamId ?? ""}
-                name="teamId"
-              >
-                <option value="">All teams</option>
-                {data.teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="leaderboard-toolbar__actions">
-            <button className="ui-button ui-button--primary" type="submit">
-              Apply filters
-            </button>
-            <Link
-              className="ui-button ui-button--secondary"
-              href={clearFiltersHref(dateRange)}
-            >
-              Clear
-            </Link>
-          </div>
-        </form>
+        <DashboardFilterToolbar
+          ariaLabel="Leaderboard filters"
+          filters={[
+            {
+              kind: "combobox",
+              label: "Agent",
+              name: "q",
+              value: data.filters.query,
+              options: [
+                { label: "All agents", value: "" },
+                ...data.rows.map((row) => ({
+                  label: `${row.realName} — ${row.americanName}`,
+                  value: row.realName,
+                })),
+              ],
+            },
+            {
+              label: "Team",
+              name: "teamId",
+              value: data.filters.teamId,
+              options: [
+                { label: "All teams", value: "" },
+                ...data.teams.map((team) => ({ label: team.name, value: team.id })),
+              ],
+            },
+          ]}
+        />
       </section>
 
       {data.status === "ready" && data.stale ? (

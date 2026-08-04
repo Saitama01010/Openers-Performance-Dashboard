@@ -9,6 +9,7 @@ import {
   confirmDialerImportBatch,
   createDialerPreviewBatch,
   ImportConfirmationError,
+  listImportHistory,
   rejectDialerImportBatch,
   restoreDialerImportBatch,
   rollbackDialerImportBatch,
@@ -187,6 +188,19 @@ async function requireAdminMutation(
   return user;
 }
 
+function requestedHistoryPage(formData: FormData) {
+  const value = Number(formData.get("returnPage"));
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function importHistoryHref(page: number, error?: string) {
+  const params = new URLSearchParams();
+  if (page > 1) params.set("page", String(page));
+  if (error) params.set("error", error);
+  const query = params.toString();
+  return query ? `/admin/imports?${query}` : "/admin/imports";
+}
+
 function importResolutionFromForm(
   formData: FormData,
 ): ActiveImportResolution | null {
@@ -206,6 +220,7 @@ function importResolutionFromForm(
 
 export async function deactivateImportAction(formData: FormData) {
   const user = await requireAdminMutation(null);
+  const returnPage = requestedHistoryPage(formData);
   const batchId = formData.get("batchId");
   const reason = formData.get("reason");
   const resolution = importResolutionFromForm(formData);
@@ -215,7 +230,11 @@ export async function deactivateImportAction(formData: FormData) {
     typeof reason !== "string" ||
     !resolution
   ) {
-    redirect("/admin/imports?error=deactivation_input_invalid");
+    redirect(
+      returnPage
+        ? importHistoryHref(returnPage, "deactivation_input_invalid")
+        : "/admin/imports?error=deactivation_input_invalid",
+    );
   }
 
   try {
@@ -230,13 +249,21 @@ export async function deactivateImportAction(formData: FormData) {
       error instanceof ActiveImportLifecycleError
         ? error.code
         : "deactivation_failed";
-    redirect(`/admin/imports/${batchId}?error=${code}`);
+    redirect(
+      returnPage
+        ? importHistoryHref(returnPage, code)
+        : `/admin/imports/${batchId}?error=${code}`,
+    );
   }
 
   revalidatePath("/dashboard");
   revalidatePath("/admin/imports");
   revalidatePath(`/admin/imports/${batchId}`);
-  redirect(`/admin/imports/${batchId}?deactivated=true`);
+  redirect(
+    returnPage
+      ? importHistoryHref(returnPage)
+      : `/admin/imports/${batchId}?deactivated=true`,
+  );
 }
 
 export async function rollbackImportAction(formData: FormData) {
@@ -287,6 +314,7 @@ export async function restoreImportAction(formData: FormData) {
 
 export async function deleteImportAction(formData: FormData) {
   const user = await requireAdminMutation(null);
+  const returnPage = requestedHistoryPage(formData);
   const batchId = formData.get("batchId");
   const confirmation = formData.get("confirmation");
   const reason = formData.get("reason");
@@ -296,19 +324,20 @@ export async function deleteImportAction(formData: FormData) {
     typeof confirmation !== "string" ||
     typeof reason !== "string"
   ) {
-    redirect("/admin/imports?error=delete_input_invalid");
+    redirect(
+      returnPage
+        ? importHistoryHref(returnPage, "delete_input_invalid")
+        : "/admin/imports?error=delete_input_invalid",
+    );
   }
 
-  let storageCleanupPending = false;
-
   try {
-    const result = await deleteDialerImportBatch({
+    await deleteDialerImportBatch({
       actor: user,
       batchId,
       confirmation,
       reason,
     });
-    storageCleanupPending = result.storageCleanupPending;
   } catch (error) {
     const code =
       error instanceof ImportDeletionError ? error.code : "delete_failed";
@@ -321,8 +350,8 @@ export async function deleteImportAction(formData: FormData) {
         error instanceof Error ? error.message : "Unknown deletion error.",
     });
 
-    if (code === "import_not_found") {
-      redirect(`/admin/imports?error=${code}`);
+    if (returnPage || code === "import_not_found") {
+      redirect(importHistoryHref(returnPage ?? 1, code));
     }
 
     redirect(`/admin/imports/${batchId}?error=${code}`);
@@ -331,9 +360,10 @@ export async function deleteImportAction(formData: FormData) {
   revalidatePath("/admin/imports");
   revalidatePath(`/admin/imports/${batchId}`);
   revalidatePath("/dashboard");
-  redirect(
-    `/admin/imports?deleted=true${
-      storageCleanupPending ? "&storageCleanup=pending" : ""
-    }`,
-  );
+  if (returnPage) {
+    const history = await listImportHistory(user, { page: returnPage });
+    const lastPage = Math.max(1, Math.ceil(history.total / history.pageSize));
+    redirect(importHistoryHref(Math.min(returnPage, lastPage)));
+  }
+  redirect("/admin/imports");
 }

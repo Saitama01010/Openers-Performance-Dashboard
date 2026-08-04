@@ -1,18 +1,21 @@
+import { dateKeyInTimeZone } from "@/sheets/timestamp";
+
+export const DEFAULT_DASHBOARD_TIME_ZONE = "Africa/Cairo";
+
 export type OverviewDateFilterKey =
   | "today"
   | "this-month"
   | "last-month"
+  | "all-time"
   | "custom";
 
 export type DashboardDateWindow = {
-  from: string;
-  to: string;
+  from?: string;
+  to?: string;
 };
 
 export type OverviewDateRange = DashboardDateWindow & {
-  comparison: DashboardDateWindow & {
-    label: string;
-  };
+  comparison: (DashboardDateWindow & { label: string }) | null;
   key: OverviewDateFilterKey;
   label: string;
 };
@@ -123,6 +126,14 @@ function todayRange(today: Date): OverviewDateRange {
   };
 }
 
+function allTimeRange(): OverviewDateRange {
+  return {
+    key: "all-time",
+    label: "All Time",
+    comparison: null,
+  };
+}
+
 function customRange(from: Date, to: Date): OverviewDateRange {
   const inclusiveDays =
     Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
@@ -145,22 +156,30 @@ function customRange(from: Date, to: Date): OverviewDateRange {
 export function resolveOverviewDateRange(
   params: OverviewDateFilterParams,
   now = new Date(),
+  timeZone = DEFAULT_DASHBOARD_TIME_ZONE,
 ) {
-  const today = utcDate(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-  );
+  const todayKey = dateKeyInTimeZone(now, timeZone);
+  const today = parseIsoDate(todayKey);
+  if (!today) throw new RangeError("Unable to resolve today's calendar date.");
   const requestedRange = firstValue(params.range);
 
   if (requestedRange === "today") return todayRange(today);
   if (requestedRange === "last-month") return lastMonthRange(today);
+  if (requestedRange === "all-time") return allTimeRange();
 
   if (requestedRange === "custom") {
     const from = parseIsoDate(firstValue(params.from));
     const to = parseIsoDate(firstValue(params.to));
-    if (from && to && from <= to) return customRange(from, to);
+    if (!from || !to) {
+      throw new RangeError("Choose a valid start and end date.");
+    }
+    if (from > to) {
+      throw new RangeError("The end date cannot be before the start date.");
+    }
+    return customRange(from, to);
   }
 
   return thisMonthRange(today);
 }
+
+export const resolveDashboardDateRange = resolveOverviewDateRange;

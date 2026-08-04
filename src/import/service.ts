@@ -61,6 +61,7 @@ import {
   type ImportValidationResult,
 } from "@/import/validation";
 import { newId } from "@/lib/ids";
+import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
 
 export type StoredImportPreview = {
   batchId: string;
@@ -175,7 +176,7 @@ function selectedReportingDateFromBatch(batch: {
   return typeof value === "string" ? value : null;
 }
 
-async function getMappings(source: string) {
+async function getMappings(source: string, actor: Actor) {
   const rows = await getDb()
     .select({
       sourceAgentName: sourceUserMappings.sourceAgentName,
@@ -197,7 +198,8 @@ async function getMappings(source: string) {
         eq(sourceUserMappings.source, source),
         eq(sourceUserMappings.active, true),
         isNull(teamMemberships.endedAt),
-        eq(teams.active, true),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+        visibleTeamWhere(actor),
       ),
     );
   const mappingByAgent = new Map<string, SourceMapping>();
@@ -229,7 +231,11 @@ async function resolveParsingActor(
   }
 
   const [uploader] = await getDb()
-    .select({ id: profiles.id, role: profiles.role })
+    .select({
+      id: profiles.id,
+      role: profiles.role,
+      organizationId: profiles.organizationId,
+    })
     .from(profiles)
     .where(eq(profiles.id, batch.uploadedById))
     .limit(1);
@@ -250,6 +256,9 @@ async function resolveParsingActor(
         eq(teamMemberships.profileId, uploader.id),
         isNull(teamMemberships.endedAt),
         eq(teams.active, true),
+        eq(teams.organizationId, uploader.organizationId),
+        isNull(teams.archivedAt),
+        isNull(teams.deletedAt),
       ),
     );
 
@@ -257,6 +266,7 @@ async function resolveParsingActor(
     id: uploader.id,
     role: uploader.role,
     teamIds: memberships.map((membership) => membership.teamId),
+    organizationId: uploader.organizationId,
   } satisfies Actor;
 }
 
@@ -811,7 +821,7 @@ async function processDialerBatch(input: {
 
   try {
     const [mappings, activeMetrics, duplicateImports, parsingActor] = await Promise.all([
-      getMappings(batch.source),
+      getMappings(batch.source, input.actor),
       listActiveDialerMetrics(),
       getDuplicateImports({
         batchId: batch.id,

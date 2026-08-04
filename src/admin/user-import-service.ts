@@ -19,6 +19,7 @@ import {
   userImportBatches,
 } from "@/db/schema";
 import { newId } from "@/lib/ids";
+import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
 
 const PREVIEW_TTL_MS = 30 * 60 * 1000;
 
@@ -26,16 +27,20 @@ function assertAdmin(actor: Actor) {
   if (actor.role !== "admin") throw new Error("Forbidden");
 }
 
-async function validationContext() {
+async function validationContext(actor: Actor) {
   const [emailRows, dialerRows, teamRows] = await Promise.all([
-    getDb().select({ email: profiles.email }).from(profiles),
+    getDb()
+      .select({ email: profiles.email })
+      .from(profiles)
+      .where(eq(profiles.organizationId, actorOrganizationId(actor))),
     getDb()
       .select({ name: sourceUserMappings.normalizedAgentName })
       .from(sourceUserMappings)
       .where(eq(sourceUserMappings.active, true)),
     getDb()
       .select({ id: teams.id, name: teams.name, active: teams.active })
-      .from(teams),
+      .from(teams)
+      .where(visibleTeamWhere(actor)),
   ]);
 
   return {
@@ -60,7 +65,7 @@ export async function createUserImportPreview(input: {
     throw new Error("Choose a CSV file no larger than 1 MB.");
   }
 
-  const context = await validationContext();
+  const context = await validationContext(input.actor);
   const preview = parseUserImportCsv({ content: input.content, ...context });
   if (preview.fatalErrors.length > 0) {
     return { batchId: null, preview };
@@ -133,7 +138,7 @@ export async function confirmUserImport(input: {
   });
   if (!batch) throw new Error("This import preview is invalid or expired.");
 
-  const context = await validationContext();
+  const context = await validationContext(input.actor);
   const preview = parseUserImportCsv({
     content: batch.rawFileContent,
     ...context,

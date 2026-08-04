@@ -57,15 +57,9 @@ export function DeleteUserDialog({ userId }: { userId: string }) {
         <div className="p-5">
           <h2 className="text-lg font-semibold">Permanently delete user?</h2>
           <p className="mt-2 text-sm text-muted">
-            This immediately removes login access, active sessions,
-            authentication credentials, temporary-password data, invitations,
-            reset tokens, permission overrides, active team memberships, and
-            active dialer mappings.
-          </p>
-          <p className="mt-3 text-sm text-muted">
-            Historical calls, metrics, display name, dialer attribution, team
-            attribution, and audit information will be preserved. This action
-            cannot be undone.
+            Permanently deleting this user will remove the account and all
+            associated application, team, performance, call, and imported data.
+            This action cannot be undone.
           </p>
           {error ? (
             <p className="mt-3 text-sm text-danger" role="alert">

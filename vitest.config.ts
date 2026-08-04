@@ -9,5 +9,6 @@ export default defineConfig({
   },
   test: {
     fileParallelism: false,
+    setupFiles: ["./src/test/database-safety.ts"],
   },
 });

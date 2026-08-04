@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
+import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
 import type {
   DashboardDateWindow,
   OverviewDateRange,
@@ -312,7 +313,8 @@ async function currentManagerAgentProfileIds(actor: Actor) {
         inArray(teamMemberships.teamId, actor.teamIds),
         eq(teamMemberships.active, true),
         isNull(teamMemberships.endedAt),
-        eq(teams.active, true),
+        visibleTeamWhere(actor),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
         eq(profiles.role, "agent"),
       ),
     );
@@ -451,7 +453,7 @@ async function getMetricAggregates(scope: DashboardScope) {
   }));
 }
 
-async function getProfilesById(profileIds: string[]) {
+async function getProfilesById(profileIds: string[], actor: Actor) {
   if (profileIds.length === 0) return [];
 
   return getDb()
@@ -462,10 +464,13 @@ async function getProfilesById(profileIds: string[]) {
       accountStatus: profiles.accountStatus,
     })
     .from(profiles)
-    .where(inArray(profiles.id, profileIds));
+    .where(and(
+      inArray(profiles.id, profileIds),
+      eq(profiles.organizationId, actorOrganizationId(actor)),
+    ));
 }
 
-async function getAllActiveAgentProfiles() {
+async function getAllActiveAgentProfiles(actor: Actor) {
   return getDb()
     .select({
       id: profiles.id,
@@ -479,11 +484,12 @@ async function getAllActiveAgentProfiles() {
         eq(profiles.role, "agent"),
         eq(profiles.active, true),
         eq(profiles.accountStatus, "active"),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
       ),
     );
 }
 
-async function getCurrentTeamNames(profileIds: string[]) {
+async function getCurrentTeamNames(profileIds: string[], actor: Actor) {
   const teamNames = new Map<string, string[]>();
 
   if (profileIds.length === 0) return teamNames;
@@ -500,7 +506,7 @@ async function getCurrentTeamNames(profileIds: string[]) {
         inArray(teamMemberships.profileId, profileIds),
         eq(teamMemberships.active, true),
         isNull(teamMemberships.endedAt),
-        eq(teams.active, true),
+        visibleTeamWhere(actor),
       ),
     )
     .orderBy(asc(teams.name));
@@ -521,14 +527,14 @@ async function getAgentPerformanceRows(
   const metricAggregates = await getMetricAggregates(scope);
   const profileIds = metricAggregates.map((row) => row.profileId);
   const profilesById = new Map(
-    (await getProfilesById(profileIds)).map((profile) => [profile.id, profile]),
+    (await getProfilesById(profileIds, scope.actor)).map((profile) => [profile.id, profile]),
   );
 
   if (showAgentsWithNoData) {
     const noDataProfiles =
       scope.actor.role === "admin"
-        ? await getAllActiveAgentProfiles()
-        : await getProfilesById(scope.noDataProfileIds);
+        ? await getAllActiveAgentProfiles(scope.actor)
+        : await getProfilesById(scope.noDataProfileIds, scope.actor);
     for (const profile of noDataProfiles) profilesById.set(profile.id, profile);
   }
 
@@ -538,7 +544,7 @@ async function getAgentPerformanceRows(
   const allProfileIds = Array.from(
     new Set([...profileIds, ...profilesById.keys()]),
   );
-  const currentTeamNames = await getCurrentTeamNames(allProfileIds);
+  const currentTeamNames = await getCurrentTeamNames(allProfileIds, scope.actor);
 
   const rows = allProfileIds.map((profileId) => {
     const aggregate = aggregateByProfile.get(profileId);

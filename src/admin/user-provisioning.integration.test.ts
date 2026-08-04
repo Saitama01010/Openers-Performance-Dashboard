@@ -222,7 +222,7 @@ describe("admin user provisioning integration", () => {
     ).toMatchObject({ ok: true });
   });
 
-  it("scrubs authentication data while preserving historical metrics", async () => {
+  it("physically removes the auth account and all user-owned application data", async () => {
     const adminId = await createActorProfile("admin");
     const teamId = await createTeam();
     const created = await createAdminUser(actor(adminId), {
@@ -280,25 +280,17 @@ describe("admin user provisioning integration", () => {
       userId: created.profileId,
     });
 
-    const [deleted] = await getDb()
+    const deleted = await getDb()
       .select()
       .from(profiles)
       .where(eq(profiles.id, created.profileId));
-    expect(deleted).toMatchObject({
-      email: null,
-      passwordHash: null,
-      encryptedTemporaryPassword: null,
-      accountStatus: "deleted",
-      active: false,
-    });
-    expect(deleted.deletedAt).toBeInstanceOf(Date);
+    expect(deleted).toEqual([]);
 
     const metricRows = await getDb()
       .select()
       .from(dialerAgentHourlyMetrics)
       .where(eq(dialerAgentHourlyMetrics.agentProfileId, created.profileId));
-    expect(metricRows).toHaveLength(1);
-    expect(metricRows[0].calls).toBe(12);
+    expect(metricRows).toEqual([]);
 
     expect(
       await getDb()
@@ -306,17 +298,21 @@ describe("admin user provisioning integration", () => {
         .from(sessions)
         .where(eq(sessions.profileId, created.profileId)),
     ).toEqual([]);
-    const [membership] = await getDb()
+    const memberships = await getDb()
       .select()
       .from(teamMemberships)
       .where(eq(teamMemberships.profileId, created.profileId));
-    expect(membership.active).toBe(false);
-    expect(membership.endedAt).toBeInstanceOf(Date);
-    const [mapping] = await getDb()
+    expect(memberships).toEqual([]);
+    const mappings = await getDb()
       .select()
       .from(sourceUserMappings)
       .where(eq(sourceUserMappings.profileId, created.profileId));
-    expect(mapping.active).toBe(false);
+    expect(mappings).toEqual([]);
+    const listed = await listAdminUsers(actor(adminId), {
+      page: 1,
+      pageSize: 20,
+    });
+    expect(listed.users.some((user) => user.id === created.profileId)).toBe(false);
     expect(
       await authenticateCredentials(
         "historical.agent@example.test",
@@ -367,7 +363,91 @@ describe("admin user provisioning integration", () => {
       .select({ id: profiles.id, status: profiles.accountStatus })
       .from(profiles)
       .where(inArray(profiles.id, result.deletedIds));
-    expect(deleted).toHaveLength(2);
-    expect(deleted.every((row) => row.status === "deleted")).toBe(true);
+    expect(deleted).toEqual([]);
+  });
+
+  it("rejects a permanent deletion requested by a non-admin", async () => {
+    const adminId = await createActorProfile("admin");
+    const managerId = await createActorProfile("manager");
+
+    await expect(
+      permanentlyDeleteUser(actor(managerId, "manager"), { userId: adminId }),
+    ).rejects.toThrow("Forbidden");
+    expect(
+      await getDb().select().from(profiles).where(eq(profiles.id, adminId)),
+    ).toHaveLength(1);
+  });
+
+  it("removes an administrator account without orphaning shared import history", async () => {
+    const deletingAdminId = await createActorProfile("admin");
+    const targetAdminId = await createActorProfile("admin");
+    const batchId = newId();
+    batchIds.push(batchId);
+    await getDb().insert(dialerImportBatches).values({
+      id: batchId,
+      source: "dialer",
+      fileName: "shared-history.csv",
+      fileHash: "c".repeat(64),
+      uploadedById: targetAdminId,
+      confirmedById: targetAdminId,
+      publishedById: targetAdminId,
+      rejectedById: targetAdminId,
+      rolledBackById: targetAdminId,
+      rawFileContent: "shared-history",
+    });
+
+    await permanentlyDeleteUser(actor(deletingAdminId), {
+      userId: targetAdminId,
+    });
+
+    expect(
+      await getDb().select().from(profiles).where(eq(profiles.id, targetAdminId)),
+    ).toEqual([]);
+    const [retainedBatch] = await getDb()
+      .select()
+      .from(dialerImportBatches)
+      .where(eq(dialerImportBatches.id, batchId));
+    expect(retainedBatch).toMatchObject({
+      uploadedById: deletingAdminId,
+      confirmedById: null,
+      publishedById: null,
+      rejectedById: null,
+      rolledBackById: null,
+    });
+  });
+
+  it("paginates a stable unique user set without duplicates or skipped rows", async () => {
+    const adminId = await createActorProfile("admin");
+    for (let index = 0; index < 12; index += 1) {
+      await createActorProfile("agent");
+    }
+
+    const firstPage = await listAdminUsers(actor(adminId), {
+      query: "Provisioning agent",
+      role: "agent",
+      page: 1,
+      pageSize: 5,
+    });
+    const secondPage = await listAdminUsers(actor(adminId), {
+      query: "Provisioning agent",
+      role: "agent",
+      page: 2,
+      pageSize: 5,
+    });
+    const thirdPage = await listAdminUsers(actor(adminId), {
+      query: "Provisioning agent",
+      role: "agent",
+      page: 3,
+      pageSize: 5,
+    });
+    const ids = [...firstPage.users, ...secondPage.users, ...thirdPage.users].map(
+      (user) => user.id,
+    );
+
+    expect(firstPage.pagination.total).toBe(12);
+    expect(firstPage.users).toHaveLength(5);
+    expect(secondPage.users).toHaveLength(5);
+    expect(thirdPage.users).toHaveLength(2);
+    expect(new Set(ids).size).toBe(12);
   });
 });

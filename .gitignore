@@ -32,6 +32,7 @@ yarn-error.log*
 .codex-dev.log
 .codex-dev-error.log
 cleanup-local-test-users-dry-run.txt
+.playwright-mcp/
 
 # env files (can opt-in for committing if needed)
 .env*

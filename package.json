@@ -16,7 +16,9 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:migrate:test": "tsx scripts/db-migrate-test.ts",
     "db:seed": "tsx scripts/db-seed.ts",
-    "db:health": "tsx scripts/db-health.ts"
+    "db:health": "tsx scripts/db-health.ts",
+    "teams:cleanup": "tsx scripts/team-cleanup.ts",
+    "users:purge-legacy-deleted": "tsx scripts/purge-legacy-deleted-users.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

@@ -34,6 +34,7 @@ import {
   formatOptionalNumber,
   formatPercentage,
 } from "@/import/format";
+import { getEnv } from "@/env";
 import { getTransferSummary } from "@/leaderboard/data";
 import { roleLabel } from "@/presentation/labels";
 import { CLOSED_DEALS_UNCONFIGURED_MESSAGE } from "@/sheets/closed-deals";
@@ -52,6 +53,7 @@ function formatDate(value: string | null) {
 }
 
 function formatDateRange(range: Pick<OverviewDateRange, "from" | "to">) {
+  if (!range.from || !range.to) return "all available history";
   if (range.from === range.to) return formatDate(range.from);
   return `${formatDate(range.from)} – ${formatDate(range.to)}`;
 }
@@ -61,7 +63,7 @@ function dashboardRangeHref(
   showAgentsWithNoData: boolean,
 ) {
   const params = new URLSearchParams({ range: range.key });
-  if (range.key === "custom") {
+  if (range.key === "custom" && range.from && range.to) {
     params.set("from", range.from);
     params.set("to", range.to);
   }
@@ -71,7 +73,7 @@ function dashboardRangeHref(
 
 function leaderboardRangeHref(range: OverviewDateRange) {
   const params = new URLSearchParams({ range: range.key });
-  if (range.key === "custom") {
+  if (range.key === "custom" && range.from && range.to) {
     params.set("from", range.from);
     params.set("to", range.to);
   }
@@ -113,7 +115,11 @@ export default async function DashboardPage({
   }
 
   const params = await searchParams;
-  const dateRange = resolveOverviewDateRange(params);
+  const dateRange = resolveOverviewDateRange(
+    params,
+    new Date(),
+    getEnv().GOOGLE_SHEETS_TIMEZONE,
+  );
   const showAgentsWithNoData =
     params.showNoData === "1" || params.showNoData === "true";
   const [dashboard, transferSummary] = await Promise.all([
@@ -297,18 +303,24 @@ export default async function DashboardPage({
                       />
                     </strong>
                     <span>
-                      {transferComparisonText(
-                        transferSummary.totalTransfers,
-                        transferSummary.comparisonTransfers,
-                        transferSummary.comparisonLabel,
-                      )}
+                      {transferSummary.comparisonTransfers !== null &&
+                      transferSummary.comparisonLabel
+                        ? transferComparisonText(
+                            transferSummary.totalTransfers,
+                            transferSummary.comparisonTransfers,
+                            transferSummary.comparisonLabel,
+                          )
+                        : "Across all available history"}
                     </span>
                   </div>
                   <div className="transfer-insight__context">
-                    <p>
-                      {formatNumber(transferSummary.comparisonTransfers)} in{" "}
-                      {transferSummary.comparisonLabel}
-                    </p>
+                    {transferSummary.comparisonTransfers !== null &&
+                    transferSummary.comparisonLabel ? (
+                      <p>
+                        {formatNumber(transferSummary.comparisonTransfers)} in{" "}
+                        {transferSummary.comparisonLabel}
+                      </p>
+                    ) : null}
                     {transferSummary.diagnosticCount > 0 ? (
                       <p>
                         {formatNumber(transferSummary.diagnosticCount)}{" "}

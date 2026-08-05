@@ -327,13 +327,9 @@ export function AdminUserTable({
         <div className="p-5">
           <h2 className="text-lg font-semibold">Delete selected users?</h2>
           <p className="mt-2 text-sm text-muted">
-            {selected.size} {selected.size === 1 ? "user is" : "users are"}{" "}
-            selected. Account deletion is permanent and cannot be undone.
-          </p>
-          <p className="mt-3 text-sm text-muted">
-            Login credentials and active sessions will be removed. Historical
-            performance, imports, calls, transfers, deals, team attribution,
-            and audit records will remain.
+            Permanently deleting this user will remove the account and all
+            associated application, team, performance, call, and imported data.
+            This action cannot be undone.
           </p>
           {feedback?.tone === "error" ? (
             <p className="mt-3 text-sm text-danger" role="alert">

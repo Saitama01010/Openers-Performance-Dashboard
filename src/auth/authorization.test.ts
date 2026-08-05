@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canAccessCoaching,
+  canAccessCoachingLeaderboard,
+  canAccessFlags,
+  canCreateCoachingSession,
   canAccessProfile,
   canImportForProfile,
   resolveProfileScope,
@@ -43,5 +47,19 @@ describe("authorization policy", () => {
     expect(resolvePermission(true, false)).toBe(false);
     expect(resolvePermission(false, true)).toBe(true);
     expect(resolvePermission(false, null)).toBe(false);
+  });
+
+  it("enforces the final coaching and flags role matrix", () => {
+    expect(canAccessCoaching("admin")).toBe(true);
+    expect(canAccessCoaching("manager")).toBe(true);
+    expect(canAccessCoaching("agent")).toBe(false);
+    expect(canCreateCoachingSession("admin")).toBe(true);
+    expect(canCreateCoachingSession("manager")).toBe(true);
+    expect(canCreateCoachingSession("agent")).toBe(false);
+    expect(canAccessCoachingLeaderboard("admin")).toBe(true);
+    expect(canAccessCoachingLeaderboard("manager")).toBe(false);
+    expect(canAccessFlags("admin")).toBe(true);
+    expect(canAccessFlags("manager")).toBe(true);
+    expect(canAccessFlags("agent")).toBe(true);
   });
 });

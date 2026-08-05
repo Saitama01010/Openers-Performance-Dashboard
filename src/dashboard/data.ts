@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
+import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
 import type {
   DashboardDateWindow,
   OverviewDateRange,
@@ -27,6 +28,7 @@ import {
   teamMemberships,
   teams,
 } from "@/db/schema";
+import { activeProfileWhere } from "@/users/visibility";
 
 export type DashboardTotals = {
   calls: number;
@@ -286,9 +288,12 @@ function scopeForDateWindow(
   scope: DashboardScope,
   window: DashboardDateWindow,
 ): DashboardScope {
+  if (!window.from && !window.to) return scope;
   const dateWhere = and(
-    gte(dialerAgentHourlyMetrics.metricDate, window.from),
-    lte(dialerAgentHourlyMetrics.metricDate, window.to),
+    window.from
+      ? gte(dialerAgentHourlyMetrics.metricDate, window.from)
+      : undefined,
+    window.to ? lte(dialerAgentHourlyMetrics.metricDate, window.to) : undefined,
   );
 
   return {
@@ -312,7 +317,8 @@ async function currentManagerAgentProfileIds(actor: Actor) {
         inArray(teamMemberships.teamId, actor.teamIds),
         eq(teamMemberships.active, true),
         isNull(teamMemberships.endedAt),
-        eq(teams.active, true),
+        visibleTeamWhere(actor),
+        activeProfileWhere(actorOrganizationId(actor)),
         eq(profiles.role, "agent"),
       ),
     );
@@ -398,7 +404,15 @@ async function getDashboardTotals(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
-    .where(scope.metricWhere);
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(
+      scope.metricWhere,
+      activeProfileWhere(actorOrganizationId(scope.actor)),
+      eq(profiles.role, "agent"),
+    ));
 
   return {
     totals: normalizeTotals(row),
@@ -439,7 +453,15 @@ async function getMetricAggregates(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
-    .where(scope.metricWhere)
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(
+      scope.metricWhere,
+      activeProfileWhere(actorOrganizationId(scope.actor)),
+      eq(profiles.role, "agent"),
+    ))
     .groupBy(dialerAgentHourlyMetrics.agentProfileId)
     .orderBy(desc(sql`sum(${dialerAgentHourlyMetrics.calls})`));
 
@@ -451,7 +473,7 @@ async function getMetricAggregates(scope: DashboardScope) {
   }));
 }
 
-async function getProfilesById(profileIds: string[]) {
+async function getProfilesById(profileIds: string[], actor: Actor) {
   if (profileIds.length === 0) return [];
 
   return getDb()
@@ -462,10 +484,14 @@ async function getProfilesById(profileIds: string[]) {
       accountStatus: profiles.accountStatus,
     })
     .from(profiles)
-    .where(inArray(profiles.id, profileIds));
+    .where(and(
+      inArray(profiles.id, profileIds),
+      activeProfileWhere(actorOrganizationId(actor)),
+      eq(profiles.role, "agent"),
+    ));
 }
 
-async function getAllActiveAgentProfiles() {
+async function getAllActiveAgentProfiles(actor: Actor) {
   return getDb()
     .select({
       id: profiles.id,
@@ -479,11 +505,12 @@ async function getAllActiveAgentProfiles() {
         eq(profiles.role, "agent"),
         eq(profiles.active, true),
         eq(profiles.accountStatus, "active"),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
       ),
     );
 }
 
-async function getCurrentTeamNames(profileIds: string[]) {
+async function getCurrentTeamNames(profileIds: string[], actor: Actor) {
   const teamNames = new Map<string, string[]>();
 
   if (profileIds.length === 0) return teamNames;
@@ -500,7 +527,7 @@ async function getCurrentTeamNames(profileIds: string[]) {
         inArray(teamMemberships.profileId, profileIds),
         eq(teamMemberships.active, true),
         isNull(teamMemberships.endedAt),
-        eq(teams.active, true),
+        visibleTeamWhere(actor),
       ),
     )
     .orderBy(asc(teams.name));
@@ -521,48 +548,43 @@ async function getAgentPerformanceRows(
   const metricAggregates = await getMetricAggregates(scope);
   const profileIds = metricAggregates.map((row) => row.profileId);
   const profilesById = new Map(
-    (await getProfilesById(profileIds)).map((profile) => [profile.id, profile]),
+    (await getProfilesById(profileIds, scope.actor)).map((profile) => [profile.id, profile]),
   );
 
   if (showAgentsWithNoData) {
     const noDataProfiles =
       scope.actor.role === "admin"
-        ? await getAllActiveAgentProfiles()
-        : await getProfilesById(scope.noDataProfileIds);
+        ? await getAllActiveAgentProfiles(scope.actor)
+        : await getProfilesById(scope.noDataProfileIds, scope.actor);
     for (const profile of noDataProfiles) profilesById.set(profile.id, profile);
   }
 
   const aggregateByProfile = new Map(
     metricAggregates.map((row) => [row.profileId, row]),
   );
-  const allProfileIds = Array.from(
-    new Set([...profileIds, ...profilesById.keys()]),
-  );
-  const currentTeamNames = await getCurrentTeamNames(allProfileIds);
+  const allProfileIds = Array.from(profilesById.keys());
+  const currentTeamNames = await getCurrentTeamNames(allProfileIds, scope.actor);
 
-  const rows = allProfileIds.map((profileId) => {
+  const rows = allProfileIds.flatMap((profileId) => {
     const aggregate = aggregateByProfile.get(profileId);
     const profile = profilesById.get(profileId);
+    if (!profile) return [];
     const totals = aggregate?.totals ?? { ...EMPTY_TOTALS };
     const rates = rateMetrics(totals);
-    const agentName =
-      profile?.name ?? aggregate?.sourceAgentName ?? "Deleted user";
 
-    return {
+    return [{
       ...totals,
       ...rates,
       profileId,
-      agentName,
+      agentName: profile.name,
       teamName:
         aggregate?.teamName ??
         currentTeamNames.get(profileId)?.join(", ") ??
         "No team",
-      accountStatus: profile?.accountStatus ?? "deactivated",
+      accountStatus: profile.accountStatus,
       hasMetrics: Boolean(aggregate),
-      isLocalTestAccount: profile
-        ? localTestAccount(profile)
-        : false,
-    } satisfies DashboardAgentPerformanceRow;
+      isLocalTestAccount: localTestAccount(profile),
+    } satisfies DashboardAgentPerformanceRow];
   });
 
   return rows.sort((left, right) => {
@@ -589,9 +611,15 @@ async function getHourlyBreakdown(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
     .where(
       and(
         scope.metricWhere,
+        activeProfileWhere(actorOrganizationId(scope.actor)),
+        eq(profiles.role, "agent"),
         eq(dialerAgentHourlyMetrics.granularity, "hourly"),
       ),
     )
@@ -627,7 +655,15 @@ async function getDataFreshness(scope: DashboardScope) {
         dialerAgentHourlyMetrics.versionId,
       ),
     )
-    .where(scope.metricWhere);
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(
+      scope.metricWhere,
+      activeProfileWhere(actorOrganizationId(scope.actor)),
+      eq(profiles.role, "agent"),
+    ));
 
   return {
     latestMetricDate: row?.latestMetricDate
@@ -670,7 +706,7 @@ export async function getDashboardData(
   const scope = options.dateRange
     ? scopeForDateWindow(baseScope, options.dateRange)
     : baseScope;
-  const comparisonScope = options.dateRange
+  const comparisonScope = options.dateRange?.comparison
     ? scopeForDateWindow(baseScope, options.dateRange.comparison)
     : null;
   const baseTotalsPromise = getDashboardTotals(baseScope);
@@ -707,7 +743,7 @@ export async function getDashboardData(
     dataFreshness,
     reconciliation: reconcileAgentRows(totals, agentRows),
     comparison:
-      options.dateRange && comparisonResult
+      options.dateRange?.comparison && comparisonResult
         ? {
             hasData: comparisonResult.totals.rowCount > 0,
             label: options.dateRange.comparison.label,

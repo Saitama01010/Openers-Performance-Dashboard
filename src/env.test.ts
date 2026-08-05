@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 const baseEnv = {
   DATABASE_URL: "mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard",
+  DATABASE_ENVIRONMENT: "development",
   SESSION_SECRET: "12345678901234567890123456789012",
   NODE_ENV: "development",
 } satisfies NodeJS.ProcessEnv;
@@ -108,5 +109,58 @@ describe("environment validation", () => {
         GOOGLE_SHEETS_TIMEZONE: "Mars/Olympus",
       }),
     ).toThrow(/valid IANA timezone/);
+  });
+
+  it("fails immediately when tests target a database not explicitly isolated for tests", async () => {
+    const { parseEnv } = await import("@/env");
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        NODE_ENV: "test",
+        DATABASE_ENVIRONMENT: "production",
+      }),
+    ).toThrow(/DATABASE_ENVIRONMENT=test/);
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        NODE_ENV: "test",
+        DATABASE_ENVIRONMENT: "test",
+      }),
+    ).toThrow(/standalone 'test' marker/);
+
+    const env = parseEnv({
+      ...baseEnv,
+      DATABASE_URL:
+        "mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard_test",
+      DATABASE_ENVIRONMENT: "test",
+      NODE_ENV: "test",
+    });
+    expect(env.DATABASE_ENVIRONMENT).toBe("test");
+  });
+
+  it("prevents preview and production deployments from sharing database environments", async () => {
+    const { parseEnv } = await import("@/env");
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        NODE_ENV: "production",
+        DEPLOYMENT_ENVIRONMENT: "preview",
+        DATABASE_ENVIRONMENT: "production",
+        EMAIL_PROVIDER: "resend",
+        RESEND_API_KEY: "re_preview_test",
+        TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+      }),
+    ).toThrow(/DATABASE_ENVIRONMENT must match/);
+
+    const preview = parseEnv({
+      ...baseEnv,
+      NODE_ENV: "production",
+      DEPLOYMENT_ENVIRONMENT: "preview",
+      DATABASE_ENVIRONMENT: "preview",
+      EMAIL_PROVIDER: "resend",
+      RESEND_API_KEY: "re_preview_test",
+      TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+    });
+    expect(preview.DATABASE_ENVIRONMENT).toBe("preview");
   });
 });

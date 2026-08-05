@@ -83,6 +83,11 @@ function revalidateAdminUserPaths(userId: string) {
   revalidatePath("/admin/users");
   revalidatePath("/admin/teams");
   revalidatePath(`/admin/users/${userId}`);
+  revalidatePath("/agents");
+  revalidatePath("/dashboard");
+  revalidatePath("/leaderboard");
+  revalidatePath("/performance");
+  revalidatePath("/teams/performance");
 }
 
 export async function PATCH(

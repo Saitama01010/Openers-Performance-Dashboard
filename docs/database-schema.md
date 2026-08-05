@@ -6,7 +6,7 @@ The `profiles.shift` field is a nullable `varchar(80)`. It is optional for
 existing and newly created users and is updated through the same
 administrator-only inline profile API as email, American Name, and team.
 
-Foundational tables currently cover profiles, teams, historical team
+Foundational tables currently cover organizations, profiles, teams, historical team
 memberships, roles, permissions, user permission overrides, hashed sessions,
 invitation tokens, reset tokens, rate-limit counters, source mappings,
 permanent dialer import batches, staged import rows, immutable dataset versions,
@@ -41,6 +41,10 @@ Important invariants:
   history and cannot be deleted through import cleanup.
 - Account and reset tokens store SHA-256 hashes, never raw values.
 - Historical memberships use `started_at` and nullable `ended_at`; active membership queries require `ended_at IS NULL`.
+- Profiles and teams carry a required `organization_id`. Team names are unique
+  inside an organization, and production-visible team queries require the
+  authenticated organization, `active = true`, and null `archived_at` and
+  `deleted_at` values.
 
 Future source, commission, and flag tables will be introduced only through additive migrations. Applied migrations must not be edited after release.
 
@@ -68,4 +72,27 @@ Team membership changes end the previous active row and insert a new row instead
 
 Audit metadata must remain safe: never store passwords, password hashes, raw invitation/reset/session tokens, API keys, SMTP passwords, or other secrets.
 
-Permanent deletion is implemented as authentication scrubbing rather than a physical profile-row delete because historical metrics and audit rows reference the profile. Email, password hash, encrypted temporary password, sessions, reset/invitation tokens, and overrides are removed; current memberships and dialer mappings are ended while their historical display values remain.
+Permanent deletion physically removes the profile row (the local authentication
+account), sessions, invitations, reset tokens, permissions, memberships,
+mappings, imported agent rows, performance metrics, transfer fixtures, delivery
+records, and user-linked audit rows in one transaction. Shared import batches
+are retained, operator references are cleared or reassigned to the deleting
+administrator, and affected import/version aggregates are recalculated before
+commit. Deactivation and revocation remain separate non-destructive operations.
+
+## Team contamination cleanup
+
+`npm run teams:cleanup` is a manual, one-time utility and is never invoked by a
+deployment hook. It requires an organization plus explicit team IDs and defaults
+to a read-only dry run:
+
+```powershell
+npm.cmd run teams:cleanup -- --organization-id <organization-id> --team-id <team-id> --team-id <team-id>
+```
+
+The summary prints every selected ID and dependent users, managers, imports,
+metrics, import rows, and reports. Destructive execution requires an active
+administrator ID, `--execute`, and the exact confirmation string printed by the
+dry run. Execution transactionally archives the selected teams and ends their
+active memberships; it does not delete historical import or metric rows and
+never selects teams by name.

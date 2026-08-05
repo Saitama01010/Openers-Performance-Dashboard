@@ -12,6 +12,17 @@ npm run db:seed
 npm run db:health
 ```
 
+Database-backed tests fail before test discovery unless the database is
+explicitly isolated: set `NODE_ENV=test`, `DATABASE_ENVIRONMENT=test`, use a
+local/CI host, and use a database name containing a standalone `test` marker
+(for example `openers_dashboard_test`). This prevents unit, integration, and CI
+test processes from connecting to a production database.
+
+Runtime startup also requires `DATABASE_ENVIRONMENT` to match
+`DEPLOYMENT_ENVIRONMENT` (or `NODE_ENV` when the explicit deployment value is
+absent). Configure preview and production deployments with separate databases
+and explicit `preview` and `production` values respectively.
+
 CI runs the same commands against an isolated MySQL 8.4 service and fails if `db:generate` changes version-controlled migrations.
 
 Current unit coverage includes CSV header normalization, duplicate and corrected rows, aggregate reconciliation, duration formatting, mapping/scope outcomes, authentication security policy, token lifecycle policy, fail-closed authorization, Resend env validation, transactional email rendering, provider selection, reply-to handling, provider message IDs, and duplicate password-reset suppression. Database-backed end-to-end tests for invitation/reset consumption and admin account management remain required before production.
@@ -37,7 +48,7 @@ zero-reference metric removal; stored-file success, missing-file, and
 cleanup-pending behavior; durable audits; concurrent deletion; concurrent
 activation; database transaction rollback; and targeted history revalidation.
 
-Provisioning coverage also includes authenticated temporary-password encryption and tamper detection, strict user-CSV header mapping and validation, formula-injection blocking, plain-English audit formatting and secret removal, immediate temporary-password authentication, regeneration invalidation, no automatic invitation, and deletion that preserves metric rows while scrubbing authentication state.
+Provisioning coverage also includes authenticated temporary-password encryption and tamper detection, strict user-CSV header mapping and validation, formula-injection blocking, plain-English audit formatting and secret removal, immediate temporary-password authentication, regeneration invalidation, no automatic invitation, and transactional physical deletion of authentication and user-owned application data.
 
 Phase 2 adds unit coverage for:
 

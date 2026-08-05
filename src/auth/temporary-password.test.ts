@@ -8,7 +8,8 @@ vi.mock("server-only", () => ({}));
 describe("temporary password encryption", () => {
   beforeEach(() => {
     process.env.DATABASE_URL =
-      "mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard";
+      "mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard_test";
+    process.env.DATABASE_ENVIRONMENT = "test";
     process.env.SESSION_SECRET = "12345678901234567890123456789012";
     vi.stubEnv("NODE_ENV", "test");
     process.env.TEMP_PASSWORD_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString(

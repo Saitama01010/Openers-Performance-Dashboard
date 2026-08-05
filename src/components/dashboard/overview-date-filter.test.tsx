@@ -1,56 +1,48 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import {
-  DashboardDateFilter,
-  OverviewDateFilter,
-} from "@/components/dashboard/overview-date-filter";
+const dateFilter = readFileSync(
+  "src/components/dashboard/overview-date-filter.tsx",
+  "utf8",
+);
+const filterToolbar = readFileSync(
+  "src/components/dashboard/dashboard-filter-toolbar.tsx",
+  "utf8",
+);
 
-const dateRange = {
-  key: "this-month" as const,
-  label: "This Month",
-  from: "2026-07-01",
-  to: "2026-07-30",
-  comparison: {
-    from: "2026-06-01",
-    to: "2026-06-30",
-    label: "previous month to date",
-  },
-};
-
-describe("Overview date filter", () => {
-  it("offers the required compact presets and native custom date inputs", () => {
-    const markup = renderToStaticMarkup(
-      <OverviewDateFilter
-        range={dateRange}
-        showAgentsWithNoData={false}
-      />,
-    );
-
-    expect(markup).toContain("Today");
-    expect(markup).toContain("This Month");
-    expect(markup).toContain("Last Month");
-    expect(markup).toContain("Custom Date");
-    expect(markup.match(/type="date"/g)).toHaveLength(2);
-    expect(markup).toContain('aria-current="page"');
+describe("shared dashboard filters", () => {
+  it("offers the exact date presets plus unrestricted custom dates", () => {
+    for (const label of [
+      "Today",
+      "This Month",
+      "Last Month",
+      "All Time",
+      "Custom Date",
+    ]) {
+      expect(dateFilter).toContain(label);
+    }
+    expect(dateFilter.match(/type="date"/g)).toHaveLength(2);
+    expect(dateFilter).not.toContain("Apply dates");
+    expect(dateFilter).not.toContain('min=');
+    expect(dateFilter).not.toContain('max=');
   });
 
-  it("reuses the same controls for LeaderBoard and preserves search scope", () => {
-    const markup = renderToStaticMarkup(
-      <DashboardDateFilter
-        ariaLabel="Leaderboard date filter"
-        pathname="/leaderboard"
-        preservedParams={{ q: "Gia Monroe", teamId: "team-1" }}
-        range={dateRange}
-      />,
-    );
+  it("preserves unrelated query parameters and applies changes immediately", () => {
+    expect(dateFilter).toContain("new URLSearchParams(searchParams.toString())");
+    expect(dateFilter).toContain("router.replace");
+    expect(dateFilter).toContain('next.delete("from")');
+    expect(dateFilter).toContain('next.delete("to")');
+    expect(filterToolbar).toContain("new URLSearchParams(currentSearch)");
+    expect(filterToolbar).toContain("dashboardFilterHref(");
+    expect(filterToolbar).toContain("router.replace");
+    expect(filterToolbar).toContain('next.delete(name)');
+    expect(filterToolbar).toContain('next.delete("page")');
+  });
 
-    expect(markup).toContain('aria-label="Leaderboard date filter"');
-    expect(markup).toContain(
-      "/leaderboard?range=today&amp;q=Gia+Monroe&amp;teamId=team-1",
-    );
-    expect(markup).toContain('name="q"');
-    expect(markup).toContain('name="teamId"');
-    expect(markup.match(/type="date"/g)).toHaveLength(2);
+  it("uses scoped searchable comboboxes and exposes a pending state", () => {
+    expect(filterToolbar).toContain('role="combobox"');
+    expect(filterToolbar).toContain('aria-autocomplete="list"');
+    expect(filterToolbar).toContain("useTransition");
+    expect(filterToolbar).toContain("Updating…");
   });
 });

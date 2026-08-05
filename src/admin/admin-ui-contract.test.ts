@@ -83,6 +83,18 @@ describe("simplified admin interface contract", () => {
     expect(tableHeader).not.toContain("Last login");
   });
 
+  it("keys and synchronizes rows for filtered pagination", () => {
+    const page = source("src/app/admin/users/page.tsx");
+    const table = source("src/components/admin/admin-user-table.tsx");
+
+    expect(page).toContain("const userQueryKey = JSON.stringify");
+    expect(page).toContain("key={userQueryKey}");
+    expect(page).toContain("Page {pagination.page} of {totalPages} · {pagination.total} users");
+    expect(page).toContain('key !== "page"');
+    expect(page).toContain('search.set("page", String(nextPage))');
+    expect(table).toContain("const [rows, setRows] = useState(users)");
+  });
+
   it("keeps the user detail page read-only apart from reveal and deletion controls", () => {
     const page = source("src/app/admin/users/[userId]/page.tsx");
 

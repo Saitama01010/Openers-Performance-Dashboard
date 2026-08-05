@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
 import type {
@@ -33,6 +33,8 @@ import {
   normalizeAmericanName,
   TransferSheetConfigurationError,
 } from "@/sheets/transfers";
+import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
+import { activeProfileWhere } from "@/users/visibility";
 
 export type LeaderboardFilters = {
   query?: string;
@@ -104,21 +106,21 @@ export type TransferSummaryData =
     }
   | {
       status: "ready";
-      comparisonLabel: string;
-      comparisonTransfers: number;
+      comparisonLabel: string | null;
+      comparisonTransfers: number | null;
       diagnosticCount: number;
       totalTransfers: number;
     };
 
-async function listLeaderboardTeams() {
+async function listLeaderboardTeams(actor: Actor) {
   return getDb()
     .select({ id: teams.id, name: teams.name })
     .from(teams)
-    .where(eq(teams.active, true))
-    .orderBy(asc(teams.name));
+    .where(visibleTeamWhere(actor))
+    .orderBy(asc(teams.name), asc(teams.id));
 }
 
-export async function listMatchableUsers() {
+export async function listMatchableUsers(actor: Actor) {
   return getDb()
     .select({
       id: profiles.id,
@@ -148,8 +150,9 @@ export async function listMatchableUsers() {
     .leftJoin(teams, eq(teams.id, teamMemberships.teamId))
     .where(
       and(
-        ne(profiles.accountStatus, "deleted"),
-        eq(profiles.active, true),
+        activeProfileWhere(actorOrganizationId(actor)),
+        eq(profiles.role, "agent"),
+        visibleTeamWhere(actor),
       ),
     );
 }
@@ -343,7 +346,7 @@ export async function getTransferSummary(
 
   try {
     const ingestion = await ingestAndMatchTransfers(
-      listMatchableUsers(),
+      listMatchableUsers(actor),
       config,
     );
     if (ingestion.status === "unconfigured") {
@@ -357,13 +360,15 @@ export async function getTransferSummary(
         dateRange,
         ingestion.timeZone,
       ),
-      comparisonTransfers: countScopedTransfers(
-        ingestion.matches,
-        actor,
-        dateRange.comparison,
-        ingestion.timeZone,
-      ),
-      comparisonLabel: dateRange.comparison.label,
+      comparisonTransfers: dateRange.comparison
+        ? countScopedTransfers(
+            ingestion.matches,
+            actor,
+            dateRange.comparison,
+            ingestion.timeZone,
+          )
+        : null,
+      comparisonLabel: dateRange.comparison?.label ?? null,
       diagnosticCount: ingestion.diagnostics.length,
     };
   } catch (error) {
@@ -381,7 +386,7 @@ export async function getLeaderboardData(
   actor: Actor,
   filters: LeaderboardFilters,
 ): Promise<LeaderboardData> {
-  const teamRowsPromise = listLeaderboardTeams();
+  const teamRowsPromise = listLeaderboardTeams(actor);
   const config = transferSheetConfigFromEnv();
   if (!config) {
     return {
@@ -394,7 +399,7 @@ export async function getLeaderboardData(
     };
   }
 
-  const usersPromise = listMatchableUsers();
+  const usersPromise = listMatchableUsers(actor);
   const ingestionPromise = ingestAndMatchLeaderboardSources(
     usersPromise,
     config,

@@ -17,6 +17,7 @@ import {
   varchar,
 } from "drizzle-orm/mysql-core";
 import { relations, sql } from "drizzle-orm";
+import { DEFAULT_ORGANIZATION_ID } from "@/tenancy/constants";
 
 export const roleEnum = mysqlEnum("role", ["admin", "manager", "agent"]);
 export const accountStatusEnum = mysqlEnum("account_status", [
@@ -95,11 +96,28 @@ export const importValidationStatusEnum = mysqlEnum(
   "import_validation_status",
   ["valid", "warning", "error"],
 );
+export const coachingCategoryEnum = mysqlEnum("category", [
+  "performance",
+  "adherence",
+  "improvement",
+]);
+
+export const organizations = mysqlTable("organizations", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+});
 
 export const profiles = mysqlTable(
   "profiles",
   {
     id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .default(DEFAULT_ORGANIZATION_ID)
+      .references(() => organizations.id),
     email: varchar("email", { length: 255 }),
     name: varchar("name", { length: 255 }).notNull(),
     shift: varchar("shift", { length: 80 }),
@@ -120,6 +138,7 @@ export const profiles = mysqlTable(
   (table) => [
     unique("profiles_email_unique").on(table.email),
     index("profiles_name_idx").on(table.name),
+    index("profiles_organization_idx").on(table.organizationId),
     index("profiles_role_idx").on(table.role),
     index("profiles_account_status_idx").on(table.accountStatus),
     index("profiles_created_at_idx").on(table.createdAt),
@@ -154,15 +173,29 @@ export const teams = mysqlTable(
   "teams",
   {
     id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .default(DEFAULT_ORGANIZATION_ID)
+      .references(() => organizations.id),
     name: varchar("name", { length: 255 }).notNull(),
     active: boolean("active").notNull().default(true),
     deactivatedAt: datetime("deactivated_at"),
+    archivedAt: datetime("archived_at"),
+    deletedAt: datetime("deleted_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
   (table) => [
-    unique("teams_name_unique").on(table.name),
-    index("teams_active_idx").on(table.active),
+    unique("teams_organization_name_unique").on(
+      table.organizationId,
+      table.name,
+    ),
+    index("teams_visibility_idx").on(
+      table.organizationId,
+      table.active,
+      table.archivedAt,
+      table.deletedAt,
+    ),
   ],
 );
 
@@ -539,6 +572,67 @@ export const importErrors = mysqlTable("import_errors", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const coachingSessions = mysqlTable(
+  "coaching_sessions",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id),
+    createdByProfileId: varchar("created_by_profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id),
+    coachProfileId: varchar("coach_profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id),
+    category: coachingCategoryEnum.notNull(),
+    note: varchar("note", { length: 2000 }),
+    sessionDate: date("session_date", { mode: "string" }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("coaching_sessions_organization_date_idx").on(
+      table.organizationId,
+      table.sessionDate,
+    ),
+    index("coaching_sessions_coach_date_idx").on(
+      table.coachProfileId,
+      table.sessionDate,
+    ),
+    index("coaching_sessions_creator_date_idx").on(
+      table.createdByProfileId,
+      table.sessionDate,
+    ),
+  ],
+);
+
+export const coachingSessionParticipants = mysqlTable(
+  "coaching_session_participants",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    sessionId: varchar("session_id", { length: 36 })
+      .notNull()
+      .references(() => coachingSessions.id, { onDelete: "cascade" }),
+    agentProfileId: varchar("agent_profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id),
+    teamIdSnapshot: varchar("team_id_snapshot", { length: 36 }).references(
+      () => teams.id,
+    ),
+    teamNameSnapshot: varchar("team_name_snapshot", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("coaching_participant_session_agent_unique").on(
+      table.sessionId,
+      table.agentProfileId,
+    ),
+    index("coaching_participant_agent_idx").on(table.agentProfileId),
+    index("coaching_participant_team_idx").on(table.teamIdSnapshot),
+  ],
+);
+
 export const auditLogs = mysqlTable(
   "audit_logs",
   {
@@ -733,6 +827,44 @@ export const profileRelations = relations(profiles, ({ many }) => ({
   memberships: many(teamMemberships),
   sourceMappings: many(sourceUserMappings),
   sessions: many(sessions),
+  coachingSessionsCreated: many(coachingSessions, {
+    relationName: "coachingSessionCreator",
+  }),
+  coachingSessionsCoached: many(coachingSessions, {
+    relationName: "coachingSessionCoach",
+  }),
+  coachingParticipations: many(coachingSessionParticipants),
   invitationTokens: many(accountInvitationTokens),
   passwordResetTokens: many(passwordResetTokens),
 }));
+
+export const coachingSessionRelations = relations(
+  coachingSessions,
+  ({ many, one }) => ({
+    creator: one(profiles, {
+      fields: [coachingSessions.createdByProfileId],
+      references: [profiles.id],
+      relationName: "coachingSessionCreator",
+    }),
+    coach: one(profiles, {
+      fields: [coachingSessions.coachProfileId],
+      references: [profiles.id],
+      relationName: "coachingSessionCoach",
+    }),
+    participants: many(coachingSessionParticipants),
+  }),
+);
+
+export const coachingSessionParticipantRelations = relations(
+  coachingSessionParticipants,
+  ({ one }) => ({
+    session: one(coachingSessions, {
+      fields: [coachingSessionParticipants.sessionId],
+      references: [coachingSessions.id],
+    }),
+    agent: one(profiles, {
+      fields: [coachingSessionParticipants.agentProfileId],
+      references: [profiles.id],
+    }),
+  }),
+);

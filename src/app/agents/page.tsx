@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/auth/session";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { DashboardFilterToolbar } from "@/components/dashboard/dashboard-filter-toolbar";
+import { DashboardDateFilter } from "@/components/dashboard/overview-date-filter";
 import {
   EmptyTableRow,
   PageHeader,
@@ -11,6 +13,8 @@ import {
 } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { getDashboardData } from "@/dashboard/data";
+import { resolveOverviewDateRange } from "@/dashboard/date-range";
+import { getEnv } from "@/env";
 import {
   formatDurationSeconds,
   formatNumber,
@@ -27,85 +31,84 @@ function statusTone(status: string) {
 export default async function AgentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; showNoData?: string; team?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await getCurrentUser();
 
   if (!user) redirect("/login");
 
   const params = await searchParams;
+  const first = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
+  const dateRange = resolveOverviewDateRange(
+    params,
+    new Date(),
+    getEnv().GOOGLE_SHEETS_TIMEZONE,
+  );
   const showNoData =
-    params.showNoData === "1" || params.showNoData === "true";
+    first(params.showNoData) === "1" || first(params.showNoData) === "true";
   const dashboard = await getDashboardData(user, {
+    dateRange,
     showAgentsWithNoData: showNoData,
   });
-  const query = params.q?.trim().toLocaleLowerCase() ?? "";
-  const team = params.team?.trim() ?? "";
+  const profile = first(params.profile)?.trim() ?? "";
+  const team = first(params.team)?.trim() ?? "";
   const teams = Array.from(
     new Set(dashboard.agentRows.map((agent) => agent.teamName)),
   ).sort((left, right) => left.localeCompare(right));
   const agents = dashboard.agentRows.filter((agent) => {
-    const matchesQuery =
-      query.length === 0 ||
-      agent.agentName.toLocaleLowerCase().includes(query) ||
-      agent.teamName.toLocaleLowerCase().includes(query);
+    const matchesProfile = profile.length === 0 || agent.profileId === profile;
     const matchesTeam = team.length === 0 || agent.teamName === team;
-    return matchesQuery && matchesTeam;
+    return matchesProfile && matchesTeam;
   });
 
   return (
     <DashboardShell user={user}>
       <section className="dashboard-page">
         <PageHeader
+          actions={<DashboardDateFilter ariaLabel="Agents date filter" pathname="/agents" range={dateRange} />}
           description="Find people in your reporting scope and open their active-version performance."
           eyebrow="Directory"
           title={user.role === "agent" ? "My performance record" : "Agents"}
         />
 
         <section className="ui-card">
-          <form className="directory-toolbar" method="get">
-            <label className="ui-label directory-toolbar__search">
-              Search
-              <span className="search-field">
-                <DashboardIcon name="search" />
-                <input
-                  className="ui-input"
-                  defaultValue={params.q}
-                  name="q"
-                  placeholder="Search agent or team"
-                  type="search"
-                />
-              </span>
-            </label>
-            <label className="ui-label">
-              Team
-              <select className="ui-select" defaultValue={team} name="team">
-                <option value="">All teams</option>
-                {teams.map((teamName) => (
-                  <option key={teamName} value={teamName}>
-                    {teamName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="ui-checkbox-label directory-toolbar__checkbox">
-              <input
-                defaultChecked={showNoData}
-                name="showNoData"
-                type="checkbox"
-                value="1"
-              />
-              Include active agents with no data
-            </label>
-            <div className="directory-toolbar__actions">
-              <button className="ui-button ui-button--primary" type="submit">
-                Apply filters
-              </button>
-              <Link className="ui-button ui-button--secondary" href="/agents">
-                Clear
-              </Link>
-            </div>
-          </form>
+          <DashboardFilterToolbar
+            ariaLabel="Agent directory filters"
+            filters={[
+              {
+                kind: "combobox",
+                label: "Agent",
+                name: "profile",
+                value: profile,
+                options: [
+                  { label: "All agents", value: "" },
+                  ...dashboard.agentRows.map((agent) => ({
+                    label: `${agent.agentName} — ${agent.teamName}`,
+                    value: agent.profileId,
+                  })),
+                ],
+              },
+              {
+                label: "Team",
+                name: "team",
+                value: team,
+                options: [
+                  { label: "All teams", value: "" },
+                  ...teams.map((teamName) => ({ label: teamName, value: teamName })),
+                ],
+              },
+              {
+                label: "Agent data",
+                name: "showNoData",
+                value: showNoData ? "1" : "",
+                options: [
+                  { label: "With active data", value: "" },
+                  { label: "Include no-data agents", value: "1" },
+                ],
+              },
+            ]}
+          />
 
           <div className="ui-card__header">
             <div>

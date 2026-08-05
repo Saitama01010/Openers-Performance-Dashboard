@@ -8,8 +8,10 @@ export type DashboardIconName =
   | "calendar"
   | "calls"
   | "close"
+  | "coaching"
   | "dashboard"
   | "freshness"
+  | "flag"
   | "import"
   | "info"
   | "leaderboard"
@@ -66,6 +68,12 @@ export function DashboardIcon({
         <path d="M18 6 6 18" />
       </>
     ),
+    coaching: (
+      <>
+        <path d="M4 5h16v11H9l-5 4z" />
+        <path d="M8 9h8M8 12h5" />
+      </>
+    ),
     dashboard: (
       <>
         <rect height="7" rx="1" width="7" x="3" y="3" />
@@ -78,6 +86,12 @@ export function DashboardIcon({
       <>
         <circle cx="12" cy="12" r="8" />
         <path d="M12 8v4l2.5 1.5" />
+      </>
+    ),
+    flag: (
+      <>
+        <path d="M5 21V4" />
+        <path d="M5 5h11l-1 4 3 3H5" />
       </>
     ),
     import: (

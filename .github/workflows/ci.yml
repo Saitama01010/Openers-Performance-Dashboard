@@ -13,7 +13,7 @@ jobs:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_DATABASE: openers_dashboard
+          MYSQL_DATABASE: openers_dashboard_test
           MYSQL_USER: openers
           MYSQL_PASSWORD: openers_password
           MYSQL_ROOT_PASSWORD: root_password
@@ -25,9 +25,11 @@ jobs:
           --health-timeout=5s
           --health-retries=12
     env:
-      DATABASE_URL: mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard
-      TEST_DATABASE_URL: mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard_test
+      DATABASE_URL: mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard_test
+      TEST_DATABASE_URL: mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard_integration_test
       ALLOW_INTEGRATION_TEST_DATABASE: "true"
+      DATABASE_ENVIRONMENT: test
+      DEPLOYMENT_ENVIRONMENT: test
       SESSION_SECRET: ci-only-session-secret-at-least-32-characters
       APP_URL: http://localhost:3000
       EMAIL_PROVIDER: console
@@ -43,13 +45,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Allow triggers in the disposable test database
+        run: >-
+          node -e "const mysql=require('mysql2/promise');(async()=>{const connection=await mysql.createConnection({host:'127.0.0.1',user:'root',password:'root_password'});await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');await connection.end()})().catch((error)=>{console.error(error);process.exit(1)})"
       - run: npm run lint
       - run: npm run db:generate
       - run: git diff --exit-code -- drizzle
       - run: npm run db:migrate
       - run: npm run db:seed
       - run: npm run db:health
-      - run: mysql -h 127.0.0.1 -uroot -proot_password -e "CREATE DATABASE IF NOT EXISTS openers_dashboard_test; GRANT ALL PRIVILEGES ON openers_dashboard_test.* TO 'openers'@'%'; FLUSH PRIVILEGES;"
+      - run: mysql -h 127.0.0.1 -uroot -proot_password -e "CREATE DATABASE IF NOT EXISTS openers_dashboard_integration_test; GRANT ALL PRIVILEGES ON openers_dashboard_integration_test.* TO 'openers'@'%'; FLUSH PRIVILEGES;"
       - run: NODE_ENV=test npm run db:migrate:test
       - run: npm run test
       - run: npm run build

@@ -22,6 +22,7 @@ type NavigationGroup = {
 };
 
 const routeNames: Array<[prefix: string, label: string]> = [
+  ["/commissions", "Commissions"],
   ["/coaching", "Coaching Sessions"],
   ["/flags", "Flags"],
   ["/leaderboard", "LeaderBoard"],

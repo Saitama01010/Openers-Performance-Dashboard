@@ -9,6 +9,7 @@ export type DashboardIconName =
   | "calls"
   | "close"
   | "coaching"
+  | "commissions"
   | "dashboard"
   | "freshness"
   | "flag"
@@ -72,6 +73,13 @@ export function DashboardIcon({
       <>
         <path d="M4 5h16v11H9l-5 4z" />
         <path d="M8 9h8M8 12h5" />
+      </>
+    ),
+    commissions: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M15.5 8.5h-5a2.5 2.5 0 0 0 0 5h3a2.5 2.5 0 0 1 0 5h-5" />
+        <path d="M12 6.5v2M12 18.5v-2" />
       </>
     ),
     dashboard: (

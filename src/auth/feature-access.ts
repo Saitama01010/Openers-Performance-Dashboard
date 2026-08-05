@@ -43,3 +43,24 @@ export async function assertFlagsViewAccess(actor: Actor) {
         : "flags.view_own",
   );
 }
+
+export async function assertCommissionsViewAccess(actor: Actor) {
+  await assertPermission(
+    actor,
+    actor.role === "admin"
+      ? "commissions.view_company"
+      : actor.role === "manager"
+        ? "commissions.view_team"
+        : "commissions.view_own",
+  );
+}
+
+export async function assertCommissionsExportAccess(actor: Actor) {
+  if (actor.role === "agent") throw new Error("Forbidden");
+  await assertPermission(
+    actor,
+    actor.role === "admin"
+      ? "commissions.export_company"
+      : "commissions.export_team",
+  );
+}

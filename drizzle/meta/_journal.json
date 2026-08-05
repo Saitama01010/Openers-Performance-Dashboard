@@ -120,6 +120,13 @@
       "when": 1785823061922,
       "tag": "0016_sturdy_agent_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1785969148215,
+      "tag": "0017_commissions_permissions",
+      "breakpoints": true
     }
   ]
 }

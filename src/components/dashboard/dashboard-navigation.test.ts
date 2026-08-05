@@ -15,6 +15,9 @@ describe("dashboard navigation active state", () => {
         "/admin/users",
       ),
     ).toBe(true);
+    expect(
+      isNavigationItemActive("/commissions/history", "/commissions"),
+    ).toBe(true);
   });
 
   it("does not match a route with a similar prefix", () => {

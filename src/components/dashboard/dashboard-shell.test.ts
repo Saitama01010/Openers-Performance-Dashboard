@@ -16,6 +16,7 @@ describe("dashboard shell navigation by role", () => {
       "/leaderboard",
       "/agents/profile-1",
       "/flags",
+      "/commissions",
     ]);
   });
 
@@ -28,6 +29,7 @@ describe("dashboard shell navigation by role", () => {
       "/teams/performance",
       "/coaching",
       "/flags",
+      "/commissions",
       "/import",
     ]);
   });
@@ -39,6 +41,7 @@ describe("dashboard shell navigation by role", () => {
     expect(adminDestinations).toContain("/leaderboard");
     expect(adminDestinations).toContain("/coaching");
     expect(adminDestinations).toContain("/flags");
+    expect(adminDestinations).toContain("/commissions");
     expect(adminDestinations).toContain("/admin/users");
     expect(adminDestinations).toContain("/admin/permissions");
     expect(adminDestinations).toContain("/admin/audit");
@@ -46,6 +49,16 @@ describe("dashboard shell navigation by role", () => {
 
   it("shows Flags but never Coaching Sessions to agents", () => {
     expect(destinations("agent")).toContain("/flags");
+    expect(destinations("agent")).not.toContain("/coaching");
+  });
+
+  it("adds Commissions once without removing Coaching Sessions or Flags", () => {
+    for (const role of ["admin", "manager", "agent"] as const) {
+      expect(destinations(role).filter((href) => href === "/commissions")).toHaveLength(1);
+      expect(destinations(role)).toContain("/flags");
+    }
+    expect(destinations("admin")).toContain("/coaching");
+    expect(destinations("manager")).toContain("/coaching");
     expect(destinations("agent")).not.toContain("/coaching");
   });
 

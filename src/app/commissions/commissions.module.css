@@ -1,0 +1,110 @@
+.page,
+.page > * {
+  min-width: 0;
+}
+
+.controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.scopeLine {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  margin: -4px 0 0;
+}
+
+.scopeLine strong {
+  color: var(--foreground);
+}
+
+.personalGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.personalMetric {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.personalMetric dt,
+.tierItem span {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.personalMetric dd {
+  color: var(--foreground);
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  margin: 8px 0 0;
+}
+
+.personalMetric p {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin: 6px 0 0;
+}
+
+.tierGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.tierItem {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.tierItem strong {
+  display: block;
+  font-size: 0.875rem;
+  margin-top: 6px;
+}
+
+.tierItemActive {
+  background: var(--primary-subtle);
+  border-color: var(--primary);
+}
+
+.tableMeta {
+  color: var(--muted);
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 2px;
+}
+
+@media (max-width: 900px) {
+  .personalGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tierGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .controls,
+  .controls > * {
+    width: 100%;
+  }
+
+  .personalGrid,
+  .tierGrid {
+    grid-template-columns: 1fr;
+  }
+}

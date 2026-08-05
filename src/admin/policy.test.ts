@@ -6,12 +6,21 @@ import {
   canGrantPermissionToRole,
   normalizeDialerIdentity,
   primaryMappingKey,
+  ROLE_DEFAULT_PERMISSIONS,
   roleRequiresDialerName,
   roleRequiresTeam,
   validatePermissionOverrides,
 } from "@/admin/policy";
 
 describe("admin access policy", () => {
+  it("grants narrow commission defaults without making them overridable", async () => {
+    const { OVERRIDABLE_PERMISSION_KEYS } = await import("@/admin/policy");
+    expect(ROLE_DEFAULT_PERMISSIONS.admin).toContain("commissions.export_company");
+    expect(ROLE_DEFAULT_PERMISSIONS.manager).toEqual(expect.arrayContaining(["commissions.view_team", "commissions.export_team"]));
+    expect(ROLE_DEFAULT_PERMISSIONS.agent).toContain("commissions.view_own");
+    expect(OVERRIDABLE_PERMISSION_KEYS.some((key) => key.startsWith("commissions."))).toBe(false);
+  });
+
   it("prevents removing the final active admin", () => {
     expect(() =>
       assertCanRemoveAdmin({

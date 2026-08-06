@@ -1,13 +1,22 @@
 "use client";
 
-import { DashboardErrorState } from "@/components/dashboard/dashboard-error-state";
+import styles from "@/components/dashboard/performance/performance-page.module.css";
 
 export default function PerformanceError({ reset }: { reset: () => void }) {
   return (
-    <DashboardErrorState
-      description="Performance analysis could not be loaded. Retry the request, or return later if the problem continues."
-      reset={reset}
-      title="Performance unavailable"
-    />
+    <section className={`performance-page ${styles.page} ${styles.errorPage}`}>
+      <div className={`${styles.panel} ${styles.errorPanel}`} role="alert">
+        <span aria-hidden="true" className={styles.errorIcon}>!</span>
+        <div>
+          <h1>Performance data could not be loaded</h1>
+          <p>
+            Your scope remains protected. Retry the request, or return later if an authorized source is unavailable.
+          </p>
+        </div>
+        <button className="ui-button ui-button--primary" onClick={reset} type="button">
+          Try again
+        </button>
+      </div>
+    </section>
   );
 }

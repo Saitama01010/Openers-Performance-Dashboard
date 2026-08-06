@@ -710,6 +710,9 @@ export const performanceTargets = mysqlTable(
     }),
     metric: performanceTargetMetricEnum.notNull(),
     targetValue: decimal("target_value", { precision: 12, scale: 2 }).notNull(),
+    visibleToNonAdmins: boolean("visible_to_non_admins")
+      .notNull()
+      .default(true),
     effectiveFrom: date("effective_from", { mode: "string" }).notNull(),
     effectiveTo: date("effective_to", { mode: "string" }),
     createdById: varchar("created_by_id", { length: 36 })

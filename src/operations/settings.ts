@@ -18,7 +18,10 @@ import {
   teams,
   tenureThresholds,
 } from "@/db/schema";
-import type { TargetMetric } from "@/dashboard/target-evaluation";
+import {
+  visibleTargetsForViewer,
+  type TargetMetric,
+} from "@/dashboard/target-evaluation";
 import { newId } from "@/lib/ids";
 import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
 
@@ -51,6 +54,7 @@ export async function createPerformanceTarget(actor: Actor, input: {
   targetValue: number;
   effectiveFrom: string;
   effectiveTo?: string | null;
+  visibleToNonAdmins: boolean;
 }) {
   actor = await resolveCurrentActor(actor);
   if (actor.role !== "admin") throw new Error("Forbidden");
@@ -68,6 +72,7 @@ export async function createPerformanceTarget(actor: Actor, input: {
       teamId: input.teamId || null,
       metric: input.metric,
       targetValue: input.targetValue.toFixed(2),
+      visibleToNonAdmins: input.visibleToNonAdmins,
       effectiveFrom: input.effectiveFrom,
       effectiveTo: input.effectiveTo || null,
       createdById: actor.id,
@@ -75,7 +80,12 @@ export async function createPerformanceTarget(actor: Actor, input: {
     await tx.insert(auditLogs).values({
       id: newId(), actorProfileId: actor.id, action: "performance_target.created",
       entityType: "performance_target", entityId: id,
-      metadata: { teamId: input.teamId || null, metric: input.metric, effectiveFrom: input.effectiveFrom },
+      metadata: {
+        teamId: input.teamId || null,
+        metric: input.metric,
+        effectiveFrom: input.effectiveFrom,
+        visibleToNonAdmins: input.visibleToNonAdmins,
+      },
     });
   });
   return id;
@@ -218,7 +228,10 @@ export async function listPerformanceConfigurationForCurrentActor(actor: Current
       .orderBy(asc(coachingRubricTemplates.name), desc(coachingRubricTemplates.version)),
   ]);
   return {
-    targets: targetRows.map((row) => ({ ...row, targetValue: Number(row.targetValue) })),
+    targets: visibleTargetsForViewer(targetRows, actor).map((row) => ({
+      ...row,
+      targetValue: Number(row.targetValue),
+    })),
     thresholds: thresholdRows.map((row) => ({
       ...row,
       minimumTransfers: row.minimumTransfers === null ? null : Number(row.minimumTransfers),

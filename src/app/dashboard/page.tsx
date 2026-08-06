@@ -22,15 +22,17 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
 
   const params = await searchParams;
+  const timeZone = getEnv().GOOGLE_SHEETS_TIMEZONE;
   const dateRange = resolveOverviewDateRange(
     params,
     new Date(),
-    getEnv().GOOGLE_SHEETS_TIMEZONE,
+    timeZone,
   );
   const requestedPage = Array.isArray(params.page) ? params.page[0] : params.page;
   const dashboard = await getRoleDashboardData(user, {
     dateRange,
     page: Number(requestedPage) || 1,
+    timeZone,
   });
 
   return (

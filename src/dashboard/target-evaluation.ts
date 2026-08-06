@@ -9,6 +9,22 @@ export type EffectiveTarget = {
   effectiveTo: string | null;
 };
 
+export function visibleTargetsForViewer<
+  T extends { teamId: string | null; visibleToNonAdmins: boolean },
+>(
+  targets: readonly T[],
+  viewer: { role: "admin" | "manager" | "agent"; teamIds: readonly string[] },
+): T[] {
+  if (viewer.role === "admin") return [...targets];
+  if (viewer.teamIds.length === 0) return [];
+
+  return targets.filter(
+    (target) =>
+      target.visibleToNonAdmins &&
+      (target.teamId === null || viewer.teamIds.includes(target.teamId)),
+  );
+}
+
 export function resolveEffectiveTarget(
   targets: readonly EffectiveTarget[],
   input: { metric: TargetMetric; date: string; teamId?: string | null },

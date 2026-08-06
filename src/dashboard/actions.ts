@@ -28,6 +28,11 @@ const TARGET_METRICS = ["transfers", "closed_deals", "conversion"] as const;
 const MANUAL_FLAG_STATUSES = ["open", "under_review", "action_required", "coaching_scheduled", "resolved", "dismissed"] as const;
 const EMPLOYMENT_STATUSES = ["active", "deactivated", "terminated"] as const;
 
+export type DashboardActionState = {
+  ok: boolean;
+  message: string;
+};
+
 function isOneOf<T extends string>(value: string, allowed: readonly T[]): value is T {
   return allowed.some((candidate) => candidate === value);
 }
@@ -62,6 +67,103 @@ function finish(ok: string): never {
   redirect(`/dashboard?ok=${encodeURIComponent(ok)}`);
 }
 
+function actionError(error: unknown) {
+  return {
+    ok: false,
+    message: error instanceof Error ? error.message : "The action could not be completed.",
+  } satisfies DashboardActionState;
+}
+
+export async function createTargetDialogAction(
+  _previousState: DashboardActionState,
+  formData: FormData,
+): Promise<DashboardActionState> {
+  try {
+    const user = await actor();
+    const metric = text(formData, "metric");
+    if (!isOneOf(metric, TARGET_METRICS)) throw new Error("Target metric is invalid.");
+    await createPerformanceTarget(user, {
+      teamId: optionalText(formData, "teamId"),
+      metric,
+      targetValue: number(formData, "targetValue"),
+      effectiveFrom: text(formData, "effectiveFrom"),
+      effectiveTo: optionalText(formData, "effectiveTo"),
+      visibleToNonAdmins: formData.get("visibleToNonAdmins") === "on",
+    });
+    revalidatePath("/dashboard");
+    return { ok: true, message: "Performance target saved." };
+  } catch (error) {
+    return actionError(error);
+  }
+}
+
+export async function createThresholdDialogAction(
+  _previousState: DashboardActionState,
+  formData: FormData,
+): Promise<DashboardActionState> {
+  try {
+    await createTenureThreshold(await actor(), {
+      teamId: optionalText(formData, "teamId"),
+      bandLabel: text(formData, "bandLabel"),
+      minimumDays: number(formData, "minimumDays"),
+      maximumDays: optionalNumber(formData, "maximumDays"),
+      isRamp: formData.get("isRamp") === "on",
+      minimumTransfers: optionalNumber(formData, "minimumTransfers"),
+      minimumClosedDeals: optionalNumber(formData, "minimumClosedDeals"),
+      minimumConversion: optionalNumber(formData, "minimumConversion"),
+      minimumShiftCoverage: optionalNumber(formData, "minimumShiftCoverage"),
+      effectiveFrom: text(formData, "effectiveFrom"),
+      effectiveTo: optionalText(formData, "effectiveTo"),
+    });
+    revalidatePath("/dashboard");
+    return { ok: true, message: "Tenure threshold saved." };
+  } catch (error) {
+    return actionError(error);
+  }
+}
+
+export async function createRubricTemplateDialogAction(
+  _previousState: DashboardActionState,
+  formData: FormData,
+): Promise<DashboardActionState> {
+  try {
+    await createRubricTemplate(await actor(), {
+      name: text(formData, "name"),
+      description: optionalText(formData, "description"),
+      sections: [{
+        id: "quality",
+        label: text(formData, "sectionLabel") || "Quality",
+        criteria: [{
+          id: "criterion-1",
+          label: text(formData, "criterionLabel"),
+          maximumScore: number(formData, "maximumScore"),
+          required: true,
+        }],
+      }],
+    });
+    revalidatePath("/dashboard");
+    return { ok: true, message: "Rubric template created." };
+  } catch (error) {
+    return actionError(error);
+  }
+}
+
+export async function updateEmploymentStartDialogAction(
+  _previousState: DashboardActionState,
+  formData: FormData,
+): Promise<DashboardActionState> {
+  try {
+    await updateEmploymentStartDate(await actor(), {
+      profileId: text(formData, "profileId"),
+      employmentStartDate: text(formData, "employmentStartDate"),
+    });
+    revalidatePath("/dashboard");
+    return { ok: true, message: "Employment start date updated." };
+  } catch (error) {
+    return actionError(error);
+  }
+}
+
 export async function createTargetAction(formData: FormData) {
   const user = await actor();
   const metric = text(formData, "metric");
@@ -74,6 +176,7 @@ export async function createTargetAction(formData: FormData) {
     targetValue: number(formData, "targetValue"),
     effectiveFrom: text(formData, "effectiveFrom"),
     effectiveTo: optionalText(formData, "effectiveTo"),
+    visibleToNonAdmins: formData.get("visibleToNonAdmins") === "on",
   });
   finish("target-created");
 }

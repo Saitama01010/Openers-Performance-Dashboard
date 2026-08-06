@@ -44,6 +44,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Generate disposable CI encryption key
+        shell: bash
+        run: |
+          KEY=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")
+          echo "TEMP_PASSWORD_ENCRYPTION_KEY=$KEY" >> "$GITHUB_ENV"
       - run: npm ci
       - name: Allow triggers in the disposable test database
         run: >-

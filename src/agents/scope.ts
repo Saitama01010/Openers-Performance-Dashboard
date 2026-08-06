@@ -1,6 +1,7 @@
 import "server-only";
 
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { cache } from "react";
 
 import type { Actor } from "@/auth/authorization";
 import { getDb } from "@/db";
@@ -32,7 +33,7 @@ export type ScopedManager = {
   teams: ScopedTeam[];
 };
 
-export async function listOrganizationActiveManagers(actor: Actor) {
+const listOrganizationActiveManagersCached = cache(async (actor: Actor) => {
   const rows = await getDb()
     .select({
       id: profiles.id,
@@ -77,9 +78,13 @@ export async function listOrganizationActiveManagers(actor: Actor) {
     managers.set(row.id, manager);
   }
   return Array.from(managers.values());
+});
+
+export function listOrganizationActiveManagers(actor: Actor) {
+  return listOrganizationActiveManagersCached(actor);
 }
 
-export async function listScopedActiveAgents(actor: Actor) {
+const listScopedActiveAgentsCached = cache(async (actor: Actor) => {
   const scopeWhere =
     actor.role === "manager"
       ? actor.teamIds.length > 0
@@ -159,6 +164,10 @@ export async function listScopedActiveAgents(actor: Actor) {
   }
 
   return Array.from(agents.values());
+});
+
+export function listScopedActiveAgents(actor: Actor) {
+  return listScopedActiveAgentsCached(actor);
 }
 
 export function uniqueScopedTeams(agents: readonly ScopedAgent[]) {

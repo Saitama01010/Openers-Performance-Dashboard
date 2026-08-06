@@ -18,6 +18,7 @@ import {
 } from "drizzle-orm";
 
 import type { Actor, Role } from "@/auth/authorization";
+import { assertPermission } from "@/auth/permissions";
 import { getCurrentSessionId } from "@/auth/session";
 import {
   createOpaqueToken,
@@ -114,6 +115,7 @@ export type CreateUserInput = {
   dialerAliases: string[];
   permissionOverrides: PermissionOverrideInput[];
   importBatchId?: string;
+  employmentStartDate?: string;
 };
 
 export type UpdateUserInput = {
@@ -775,8 +777,7 @@ async function assertActiveDialerMappingAvailable(
   }
 }
 
-export async function createAdminUser(actor: Actor, input: CreateUserInput) {
-  assertAdmin(actor);
+async function createProvisionedUser(actor: Actor, input: CreateUserInput) {
   assertValidRole(input.role);
 
   const name = trimText(input.name);
@@ -839,6 +840,8 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
       passwordState: "temporary",
       encryptedTemporaryPassword,
       accountStatus: "active",
+      employmentStartDate: input.employmentStartDate || null,
+      employmentStatus: "active",
     });
 
     if (input.teamId) {
@@ -901,6 +904,53 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
     });
   });
   return { profileId };
+}
+
+export async function createAdminUser(actor: Actor, input: CreateUserInput) {
+  assertAdmin(actor);
+  return await createProvisionedUser(actor, input);
+}
+
+export async function createTeamAgent(actor: Actor, input: {
+  name: string;
+  email: string;
+  teamId: string;
+  dialerName: string;
+  shift?: string;
+  employmentStartDate?: string;
+}) {
+  if (actor.role !== "manager") throw new Error("Forbidden");
+  await assertPermission(actor, "users.create_team_agent");
+  if (!actor.teamIds.includes(input.teamId)) {
+    throw new Error("Managers may create agents only in their assigned teams.");
+  }
+  const created = await createProvisionedUser(actor, {
+    ...input,
+    role: "agent",
+    dialerAliases: [],
+    permissionOverrides: [],
+  });
+  const invitation = await createInvitationRecord({
+    profileId: created.profileId,
+    createdById: actor.id,
+  });
+  await writeAudit({
+    actorId: actor.id,
+    action: "user.invitation_sent",
+    entityType: "profile",
+    entityId: created.profileId,
+    metadata: { expiresAt: invitation.expiresAt.toISOString() },
+  });
+  const delivery = await deliverInvitationAfterCommit({
+    actorId: actor.id,
+    profileId: created.profileId,
+    tokenId: invitation.tokenId,
+    email: normalizeEmail(input.email),
+    name: trimText(input.name),
+    token: invitation.token,
+    resent: false,
+  });
+  return { ...created, invitationDelivered: delivery.ok };
 }
 
 export async function revealTemporaryPassword(actor: Actor, userId: string) {

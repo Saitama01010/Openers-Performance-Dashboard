@@ -1,5 +1,7 @@
 # Architecture
 
+Role-specific dashboard composition, scope boundaries, request cost, caching, pagination, and operational history are documented in [Role dashboard operations](./role-dashboard-operations.md).
+
 The application is a self-hosted Next.js App Router service backed by MySQL 8 and Drizzle ORM. Server Components read scoped data, Server Actions handle authenticated mutations, and authorization is repeated at every data boundary. Client components receive only data already authorized for the current user.
 
 Current vertical slices:

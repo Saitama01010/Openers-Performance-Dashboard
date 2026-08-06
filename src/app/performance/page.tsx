@@ -12,6 +12,7 @@ import {
   TableScroll,
 } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { PersonalPerformanceSummary } from "@/components/dashboard/role-dashboard";
 import {
   ActivityStateGrid,
   formatCompactDuration,
@@ -21,6 +22,7 @@ import {
 } from "@/components/dashboard/performance-visuals";
 import { getDashboardData } from "@/dashboard/data";
 import { resolveOverviewDateRange } from "@/dashboard/date-range";
+import { getRoleDashboardData } from "@/dashboard/role-data";
 import { getEnv } from "@/env";
 import {
   formatDurationSeconds,
@@ -46,7 +48,12 @@ export default async function PerformancePage({
     new Date(),
     getEnv().GOOGLE_SHEETS_TIMEZONE,
   );
-  const dashboard = await getDashboardData(user, { dateRange });
+  const [dashboard, roleDashboard] = await Promise.all([
+    getDashboardData(user, { dateRange }),
+    user.role === "agent"
+      ? getRoleDashboardData(user, { dateRange })
+      : Promise.resolve(null),
+  ]);
   const loggedInHours = dashboard.totals.loggedInSeconds / 3600;
   const callsPerHour =
     loggedInHours > 0 ? dashboard.totals.calls / loggedInHours : null;
@@ -72,6 +79,10 @@ export default async function PerformancePage({
           eyebrow="Analysis"
           title="Performance"
         />
+
+        {roleDashboard?.role === "agent" ? (
+          <PersonalPerformanceSummary data={roleDashboard.data} />
+        ) : null}
 
         {dashboard.status === "NO_ACTIVE_IMPORT" ? (
           <StatusBanner tone="warning">

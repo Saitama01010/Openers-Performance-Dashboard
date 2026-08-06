@@ -1,6 +1,10 @@
 function csvCell(value: string | number | null | undefined) {
   const text = value === null || value === undefined ? "Unavailable" : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
+  const safeText =
+    typeof value === "string" && /^[\t\r\n ]*[=+\-@]/.test(text)
+      ? `'${text}`
+      : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
 }
 
 export const TEAM_DASHBOARD_CSV_HEADER = [

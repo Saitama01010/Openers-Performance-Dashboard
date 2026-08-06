@@ -20,6 +20,7 @@ import {
 import type { Actor, Role } from "@/auth/authorization";
 import { assertPermission } from "@/auth/permissions";
 import { getCurrentSessionId } from "@/auth/session";
+import { resolveCurrentActor } from "@/auth/current-actor";
 import {
   createOpaqueToken,
   hashOpaqueToken,
@@ -47,19 +48,29 @@ import {
   accountInvitationTokens,
   auditLogs,
   coachingSessionParticipants,
+  coachingReportRevisions,
+  coachingReports,
+  coachingRubricTemplates,
   coachingSessions,
   dialerAgentHourlyMetrics,
   dialerDatasetVersions,
   dialerImportBatches,
   dialerImportRows,
   emailDeliveryAttempts,
+  employmentStatusEvents,
   importErrors,
+  manualFlagCaseEvents,
+  manualFlagCases,
   passwordResetTokens,
   profiles,
+  performanceTargets,
   sessions,
+  shadowingSessions,
   sourceUserMappings,
   teamMemberships,
+  teamTransferRequests,
   teams,
+  tenureThresholds,
   transfersFixtures,
   userImportBatches,
   userPermissionOverrides,
@@ -919,6 +930,7 @@ export async function createTeamAgent(actor: Actor, input: {
   shift?: string;
   employmentStartDate?: string;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "manager") throw new Error("Forbidden");
   await assertPermission(actor, "users.create_team_agent");
   if (!actor.teamIds.includes(input.teamId)) {
@@ -1231,6 +1243,23 @@ export async function permanentlyDeleteValidatedUsers(
     const participantSessionIds = Array.from(
       new Set(coachingParticipantRows.map((row) => row.sessionId)),
     );
+    const operationalReportRows = await tx
+      .select({ id: coachingReports.id })
+      .from(coachingReports)
+      .where(
+        or(
+          inArray(coachingReports.agentProfileId, userIds),
+          ownedCoachingSessionIds.length > 0
+            ? inArray(coachingReports.coachingSessionId, ownedCoachingSessionIds)
+            : undefined,
+        ),
+      );
+    const operationalReportIds = operationalReportRows.map((row) => row.id);
+    const subjectManualFlagRows = await tx
+      .select({ id: manualFlagCases.id })
+      .from(manualFlagCases)
+      .where(inArray(manualFlagCases.agentProfileId, userIds));
+    const subjectManualFlagIds = subjectManualFlagRows.map((row) => row.id);
 
     // Preserve shared import history while removing references to the account.
     await tx
@@ -1282,6 +1311,96 @@ export async function permanentlyDeleteValidatedUsers(
       .update(passwordResetTokens)
       .set({ createdById: null })
       .where(inArray(passwordResetTokens.createdById, userIds));
+
+    if (operationalReportIds.length > 0) {
+      await tx
+        .delete(coachingReportRevisions)
+        .where(inArray(coachingReportRevisions.reportId, operationalReportIds));
+      await tx
+        .delete(coachingReports)
+        .where(inArray(coachingReports.id, operationalReportIds));
+    }
+    await tx
+      .update(coachingReportRevisions)
+      .set({ createdById: actor.id })
+      .where(inArray(coachingReportRevisions.createdById, userIds));
+    await tx
+      .update(coachingReports)
+      .set({ coachProfileId: actor.id })
+      .where(inArray(coachingReports.coachProfileId, userIds));
+    await tx
+      .update(coachingReports)
+      .set({ finalizedById: actor.id })
+      .where(inArray(coachingReports.finalizedById, userIds));
+    await tx
+      .update(coachingReports)
+      .set({ publishedById: actor.id })
+      .where(inArray(coachingReports.publishedById, userIds));
+    await tx
+      .update(coachingRubricTemplates)
+      .set({ createdById: actor.id })
+      .where(inArray(coachingRubricTemplates.createdById, userIds));
+    await tx
+      .update(performanceTargets)
+      .set({ createdById: actor.id })
+      .where(inArray(performanceTargets.createdById, userIds));
+    await tx
+      .update(tenureThresholds)
+      .set({ createdById: actor.id })
+      .where(inArray(tenureThresholds.createdById, userIds));
+    await tx
+      .update(employmentStatusEvents)
+      .set({ createdById: actor.id })
+      .where(inArray(employmentStatusEvents.createdById, userIds));
+    await tx
+      .delete(employmentStatusEvents)
+      .where(inArray(employmentStatusEvents.profileId, userIds));
+    await tx
+      .update(shadowingSessions)
+      .set({ assignedLeaderId: actor.id })
+      .where(inArray(shadowingSessions.assignedLeaderId, userIds));
+    await tx
+      .update(shadowingSessions)
+      .set({ createdById: actor.id })
+      .where(inArray(shadowingSessions.createdById, userIds));
+    await tx
+      .delete(shadowingSessions)
+      .where(inArray(shadowingSessions.agentProfileId, userIds));
+    if (subjectManualFlagIds.length > 0) {
+      await tx
+        .delete(manualFlagCaseEvents)
+        .where(inArray(manualFlagCaseEvents.caseId, subjectManualFlagIds));
+      await tx
+        .delete(manualFlagCases)
+        .where(inArray(manualFlagCases.id, subjectManualFlagIds));
+    }
+    await tx
+      .update(manualFlagCaseEvents)
+      .set({ actorProfileId: actor.id })
+      .where(inArray(manualFlagCaseEvents.actorProfileId, userIds));
+    await tx
+      .update(manualFlagCases)
+      .set({ raisedById: actor.id })
+      .where(inArray(manualFlagCases.raisedById, userIds));
+    await tx
+      .update(manualFlagCases)
+      .set({ assignedOwnerId: actor.id })
+      .where(inArray(manualFlagCases.assignedOwnerId, userIds));
+    await tx
+      .update(manualFlagCases)
+      .set({ resolvedById: actor.id })
+      .where(inArray(manualFlagCases.resolvedById, userIds));
+    await tx
+      .delete(teamTransferRequests)
+      .where(inArray(teamTransferRequests.agentProfileId, userIds));
+    await tx
+      .update(teamTransferRequests)
+      .set({ requestedById: actor.id })
+      .where(inArray(teamTransferRequests.requestedById, userIds));
+    await tx
+      .update(teamTransferRequests)
+      .set({ reviewedById: actor.id })
+      .where(inArray(teamTransferRequests.reviewedById, userIds));
 
     await tx
       .delete(dialerAgentHourlyMetrics)

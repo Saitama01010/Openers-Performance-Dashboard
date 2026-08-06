@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
+import { resolveCurrentActor, type CurrentActor } from "@/auth/current-actor";
 import { assertPermission } from "@/auth/permissions";
 import { validateRubricSections, type RubricSection } from "@/coaching/rubric";
 import { getDb } from "@/db";
@@ -51,6 +52,7 @@ export async function createPerformanceTarget(actor: Actor, input: {
   effectiveFrom: string;
   effectiveTo?: string | null;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "admin") throw new Error("Forbidden");
   await assertPermission(actor, "targets.manage");
   await assertAdminTeam(actor, input.teamId);
@@ -92,6 +94,7 @@ export async function createTenureThreshold(actor: Actor, input: {
   effectiveFrom: string;
   effectiveTo?: string | null;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "admin") throw new Error("Forbidden");
   await assertPermission(actor, "targets.manage");
   await assertAdminTeam(actor, input.teamId);
@@ -134,6 +137,7 @@ export async function createRubricTemplate(actor: Actor, input: {
   description?: string;
   sections: RubricSection[];
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "admin") throw new Error("Forbidden");
   await assertPermission(actor, "rubrics.manage");
   validateRubricSections(input.sections);
@@ -165,6 +169,7 @@ export async function updateEmploymentStartDate(actor: Actor, input: {
   profileId: string;
   employmentStartDate: string;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "admin") throw new Error("Forbidden");
   await assertPermission(actor, "targets.manage");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.employmentStartDate)) throw new Error("A valid employment start date is required.");
@@ -184,6 +189,10 @@ export async function updateEmploymentStartDate(actor: Actor, input: {
 }
 
 export async function listPerformanceConfiguration(actor: Actor) {
+  return listPerformanceConfigurationForCurrentActor(await resolveCurrentActor(actor));
+}
+
+export async function listPerformanceConfigurationForCurrentActor(actor: CurrentActor) {
   const organizationId = actorOrganizationId(actor);
   const teamCondition =
     actor.role === "manager"
@@ -227,7 +236,11 @@ export async function recordEmploymentStatus(actor: Actor, input: {
   reason: string;
   employmentEndDate?: string | null;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role === "agent") throw new Error("Forbidden");
+  if (actor.role === "manager" && input.status === "active") {
+    throw new Error("Forbidden");
+  }
   if (actor.role === "manager") {
     await assertPermission(
       actor,
@@ -240,10 +253,20 @@ export async function recordEmploymentStatus(actor: Actor, input: {
   if (!reason) throw new Error("A reason is required.");
   const now = new Date();
   await getDb().transaction(async (tx) => {
-    const [profile] = await tx.select({ id: profiles.id, role: profiles.role })
+    const [profile] = await tx.select({
+      id: profiles.id,
+      role: profiles.role,
+      employmentStatus: profiles.employmentStatus,
+    })
       .from(profiles).where(and(eq(profiles.id, input.profileId), eq(profiles.organizationId, actorOrganizationId(actor))))
       .limit(1).for("update");
     if (!profile || profile.role !== "agent") throw new Error("Only agents can receive this employment action.");
+    if (profile.employmentStatus === input.status) {
+      throw new Error(`Employment is already ${input.status}.`);
+    }
+    if (profile.employmentStatus === "terminated") {
+      throw new Error("Terminated employment cannot transition to another status.");
+    }
     if (actor.role === "manager") {
       if (actor.teamIds.length === 0) throw new Error("Forbidden");
       const membership = await tx.select({ teamId: teamMemberships.teamId }).from(teamMemberships)

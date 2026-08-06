@@ -3,6 +3,7 @@ import "server-only";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
+import { resolveCurrentActor, type CurrentActor } from "@/auth/current-actor";
 import { assertPermission } from "@/auth/permissions";
 import {
   calculateRubricPercentage,
@@ -77,6 +78,7 @@ export async function saveCoachingReport(actor: Actor, input: {
   actionItems?: string[];
   followUpDate?: string | null;
 }) {
+  actor = await resolveCurrentActor(actor);
   await assertCanManageParticipant(actor, input.coachingSessionId, input.agentProfileId);
   const [template] = await getDb()
     .select()
@@ -155,6 +157,7 @@ async function transitionReport(
   reportId: string,
   target: "finalized" | "published",
 ) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role === "agent") throw new Error("Forbidden");
   await assertPermission(actor, actor.role === "admin" ? "coaching.create_company" : "coaching.publish_team");
   await getDb().transaction(async (tx) => {
@@ -187,6 +190,7 @@ export function publishCoachingReport(actor: Actor, reportId: string) {
 }
 
 export async function acknowledgeCoachingReport(actor: Actor, reportId: string) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "agent") throw new Error("Forbidden");
   await getDb().transaction(async (tx) => {
     const [report] = await tx.select({ id: coachingReports.id, status: coachingReports.status })
@@ -206,6 +210,10 @@ export async function acknowledgeCoachingReport(actor: Actor, reportId: string) 
 }
 
 export async function listCoachingReports(actor: Actor) {
+  return listCoachingReportsForCurrentActor(await resolveCurrentActor(actor));
+}
+
+export async function listCoachingReportsForCurrentActor(actor: CurrentActor) {
   const conditions = [eq(coachingReports.organizationId, actorOrganizationId(actor))];
   if (actor.role === "agent") {
     conditions.push(eq(coachingReports.agentProfileId, actor.id));

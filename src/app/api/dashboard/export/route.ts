@@ -1,17 +1,16 @@
 import { getCurrentUser } from "@/auth/session";
-import { assertDashboardExportAccess } from "@/auth/feature-access";
 import { companyDashboardCsv, teamDashboardCsv } from "@/dashboard/csv";
 import { resolveOverviewDateRange } from "@/dashboard/date-range";
+import { authorizeDashboardExport } from "@/dashboard/export-access";
 import { getRoleDashboardData } from "@/dashboard/role-data";
 import { getEnv } from "@/env";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const actor = await getCurrentUser();
-  if (!actor) return new Response("Unauthorized", { status: 401 });
+  const sessionActor = await getCurrentUser();
+  if (!sessionActor) return errorResponse("Unauthorized", 401);
   try {
-    await assertDashboardExportAccess(actor);
     const url = new URL(request.url);
     const dateRange = resolveOverviewDateRange(
       {
@@ -23,9 +22,7 @@ export async function GET(request: Request) {
       getEnv().GOOGLE_SHEETS_TIMEZONE,
     );
     const requestedTeamId = url.searchParams.get("teamId") || undefined;
-    if (actor.role === "manager" && requestedTeamId && !actor.teamIds.includes(requestedTeamId)) {
-      return new Response("Forbidden", { status: 403 });
-    }
+    const actor = await authorizeDashboardExport(sessionActor, requestedTeamId);
     if (actor.role === "admin" && !requestedTeamId) {
       const result = await getRoleDashboardData(actor, { dateRange });
       if (result.role !== "admin") throw new Error("Unexpected dashboard role.");
@@ -47,10 +44,20 @@ export async function GET(request: Request) {
     }))), "team-dashboard.csv");
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
-      return new Response("Forbidden", { status: 403 });
+      return errorResponse("Forbidden", 403);
     }
     throw error;
   }
+}
+
+function errorResponse(message: string, status: number) {
+  return new Response(message, {
+    status,
+    headers: {
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 function csvResponse(csv: string, filename: string) {

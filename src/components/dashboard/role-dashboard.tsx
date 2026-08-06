@@ -99,18 +99,17 @@ function SourceBanner({ source }: { source: { status: string; message?: string }
   );
 }
 
-function TopPerformer({ performer }: { performer: AgentData["standing"]["topPerformerLastMonth"] }) {
+function TopPerformer({ wasTopPerformer }: { wasTopPerformer: boolean }) {
   return (
     <div className="role-top-performer">
       <DashboardIcon name="leaderboard" />
-      {performer ? (
+      {wasTopPerformer ? (
         <div>
           <p>Top performer last month</p>
-          <strong>{performer.realName}</strong>
-          <span>{performer.americanName} · {performer.teamName ?? "No active team"}</span>
-          <small>{performer.closedDeals} closed deals · {performer.transferCount} transfers · {percentage(performer.transferCount ? (performer.closedDeals / performer.transferCount) * 100 : null)} conversion</small>
+          <strong>You led the company ranking</strong>
+          <span>Your own monthly outcomes are shown above.</span>
         </div>
-      ) : <div><p>Top performer last month</p><strong>Unavailable</strong><span>The Closed source did not provide a valid ranking.</span></div>}
+      ) : <div><p>Top performer last month</p><strong>Private</strong><span>Another employee&apos;s identity and outcomes are not exposed in your personal view.</span></div>}
     </div>
   );
 }
@@ -173,7 +172,7 @@ export function AgentRoleDashboard({ data, userId }: { data: AgentData; userId: 
             <Metric label="Month transfers" value={<SourceMetric metric={data.standing.monthly.transfers} />} />
             <Metric label="Month closed deals" value={<SourceMetric metric={data.standing.monthly.closedDeals} />} />
           </div>
-          <TopPerformer performer={data.standing.topPerformerLastMonth} />
+          <TopPerformer wasTopPerformer={data.standing.wasTopPerformerLastMonth} />
         </Section>
         <Section title="Month-to-date targets" description="Effective-dated team or company settings.">
           <div className="role-target-list">

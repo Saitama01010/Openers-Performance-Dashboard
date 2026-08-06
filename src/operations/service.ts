@@ -4,10 +4,13 @@ import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { listScopedActiveAgents } from "@/agents/scope";
 import type { Actor } from "@/auth/authorization";
+import { resolveCurrentActor, type CurrentActor } from "@/auth/current-actor";
 import { assertPermission } from "@/auth/permissions";
 import { getDb } from "@/db";
 import {
   auditLogs,
+  coachingSessionParticipants,
+  coachingSessions,
   manualFlagCaseEvents,
   manualFlagCases,
   profiles,
@@ -75,6 +78,7 @@ export async function createShadowingSession(actor: Actor, input: {
   scheduledDate: string;
   objective: string;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role === "agent") throw new Error("Forbidden");
   await assertPermission(actor, actor.role === "admin" ? "coaching.create_company" : "shadowing.manage_team");
   const agent = await currentAgentContext(actor, input.agentProfileId);
@@ -103,6 +107,7 @@ export async function completeShadowingSession(actor: Actor, input: {
   followUpAction?: string;
   publishToAgent: boolean;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role === "agent") throw new Error("Forbidden");
   await assertPermission(actor, actor.role === "admin" ? "coaching.create_company" : "shadowing.manage_team");
   await getDb().transaction(async (tx) => {
@@ -128,6 +133,13 @@ export async function completeShadowingSession(actor: Actor, input: {
 }
 
 export async function listShadowingSessions(actor: Actor, timeZone = "Africa/Cairo") {
+  return listShadowingSessionsForCurrentActor(await resolveCurrentActor(actor), timeZone);
+}
+
+export async function listShadowingSessionsForCurrentActor(
+  actor: CurrentActor,
+  timeZone = "Africa/Cairo",
+) {
   if (actor.role === "manager" && actor.teamIds.length === 0) return [];
   const currentManagerAgentIds = actor.role === "manager"
     ? (await listScopedActiveAgents(actor)).map((agent) => agent.id)
@@ -177,11 +189,32 @@ export async function createManualFlagCase(actor: Actor, input: {
   relatedCoachingSessionId?: string | null;
   publishToAgent: boolean;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role === "agent") throw new Error("Forbidden");
   await assertPermission(actor, actor.role === "admin" ? "flags.view_company" : "flags.raise_team_case");
   const agent = await currentAgentContext(actor, input.agentProfileId);
   const id = newId();
   await getDb().transaction(async (tx) => {
+    if (input.relatedCoachingSessionId) {
+      const [relatedSession] = await tx
+        .select({ id: coachingSessions.id })
+        .from(coachingSessions)
+        .innerJoin(
+          coachingSessionParticipants,
+          and(
+            eq(coachingSessionParticipants.sessionId, coachingSessions.id),
+            eq(coachingSessionParticipants.agentProfileId, agent.agentProfileId),
+          ),
+        )
+        .where(
+          and(
+            eq(coachingSessions.id, input.relatedCoachingSessionId),
+            eq(coachingSessions.organizationId, actorOrganizationId(actor)),
+          ),
+        )
+        .limit(1);
+      if (!relatedSession) throw new Error("Forbidden");
+    }
     await tx.insert(manualFlagCases).values({
       id, organizationId: actorOrganizationId(actor), agentProfileId: agent.agentProfileId,
       teamIdSnapshot: agent.teamId, raisedById: actor.id, assignedOwnerId: actor.id,
@@ -211,6 +244,7 @@ export async function updateManualFlagCase(actor: Actor, input: {
   resolution?: string;
   publishToAgent?: boolean;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role === "agent") throw new Error("Forbidden");
   await assertPermission(actor, actor.role === "admin" ? "flags.view_company" : "flags.update_team_case");
   await getDb().transaction(async (tx) => {
@@ -259,6 +293,10 @@ export async function updateManualFlagCase(actor: Actor, input: {
 }
 
 export async function listManualFlagCases(actor: Actor) {
+  return listManualFlagCasesForCurrentActor(await resolveCurrentActor(actor));
+}
+
+export async function listManualFlagCasesForCurrentActor(actor: CurrentActor) {
   if (actor.role === "manager" && actor.teamIds.length === 0) return [];
   const currentManagerAgentIds = actor.role === "manager"
     ? (await listScopedActiveAgents(actor)).map((agent) => agent.id)
@@ -300,6 +338,7 @@ export async function createTeamTransferRequest(actor: Actor, input: {
   destinationTeamId: string;
   reason: string;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "manager") throw new Error("Only managers submit transfer requests.");
   await assertPermission(actor, "transfers.request_team");
   const agent = await currentAgentContext(actor, input.agentProfileId);
@@ -309,6 +348,12 @@ export async function createTeamTransferRequest(actor: Actor, input: {
   if (!destination) throw new Error("Destination team was not found.");
   const id = newId();
   await getDb().transaction(async (tx) => {
+    await tx
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(eq(profiles.id, agent.agentProfileId))
+      .limit(1)
+      .for("update");
     const duplicate = await tx.select({ id: teamTransferRequests.id }).from(teamTransferRequests)
       .where(and(
         eq(teamTransferRequests.agentProfileId, agent.agentProfileId),
@@ -336,6 +381,7 @@ export async function reviewTeamTransferRequest(actor: Actor, input: {
   decision: "approved" | "rejected";
   reviewNote?: string;
 }) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "admin") throw new Error("Forbidden");
   await assertPermission(actor, "transfers.approve_company");
   await getDb().transaction(async (tx) => {
@@ -357,6 +403,7 @@ export async function reviewTeamTransferRequest(actor: Actor, input: {
 }
 
 export async function applyTeamTransferRequest(actor: Actor, requestId: string) {
+  actor = await resolveCurrentActor(actor);
   if (actor.role !== "admin") throw new Error("Forbidden");
   await assertPermission(actor, "transfers.approve_company");
   await getDb().transaction(async (tx) => {
@@ -393,6 +440,10 @@ export async function applyTeamTransferRequest(actor: Actor, requestId: string) 
 }
 
 export async function listTeamTransferRequests(actor: Actor) {
+  return listTeamTransferRequestsForCurrentActor(await resolveCurrentActor(actor));
+}
+
+export async function listTeamTransferRequestsForCurrentActor(actor: CurrentActor) {
   if (actor.role === "agent") return [];
   if (actor.role === "manager" && actor.teamIds.length === 0) return [];
   const sourceTeam = teams;

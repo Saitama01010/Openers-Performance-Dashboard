@@ -41,4 +41,28 @@ describe("role dashboard CSV", () => {
       targetProgress: { status: "tracking", percentage: 50 }, coachingCompletion: 80,
     }])).toContain('"Team A","1","3","20","5","25","50","80"');
   });
+
+  it("neutralizes spreadsheet formulas in every user-controlled text field", () => {
+    const csv = teamDashboardCsv([{
+      agentName: "=HYPERLINK(\"https://example.test\")",
+      team: { name: " +SUM(1,1)" },
+      employmentStartDate: null,
+      tenureDays: null,
+      transfers: { value: null },
+      closedDeals: { value: null },
+      conversion: null,
+      coverage: { status: "incomplete" },
+      weeklyRank: null,
+      monthlyRank: null,
+      coachingPending: 0,
+      shadowingPending: 0,
+      automaticFlags: { triggeredFlags: [] },
+      manualFlagCount: 0,
+      lowPerformance: { reasons: [] },
+    }]);
+
+    expect(csv).toContain('"\'=HYPERLINK(""https://example.test"")"');
+    expect(csv).toContain('"\' +SUM(1,1)"');
+    expect(csv).not.toMatch(/(?:^|,)"[\t\r\n ]*[=+\-@]/m);
+  });
 });

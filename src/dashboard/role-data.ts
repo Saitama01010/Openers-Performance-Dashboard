@@ -4,10 +4,11 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-o
 
 import { listScopedActiveAgents, type ScopedAgent } from "@/agents/scope";
 import type { Actor } from "@/auth/authorization";
+import { resolveCurrentActor, type CurrentActor } from "@/auth/current-actor";
 import { assertRoleDashboardViewAccess } from "@/auth/feature-access";
 import { getCommissionReport } from "@/commissions/service";
 import { getCoachingRoomData } from "@/coaching/data";
-import { listCoachingReports } from "@/coaching/reports";
+import { listCoachingReportsForCurrentActor } from "@/coaching/reports";
 import { resolveWeekWindow } from "@/coaching/week";
 import { getDashboardData } from "@/dashboard/data";
 import {
@@ -52,11 +53,13 @@ import { calculatePerformanceFlags } from "@/flags/domain";
 import { getPerformanceFlagsData, getTransferFlagsData } from "@/flags/data";
 import { rankLeaderboardRows } from "@/leaderboard/ranking";
 import {
-  listManualFlagCases,
-  listShadowingSessions,
-  listTeamTransferRequests,
+  listManualFlagCasesForCurrentActor,
+  listShadowingSessionsForCurrentActor,
+  listTeamTransferRequestsForCurrentActor,
 } from "@/operations/service";
-import { listPerformanceConfiguration } from "@/operations/settings";
+import {
+  listPerformanceConfigurationForCurrentActor,
+} from "@/operations/settings";
 import { dateKeyInTimeZone } from "@/sheets/timestamp";
 import { actorOrganizationId, visibleTeamWhere } from "@/teams/visibility";
 
@@ -172,7 +175,7 @@ function rankedRows(
 function teamCompetition(
   agents: readonly ScopedAgent[],
   snapshot: ReturnType<typeof outcomeSnapshot>,
-  targets: Awaited<ReturnType<typeof listPerformanceConfiguration>>["targets"],
+  targets: Awaited<ReturnType<typeof listPerformanceConfigurationForCurrentActor>>["targets"],
   asOf: string,
   coachingByTeam: Map<string, { total: number; completed: number }>,
 ): TeamCompetitionRow[] {
@@ -301,7 +304,7 @@ export type RoleDashboardData =
   | { role: "manager"; data: Awaited<ReturnType<typeof managerDashboardData>> }
   | { role: "admin"; data: Awaited<ReturnType<typeof adminDashboardData>> };
 
-async function sharedInputs(actor: Actor, now: Date, selectedRange: OverviewDateRange) {
+async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange) {
   const orgActor = organizationActor(actor);
   const today = dateKeyInTimeZone(now, "Africa/Cairo");
   const week = resolveWeekWindow(today);
@@ -311,12 +314,12 @@ async function sharedInputs(actor: Actor, now: Date, selectedRange: OverviewDate
     listScopedActiveAgents(actor),
     listScopedActiveAgents(orgActor),
     loadRoleDashboardOutcomeSource(orgActor),
-    listPerformanceConfiguration(actor),
+    listPerformanceConfigurationForCurrentActor(actor),
     getDashboardData(actor, { dateRange: selectedRange, showAgentsWithNoData: true }),
-    listCoachingReports(actor),
-    listShadowingSessions(actor),
-    listManualFlagCases(actor),
-    listTeamTransferRequests(actor),
+    listCoachingReportsForCurrentActor(actor),
+    listShadowingSessionsForCurrentActor(actor),
+    listManualFlagCasesForCurrentActor(actor),
+    listTeamTransferRequestsForCurrentActor(actor),
     getTransferFlagsData(actor, {
       dateRange: { from: week.start, to: week.end },
       profileId: actor.role === "agent" ? actor.id : undefined,
@@ -348,7 +351,7 @@ async function sharedInputs(actor: Actor, now: Date, selectedRange: OverviewDate
   };
 }
 
-async function agentDashboardData(actor: Actor, now: Date, selectedRange: OverviewDateRange) {
+async function agentDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange) {
   const shared = await sharedInputs(actor, now, selectedRange);
   const shift = lastCompletedShift(now);
   const previousShift = previousCompletedShift(shift);
@@ -388,7 +391,8 @@ async function agentDashboardData(actor: Actor, now: Date, selectedRange: Overvi
       monthlyRank: shared.monthlyRanks?.find((row) => row.profileId === actor.id)?.rank ?? null,
       totalRankedAgents: shared.monthlyRanks?.length ?? null,
       teamDailyRank: shared.todayCompetition.find((team) => team.teamId === teamId)?.rank ?? null,
-      topPerformerLastMonth: shared.topPerformerLastMonth,
+      wasTopPerformerLastMonth:
+        shared.topPerformerLastMonth?.profileId === actor.id,
       monthly: {
         transfers: sourceValue(shared.monthly.transferByAgent.get(actor.id), shared.monthly.transfers.status === "ready"),
         closedDeals: sourceValue(shared.monthly.closedByAgent.get(actor.id), shared.monthly.closedDeals.status === "ready"),
@@ -407,7 +411,7 @@ async function agentDashboardData(actor: Actor, now: Date, selectedRange: Overvi
   };
 }
 
-async function managerDashboardData(actor: Actor, now: Date, selectedRange: OverviewDateRange, requestedPage = 1) {
+async function managerDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange, requestedPage = 1) {
   const shared = await sharedInputs(actor, now, selectedRange);
   const agentIds = shared.scopedAgents.map((agent) => agent.id);
   const employment = await profileEmployment(agentIds);
@@ -541,7 +545,7 @@ async function managerDashboardData(actor: Actor, now: Date, selectedRange: Over
   };
 }
 
-async function adminDashboardData(actor: Actor, now: Date, selectedRange: OverviewDateRange) {
+async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange) {
   const shared = await sharedInputs(actor, now, selectedRange);
   const [employmentCounts, accountCounts, managerRows, commission, companyEmployment, companyShiftRows, operationalHealth] = await Promise.all([
     getDb().select({ status: profiles.employmentStatus, count: sql<number>`count(*)` })
@@ -821,9 +825,10 @@ export async function getRoleDashboardData(
   actor: Actor,
   input: { dateRange: OverviewDateRange; now?: Date; page?: number },
 ): Promise<RoleDashboardData> {
-  await assertRoleDashboardViewAccess(actor);
+  const currentActor = await resolveCurrentActor(actor);
+  await assertRoleDashboardViewAccess(currentActor);
   const now = input.now ?? new Date();
-  if (actor.role === "agent") return { role: "agent", data: await agentDashboardData(actor, now, input.dateRange) };
-  if (actor.role === "manager") return { role: "manager", data: await managerDashboardData(actor, now, input.dateRange, input.page) };
-  return { role: "admin", data: await adminDashboardData(actor, now, input.dateRange) };
+  if (currentActor.role === "agent") return { role: "agent", data: await agentDashboardData(currentActor, now, input.dateRange) };
+  if (currentActor.role === "manager") return { role: "manager", data: await managerDashboardData(currentActor, now, input.dateRange, input.page) };
+  return { role: "admin", data: await adminDashboardData(currentActor, now, input.dateRange) };
 }

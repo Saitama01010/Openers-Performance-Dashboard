@@ -18,7 +18,9 @@ import {
 } from "drizzle-orm";
 
 import type { Actor, Role } from "@/auth/authorization";
+import { assertPermission } from "@/auth/permissions";
 import { getCurrentSessionId } from "@/auth/session";
+import { resolveCurrentActor, type CurrentActor } from "@/auth/current-actor";
 import {
   createOpaqueToken,
   hashOpaqueToken,
@@ -46,19 +48,28 @@ import {
   accountInvitationTokens,
   auditLogs,
   coachingSessionParticipants,
+  coachingReportRevisions,
+  coachingReports,
+  coachingRubricTemplates,
   coachingSessions,
   dialerAgentHourlyMetrics,
   dialerDatasetVersions,
   dialerImportBatches,
   dialerImportRows,
   emailDeliveryAttempts,
+  employmentStatusEvents,
   importErrors,
+  manualFlagCaseEvents,
+  manualFlagCases,
   passwordResetTokens,
   profiles,
+  performanceTargets,
   sessions,
+  shadowingSessions,
   sourceUserMappings,
   teamMemberships,
   teams,
+  tenureThresholds,
   transfersFixtures,
   userImportBatches,
   userPermissionOverrides,
@@ -114,6 +125,7 @@ export type CreateUserInput = {
   dialerAliases: string[];
   permissionOverrides: PermissionOverrideInput[];
   importBatchId?: string;
+  employmentStartDate?: string;
 };
 
 export type UpdateUserInput = {
@@ -775,8 +787,7 @@ async function assertActiveDialerMappingAvailable(
   }
 }
 
-export async function createAdminUser(actor: Actor, input: CreateUserInput) {
-  assertAdmin(actor);
+async function createProvisionedUser(actor: Actor, input: CreateUserInput) {
   assertValidRole(input.role);
 
   const name = trimText(input.name);
@@ -839,6 +850,8 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
       passwordState: "temporary",
       encryptedTemporaryPassword,
       accountStatus: "active",
+      employmentStartDate: input.employmentStartDate || null,
+      employmentStatus: "active",
     });
 
     if (input.teamId) {
@@ -901,6 +914,54 @@ export async function createAdminUser(actor: Actor, input: CreateUserInput) {
     });
   });
   return { profileId };
+}
+
+export async function createAdminUser(actor: Actor, input: CreateUserInput) {
+  assertAdmin(actor);
+  return await createProvisionedUser(actor, input);
+}
+
+export async function createTeamAgent(actor: Actor, input: {
+  name: string;
+  email: string;
+  teamId: string;
+  dialerName: string;
+  shift?: string;
+  employmentStartDate?: string;
+}) {
+  actor = await resolveCurrentActor(actor);
+  if (actor.role !== "manager") throw new Error("Forbidden");
+  await assertPermission(actor, "users.create_team_agent");
+  if (!actor.teamIds.includes(input.teamId)) {
+    throw new Error("Managers may create agents only in their assigned teams.");
+  }
+  const created = await createProvisionedUser(actor, {
+    ...input,
+    role: "agent",
+    dialerAliases: [],
+    permissionOverrides: [],
+  });
+  const invitation = await createInvitationRecord({
+    profileId: created.profileId,
+    createdById: actor.id,
+  });
+  await writeAudit({
+    actorId: actor.id,
+    action: "user.invitation_sent",
+    entityType: "profile",
+    entityId: created.profileId,
+    metadata: { expiresAt: invitation.expiresAt.toISOString() },
+  });
+  const delivery = await deliverInvitationAfterCommit({
+    actorId: actor.id,
+    profileId: created.profileId,
+    tokenId: invitation.tokenId,
+    email: normalizeEmail(input.email),
+    name: trimText(input.name),
+    token: invitation.token,
+    resent: false,
+  });
+  return { ...created, invitationDelivered: delivery.ok };
 }
 
 export async function revealTemporaryPassword(actor: Actor, userId: string) {
@@ -1181,6 +1242,23 @@ export async function permanentlyDeleteValidatedUsers(
     const participantSessionIds = Array.from(
       new Set(coachingParticipantRows.map((row) => row.sessionId)),
     );
+    const operationalReportRows = await tx
+      .select({ id: coachingReports.id })
+      .from(coachingReports)
+      .where(
+        or(
+          inArray(coachingReports.agentProfileId, userIds),
+          ownedCoachingSessionIds.length > 0
+            ? inArray(coachingReports.coachingSessionId, ownedCoachingSessionIds)
+            : undefined,
+        ),
+      );
+    const operationalReportIds = operationalReportRows.map((row) => row.id);
+    const subjectManualFlagRows = await tx
+      .select({ id: manualFlagCases.id })
+      .from(manualFlagCases)
+      .where(inArray(manualFlagCases.agentProfileId, userIds));
+    const subjectManualFlagIds = subjectManualFlagRows.map((row) => row.id);
 
     // Preserve shared import history while removing references to the account.
     await tx
@@ -1233,6 +1311,84 @@ export async function permanentlyDeleteValidatedUsers(
       .set({ createdById: null })
       .where(inArray(passwordResetTokens.createdById, userIds));
 
+    if (operationalReportIds.length > 0) {
+      await tx
+        .delete(coachingReportRevisions)
+        .where(inArray(coachingReportRevisions.reportId, operationalReportIds));
+      await tx
+        .delete(coachingReports)
+        .where(inArray(coachingReports.id, operationalReportIds));
+    }
+    await tx
+      .update(coachingReportRevisions)
+      .set({ createdById: actor.id })
+      .where(inArray(coachingReportRevisions.createdById, userIds));
+    await tx
+      .update(coachingReports)
+      .set({ coachProfileId: actor.id })
+      .where(inArray(coachingReports.coachProfileId, userIds));
+    await tx
+      .update(coachingReports)
+      .set({ finalizedById: actor.id })
+      .where(inArray(coachingReports.finalizedById, userIds));
+    await tx
+      .update(coachingReports)
+      .set({ publishedById: actor.id })
+      .where(inArray(coachingReports.publishedById, userIds));
+    await tx
+      .update(coachingRubricTemplates)
+      .set({ createdById: actor.id })
+      .where(inArray(coachingRubricTemplates.createdById, userIds));
+    await tx
+      .update(performanceTargets)
+      .set({ createdById: actor.id })
+      .where(inArray(performanceTargets.createdById, userIds));
+    await tx
+      .update(tenureThresholds)
+      .set({ createdById: actor.id })
+      .where(inArray(tenureThresholds.createdById, userIds));
+    await tx
+      .update(employmentStatusEvents)
+      .set({ createdById: actor.id })
+      .where(inArray(employmentStatusEvents.createdById, userIds));
+    await tx
+      .delete(employmentStatusEvents)
+      .where(inArray(employmentStatusEvents.profileId, userIds));
+    await tx
+      .update(shadowingSessions)
+      .set({ assignedLeaderId: actor.id })
+      .where(inArray(shadowingSessions.assignedLeaderId, userIds));
+    await tx
+      .update(shadowingSessions)
+      .set({ createdById: actor.id })
+      .where(inArray(shadowingSessions.createdById, userIds));
+    await tx
+      .delete(shadowingSessions)
+      .where(inArray(shadowingSessions.agentProfileId, userIds));
+    if (subjectManualFlagIds.length > 0) {
+      await tx
+        .delete(manualFlagCaseEvents)
+        .where(inArray(manualFlagCaseEvents.caseId, subjectManualFlagIds));
+      await tx
+        .delete(manualFlagCases)
+        .where(inArray(manualFlagCases.id, subjectManualFlagIds));
+    }
+    await tx
+      .update(manualFlagCaseEvents)
+      .set({ actorProfileId: actor.id })
+      .where(inArray(manualFlagCaseEvents.actorProfileId, userIds));
+    await tx
+      .update(manualFlagCases)
+      .set({ raisedById: actor.id })
+      .where(inArray(manualFlagCases.raisedById, userIds));
+    await tx
+      .update(manualFlagCases)
+      .set({ assignedOwnerId: actor.id })
+      .where(inArray(manualFlagCases.assignedOwnerId, userIds));
+    await tx
+      .update(manualFlagCases)
+      .set({ resolvedById: actor.id })
+      .where(inArray(manualFlagCases.resolvedById, userIds));
     await tx
       .delete(dialerAgentHourlyMetrics)
       .where(inArray(dialerAgentHourlyMetrics.agentProfileId, userIds));
@@ -1809,9 +1965,10 @@ export async function updateUserPrimaryDialerName(
   }
 }
 
-export async function moveUserToTeam(
-  actor: Actor,
+async function moveUserToTeamAsAdmin(
+  actor: CurrentActor,
   input: { userId: string; teamId: string },
+  expectedRole?: "agent" | "manager",
 ): Promise<Extract<InlineUserUpdateResult, { field: "teamId" }>> {
   assertAdmin(actor);
 
@@ -1840,6 +1997,12 @@ export async function moveUserToTeam(
     }
     if (profile.role !== "agent" && profile.role !== "manager") {
       throw new Error("Team can only be changed for agents and managers.");
+    }
+    if (expectedRole && profile.role !== expectedRole) {
+      throw new Error(expectedRole === "agent" ? "Active agent was not found." : "User was not found.");
+    }
+    if (expectedRole === "agent" && profile.accountStatus !== "active") {
+      throw new Error("Active agent was not found.");
     }
 
     const teamRows = await tx
@@ -1871,9 +2034,8 @@ export async function moveUserToTeam(
     const currentMembership = activeMemberships[0] ?? null;
 
     if (
-      activeMemberships.some(
-        (membership) => membership.teamId === input.teamId,
-      )
+      activeMemberships.length === 1 &&
+      activeMemberships[0]?.teamId === input.teamId
     ) {
       return {
         field: "teamId",
@@ -1934,6 +2096,13 @@ export async function moveUserToTeam(
       changed: true,
     };
   });
+}
+
+export async function moveUserToTeam(
+  actor: Actor,
+  input: { userId: string; teamId: string },
+): Promise<Extract<InlineUserUpdateResult, { field: "teamId" }>> {
+  return moveUserToTeamAsAdmin(await resolveCurrentActor(actor), input);
 }
 
 export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
@@ -2941,52 +3110,11 @@ export async function moveAgentToTeam(actor: Actor, input: {
   agentId: string;
   teamId: string;
 }) {
-  assertAdmin(actor);
-  await validateTeamForAssignment(actor, input.teamId);
-
-  await getDb().transaction(async (tx) => {
-    const agentRows = await tx
-      .select()
-      .from(profiles)
-      .where(
-        and(
-          eq(profiles.id, input.agentId),
-          eq(profiles.organizationId, actorOrganizationId(actor)),
-          eq(profiles.role, "agent"),
-          eq(profiles.accountStatus, "active"),
-        ),
-      )
-      .limit(1);
-
-    if (!agentRows[0]) throw new Error("Active agent was not found.");
-
-    await tx
-      .update(teamMemberships)
-      .set({ active: false, endedAt: new Date() })
-      .where(
-        and(
-          eq(teamMemberships.profileId, input.agentId),
-          eq(teamMemberships.active, true),
-          isNull(teamMemberships.endedAt),
-        ),
-      );
-    await tx.insert(teamMemberships).values({
-      id: newId(),
-      profileId: input.agentId,
-      teamId: input.teamId,
-      role: "agent",
-      active: true,
-      createdById: actor.id,
-    });
-    await tx.insert(auditLogs).values({
-      id: newId(),
-      actorProfileId: actor.id,
-      action: "team.agent_moved",
-      entityType: "profile",
-      entityId: input.agentId,
-      metadata: { teamId: input.teamId },
-    });
-  });
+  await moveUserToTeamAsAdmin(
+    await resolveCurrentActor(actor),
+    { userId: input.agentId, teamId: input.teamId },
+    "agent",
+  );
 }
 
 export async function removeTeamMembership(actor: Actor, membershipId: string) {

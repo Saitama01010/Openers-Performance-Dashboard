@@ -20,18 +20,30 @@ import { getDb } from "@/db";
 import {
   accountInvitationTokens,
   auditLogs,
+  coachingReportRevisions,
+  coachingReports,
+  coachingRubricTemplates,
+  coachingSessionParticipants,
+  coachingSessions,
   dialerAgentHourlyMetrics,
   dialerImportBatches,
+  employmentStatusEvents,
+  manualFlagCaseEvents,
+  manualFlagCases,
   passwordResetTokens,
   profiles,
+  performanceTargets,
   sessions,
+  shadowingSessions,
   sourceUserMappings,
   teamMemberships,
   teams,
+  tenureThresholds,
   userPermissionOverrides,
 } from "@/db/schema";
 import { resetEnvForTests } from "@/env";
 import { newId } from "@/lib/ids";
+import { DEFAULT_ORGANIZATION_ID } from "@/tenancy/constants";
 
 vi.mock("server-only", () => ({}));
 
@@ -275,6 +287,110 @@ describe("admin user provisioning integration", () => {
       profileId: created.profileId,
       expiresAt: new Date(Date.now() + 60_000),
     });
+    const employmentEventId = newId();
+    const shadowingId = newId();
+    const manualFlagId = newId();
+    const manualFlagEventId = newId();
+    const coachingSessionId = newId();
+    const coachingParticipantId = newId();
+    const rubricTemplateId = newId();
+    const coachingReportId = newId();
+    const coachingRevisionId = newId();
+    const performanceTargetId = newId();
+    const tenureThresholdId = newId();
+    await getDb().insert(employmentStatusEvents).values({
+      id: employmentEventId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      profileId: created.profileId,
+      status: "active",
+      effectiveAt: new Date(),
+      reason: "Existing operational history",
+      createdById: adminId,
+    });
+    await getDb().insert(shadowingSessions).values({
+      id: shadowingId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      agentProfileId: created.profileId,
+      teamIdSnapshot: teamId,
+      assignedLeaderId: adminId,
+      scheduledDate: "2026-08-10",
+      objective: "Existing shadowing",
+      createdById: adminId,
+    });
+    await getDb().insert(manualFlagCases).values({
+      id: manualFlagId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      agentProfileId: created.profileId,
+      teamIdSnapshot: teamId,
+      raisedById: adminId,
+      assignedOwnerId: adminId,
+      category: "Existing case",
+      severity: "medium",
+      reason: "Existing operational case",
+    });
+    await getDb().insert(manualFlagCaseEvents).values({
+      id: manualFlagEventId,
+      caseId: manualFlagId,
+      actorProfileId: adminId,
+      eventType: "created",
+    });
+    await getDb().insert(coachingSessions).values({
+      id: coachingSessionId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      createdByProfileId: adminId,
+      coachProfileId: adminId,
+      category: "performance",
+      sessionDate: "2026-08-06",
+    });
+    await getDb().insert(coachingSessionParticipants).values({
+      id: coachingParticipantId,
+      sessionId: coachingSessionId,
+      agentProfileId: created.profileId,
+      teamIdSnapshot: teamId,
+      teamNameSnapshot: "Historical Team",
+    });
+    await getDb().insert(coachingRubricTemplates).values({
+      id: rubricTemplateId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      name: "Deletion compatibility",
+      version: 1,
+      sections: [],
+      createdById: created.profileId,
+    });
+    await getDb().insert(coachingReports).values({
+      id: coachingReportId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      coachingSessionId,
+      agentProfileId: created.profileId,
+      coachProfileId: adminId,
+      templateId: rubricTemplateId,
+      templateVersion: 1,
+      criterionScores: [],
+      overallScore: "0.00",
+    });
+    await getDb().insert(coachingReportRevisions).values({
+      id: coachingRevisionId,
+      reportId: coachingReportId,
+      revision: 1,
+      snapshot: {},
+      createdById: adminId,
+    });
+    await getDb().insert(performanceTargets).values({
+      id: performanceTargetId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      metric: "transfers",
+      targetValue: "10.00",
+      effectiveFrom: "2026-08-01",
+      createdById: created.profileId,
+    });
+    await getDb().insert(tenureThresholds).values({
+      id: tenureThresholdId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      bandLabel: "Existing threshold",
+      minimumDays: 0,
+      effectiveFrom: "2026-08-01",
+      createdById: created.profileId,
+    });
 
     await permanentlyDeleteUser(actor(adminId), {
       userId: created.profileId,
@@ -308,6 +424,35 @@ describe("admin user provisioning integration", () => {
       .from(sourceUserMappings)
       .where(eq(sourceUserMappings.profileId, created.profileId));
     expect(mappings).toEqual([]);
+    for (const [table, id] of [
+      [employmentStatusEvents, employmentEventId],
+      [shadowingSessions, shadowingId],
+      [manualFlagCases, manualFlagId],
+      [manualFlagCaseEvents, manualFlagEventId],
+      [coachingReports, coachingReportId],
+      [coachingReportRevisions, coachingRevisionId],
+      [coachingSessions, coachingSessionId],
+    ] as const) {
+      expect(await getDb().select().from(table).where(eq(table.id, id))).toEqual([]);
+    }
+    expect(
+      await getDb().select({ createdById: coachingRubricTemplates.createdById })
+        .from(coachingRubricTemplates)
+        .where(eq(coachingRubricTemplates.id, rubricTemplateId)),
+    ).toEqual([{ createdById: adminId }]);
+    expect(
+      await getDb().select({ createdById: performanceTargets.createdById })
+        .from(performanceTargets)
+        .where(eq(performanceTargets.id, performanceTargetId)),
+    ).toEqual([{ createdById: adminId }]);
+    expect(
+      await getDb().select({ createdById: tenureThresholds.createdById })
+        .from(tenureThresholds)
+        .where(eq(tenureThresholds.id, tenureThresholdId)),
+    ).toEqual([{ createdById: adminId }]);
+    await getDb().delete(performanceTargets).where(eq(performanceTargets.id, performanceTargetId));
+    await getDb().delete(tenureThresholds).where(eq(tenureThresholds.id, tenureThresholdId));
+    await getDb().delete(coachingRubricTemplates).where(eq(coachingRubricTemplates.id, rubricTemplateId));
     const listed = await listAdminUsers(actor(adminId), {
       page: 1,
       pageSize: 20,

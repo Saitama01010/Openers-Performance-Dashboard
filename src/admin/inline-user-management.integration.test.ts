@@ -7,6 +7,7 @@ import {
   addDialerMapping,
   listAdminUsers,
   listTeams,
+  moveAgentToTeam,
   moveUserToTeam,
   updateUserEmail,
   updateUserPrimaryDialerName,
@@ -19,6 +20,7 @@ import { getDb } from "@/db";
 import {
   accountInvitationTokens,
   auditLogs,
+  organizations,
   passwordResetTokens,
   profiles,
   sourceUserMappings,
@@ -31,15 +33,17 @@ vi.mock("server-only", () => ({}));
 
 const profileIds: string[] = [];
 const teamIds: string[] = [];
+const organizationIds: string[] = [];
 
-function actor(id: string): Actor {
-  return { id, role: "admin", teamIds: [] };
+function actor(id: string, role: Role = "admin"): Actor {
+  return { id, role, teamIds: [] };
 }
 
 async function createProfile(
   role: Role,
   options: {
     email?: string;
+    organizationId?: string;
     passwordHash?: string;
   } = {},
 ) {
@@ -49,6 +53,7 @@ async function createProfile(
 
   await getDb().insert(profiles).values({
     id,
+    organizationId: options.organizationId,
     email,
     name: `${role} ${id.slice(0, 8)}`,
     role,
@@ -60,13 +65,17 @@ async function createProfile(
   return { id, email };
 }
 
-async function createTeam(namePrefix: string) {
+async function createTeam(
+  namePrefix: string,
+  options: { active?: boolean; organizationId?: string } = {},
+) {
   const id = newId();
   teamIds.push(id);
   await getDb().insert(teams).values({
     id,
+    organizationId: options.organizationId,
     name: `${namePrefix} ${id.slice(0, 8)}`,
-    active: true,
+    active: options.active ?? true,
   });
   return id;
 }
@@ -118,6 +127,10 @@ describe("inline admin user management integration", () => {
 
     if (teamIdsToDelete.length > 0) {
       await getDb().delete(teams).where(inArray(teams.id, teamIdsToDelete));
+    }
+    const organizationsToDelete = organizationIds.splice(0);
+    if (organizationsToDelete.length > 0) {
+      await getDb().delete(organizations).where(inArray(organizations.id, organizationsToDelete));
     }
   });
 
@@ -389,6 +402,19 @@ describe("inline admin user management integration", () => {
       .where(eq(teamMemberships.profileId, agent.id));
     expect(afterNoOp).toHaveLength(beforeNoOp.length);
 
+    const moveAudits = await getDb()
+      .select({ action: auditLogs.action, metadata: auditLogs.metadata })
+      .from(auditLogs)
+      .where(and(
+        eq(auditLogs.entityId, agent.id),
+        eq(auditLogs.action, "user.team_moved"),
+      ));
+    expect(moveAudits).toHaveLength(1);
+    expect(moveAudits[0]?.metadata).toMatchObject({
+      before: { teamId: firstTeamId, role: "agent" },
+      after: { teamId: secondTeamId, role: "agent" },
+    });
+
     const usersState = await listAdminUsers(actor(admin.id), {
       page: 1,
       pageSize: 50,
@@ -405,5 +431,82 @@ describe("inline admin user management integration", () => {
     expect(secondTeam?.members.map((member) => member.profileId)).toEqual(
       expect.arrayContaining([agent.id, manager.id]),
     );
+  });
+
+  it("rejects manager calls to both direct admin team-movement services", async () => {
+    const admin = await createProfile("admin");
+    const manager = await createProfile("manager");
+    const agent = await createProfile("agent");
+    const firstTeamId = await createTeam("Manager denied source");
+    const secondTeamId = await createTeam("Manager denied destination");
+    await createMembership({ actorId: admin.id, profileId: manager.id, role: "manager", teamId: firstTeamId });
+    await createMembership({ actorId: admin.id, profileId: agent.id, role: "agent", teamId: firstTeamId });
+
+    const forgedManager = actor(manager.id, "admin");
+    await expect(moveUserToTeam(forgedManager, {
+      userId: agent.id,
+      teamId: secondTeamId,
+    })).rejects.toThrow("Forbidden");
+    await expect(moveAgentToTeam(forgedManager, {
+      agentId: agent.id,
+      teamId: secondTeamId,
+    })).rejects.toThrow("Forbidden");
+
+    const active = await getDb().select({ teamId: teamMemberships.teamId })
+      .from(teamMemberships)
+      .where(and(
+        eq(teamMemberships.profileId, agent.id),
+        eq(teamMemberships.active, true),
+      ));
+    expect(active).toEqual([{ teamId: firstTeamId }]);
+  });
+
+  it("rejects inactive and cross-organization destinations", async () => {
+    const admin = await createProfile("admin");
+    const agent = await createProfile("agent");
+    const sourceTeamId = await createTeam("Scoped source");
+    const inactiveTeamId = await createTeam("Inactive destination", { active: false });
+    const foreignOrganizationId = newId();
+    organizationIds.push(foreignOrganizationId);
+    await getDb().insert(organizations).values({
+      id: foreignOrganizationId,
+      name: `Foreign ${foreignOrganizationId}`,
+    });
+    const foreignTeamId = await createTeam("Foreign destination", {
+      organizationId: foreignOrganizationId,
+    });
+    await createMembership({ actorId: admin.id, profileId: agent.id, role: "agent", teamId: sourceTeamId });
+
+    await expect(moveAgentToTeam(actor(admin.id), {
+      agentId: agent.id,
+      teamId: inactiveTeamId,
+    })).rejects.toThrow("Team was not found");
+    await expect(moveAgentToTeam(actor(admin.id), {
+      agentId: agent.id,
+      teamId: foreignTeamId,
+    })).rejects.toThrow("Team was not found");
+  });
+
+  it("serializes concurrent admin moves without duplicate active memberships", async () => {
+    const admin = await createProfile("admin");
+    const agent = await createProfile("agent");
+    const sourceTeamId = await createTeam("Concurrent source");
+    const firstDestinationId = await createTeam("Concurrent destination one");
+    const secondDestinationId = await createTeam("Concurrent destination two");
+    await createMembership({ actorId: admin.id, profileId: agent.id, role: "agent", teamId: sourceTeamId });
+
+    const outcomes = await Promise.allSettled([
+      moveAgentToTeam(actor(admin.id), { agentId: agent.id, teamId: firstDestinationId }),
+      moveAgentToTeam(actor(admin.id), { agentId: agent.id, teamId: secondDestinationId }),
+    ]);
+    expect(outcomes.every((outcome) => outcome.status === "fulfilled")).toBe(true);
+
+    const memberships = await getDb().select().from(teamMemberships)
+      .where(eq(teamMemberships.profileId, agent.id));
+    const active = memberships.filter((membership) => membership.active && !membership.endedAt);
+    expect(active).toHaveLength(1);
+    expect([firstDestinationId, secondDestinationId]).toContain(active[0]?.teamId);
+    expect(memberships).toHaveLength(3);
+    expect(memberships.filter((membership) => !membership.active && membership.endedAt)).toHaveLength(2);
   });
 });

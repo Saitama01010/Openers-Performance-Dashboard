@@ -2,6 +2,7 @@ import {
   bigint,
   boolean,
   date,
+  decimal,
   datetime,
   foreignKey,
   index,
@@ -101,7 +102,41 @@ export const coachingCategoryEnum = mysqlEnum("category", [
   "adherence",
   "improvement",
 ]);
-
+export const employmentStatusEnum = mysqlEnum("employment_status", [
+  "active",
+  "deactivated",
+  "terminated",
+]);
+export const performanceTargetMetricEnum = mysqlEnum("performance_target_metric", [
+  "transfers",
+  "closed_deals",
+  "conversion",
+]);
+export const coachingReportStatusEnum = mysqlEnum("coaching_report_status", [
+  "draft",
+  "finalized",
+  "published",
+  "acknowledged",
+]);
+export const shadowingStatusEnum = mysqlEnum("shadowing_status", [
+  "scheduled",
+  "completed",
+  "cancelled",
+]);
+export const manualFlagSeverityEnum = mysqlEnum("manual_flag_severity", [
+  "low",
+  "medium",
+  "high",
+  "critical",
+]);
+export const manualFlagStatusEnum = mysqlEnum("manual_flag_status", [
+  "open",
+  "under_review",
+  "action_required",
+  "coaching_scheduled",
+  "resolved",
+  "dismissed",
+]);
 export const organizations = mysqlTable("organizations", {
   id: varchar("id", { length: 36 }).primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -131,6 +166,9 @@ export const profiles = mysqlTable(
     lastLoginAt: datetime("last_login_at"),
     passwordChangedAt: datetime("password_changed_at"),
     accessRevokedAt: datetime("access_revoked_at"),
+    employmentStartDate: date("employment_start_date", { mode: "string" }),
+    employmentEndDate: date("employment_end_date", { mode: "string" }),
+    employmentStatus: employmentStatusEnum.notNull().default("active"),
     deletedAt: datetime("deleted_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
@@ -631,6 +669,355 @@ export const coachingSessionParticipants = mysqlTable(
     index("coaching_participant_agent_idx").on(table.agentProfileId),
     index("coaching_participant_team_idx").on(table.teamIdSnapshot),
   ],
+);
+
+export const employmentStatusEvents = mysqlTable(
+  "employment_status_events",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id),
+    profileId: varchar("profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    status: employmentStatusEnum.notNull(),
+    effectiveAt: datetime("effective_at").notNull(),
+    reason: varchar("reason", { length: 1000 }).notNull(),
+    createdById: varchar("created_by_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("employment_events_profile_effective_idx").on(
+      table.profileId,
+      table.effectiveAt,
+    ),
+    index("employment_events_organization_idx").on(table.organizationId),
+  ],
+);
+
+export const performanceTargets = mysqlTable(
+  "performance_targets",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id),
+    teamId: varchar("team_id", { length: 36 }).references(() => teams.id, {
+      onDelete: "restrict",
+    }),
+    metric: performanceTargetMetricEnum.notNull(),
+    targetValue: decimal("target_value", { precision: 12, scale: 2 }).notNull(),
+    effectiveFrom: date("effective_from", { mode: "string" }).notNull(),
+    effectiveTo: date("effective_to", { mode: "string" }),
+    createdById: varchar("created_by_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("performance_targets_resolution_idx").on(
+      table.organizationId,
+      table.teamId,
+      table.metric,
+      table.effectiveFrom,
+      table.effectiveTo,
+    ),
+  ],
+);
+
+export const tenureThresholds = mysqlTable(
+  "tenure_thresholds",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id),
+    teamId: varchar("team_id", { length: 36 }).references(() => teams.id, {
+      onDelete: "restrict",
+    }),
+    bandLabel: varchar("band_label", { length: 120 }).notNull(),
+    minimumDays: int("minimum_days").notNull(),
+    maximumDays: int("maximum_days"),
+    isRamp: boolean("is_ramp").notNull().default(false),
+    minimumTransfers: decimal("minimum_transfers", { precision: 12, scale: 2 }),
+    minimumClosedDeals: decimal("minimum_closed_deals", {
+      precision: 12,
+      scale: 2,
+    }),
+    minimumConversion: decimal("minimum_conversion", { precision: 7, scale: 2 }),
+    minimumShiftCoverage: decimal("minimum_shift_coverage", {
+      precision: 7,
+      scale: 2,
+    }),
+    effectiveFrom: date("effective_from", { mode: "string" }).notNull(),
+    effectiveTo: date("effective_to", { mode: "string" }),
+    createdById: varchar("created_by_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("tenure_thresholds_resolution_idx").on(
+      table.organizationId,
+      table.teamId,
+      table.effectiveFrom,
+      table.effectiveTo,
+      table.minimumDays,
+    ),
+  ],
+);
+
+export const coachingRubricTemplates = mysqlTable(
+  "coaching_rubric_templates",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id),
+    name: varchar("name", { length: 255 }).notNull(),
+    description: text("description"),
+    version: int("version").notNull().default(1),
+    active: boolean("active").notNull().default(true),
+    sections: json("sections")
+      .$type<
+        Array<{
+          id: string;
+          label: string;
+          criteria: Array<{
+            id: string;
+            label: string;
+            description?: string;
+            maximumScore: number;
+            required: boolean;
+          }>;
+        }>
+      >()
+      .notNull(),
+    createdById: varchar("created_by_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    unique("coaching_rubric_template_version_unique").on(
+      table.organizationId,
+      table.name,
+      table.version,
+    ),
+    index("coaching_rubric_template_active_idx").on(
+      table.organizationId,
+      table.active,
+    ),
+  ],
+);
+
+export const coachingReports = mysqlTable(
+  "coaching_reports",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id),
+    coachingSessionId: varchar("coaching_session_id", { length: 36 })
+      .notNull()
+      .references(() => coachingSessions.id, { onDelete: "restrict" }),
+    agentProfileId: varchar("agent_profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    coachProfileId: varchar("coach_profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    templateId: varchar("template_id", { length: 36 })
+      .notNull()
+      .references(() => coachingRubricTemplates.id, { onDelete: "restrict" }),
+    templateVersion: int("template_version").notNull(),
+    criterionScores: json("criterion_scores")
+      .$type<Array<{ criterionId: string; score: number; note?: string }>>()
+      .notNull(),
+    strengths: text("strengths"),
+    improvementAreas: text("improvement_areas"),
+    actionItems: json("action_items").$type<string[]>(),
+    followUpDate: date("follow_up_date", { mode: "string" }),
+    overallScore: decimal("overall_score", { precision: 7, scale: 2 }).notNull(),
+    status: coachingReportStatusEnum.notNull().default("draft"),
+    revision: int("revision").notNull().default(1),
+    finalizedById: varchar("finalized_by_id", { length: 36 }).references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    finalizedAt: datetime("finalized_at"),
+    publishedById: varchar("published_by_id", { length: 36 }).references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    publishedAt: datetime("published_at"),
+    acknowledgedAt: datetime("acknowledged_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    unique("coaching_report_session_agent_unique").on(
+      table.coachingSessionId,
+      table.agentProfileId,
+    ),
+    index("coaching_report_agent_status_idx").on(
+      table.agentProfileId,
+      table.status,
+      table.publishedAt,
+    ),
+    index("coaching_report_organization_status_idx").on(
+      table.organizationId,
+      table.status,
+    ),
+  ],
+);
+
+export const coachingReportRevisions = mysqlTable(
+  "coaching_report_revisions",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    reportId: varchar("report_id", { length: 36 })
+      .notNull()
+      .references(() => coachingReports.id, { onDelete: "restrict" }),
+    revision: int("revision").notNull(),
+    snapshot: json("snapshot").$type<Record<string, unknown>>().notNull(),
+    createdById: varchar("created_by_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("coaching_report_revision_unique").on(table.reportId, table.revision),
+  ],
+);
+
+export const shadowingSessions = mysqlTable(
+  "shadowing_sessions",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id),
+    agentProfileId: varchar("agent_profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    teamIdSnapshot: varchar("team_id_snapshot", { length: 36 })
+      .notNull()
+      .references(() => teams.id, { onDelete: "restrict" }),
+    assignedLeaderId: varchar("assigned_leader_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    scheduledDate: date("scheduled_date", { mode: "string" }).notNull(),
+    completedAt: datetime("completed_at"),
+    status: shadowingStatusEnum.notNull().default("scheduled"),
+    objective: text("objective").notNull(),
+    internalNotes: text("internal_notes"),
+    publishedOutcome: text("published_outcome"),
+    followUpAction: text("follow_up_action"),
+    publishedToAgent: boolean("published_to_agent").notNull().default(false),
+    createdById: varchar("created_by_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    index("shadowing_agent_status_idx").on(
+      table.agentProfileId,
+      table.status,
+      table.scheduledDate,
+    ),
+    index("shadowing_team_status_idx").on(
+      table.teamIdSnapshot,
+      table.status,
+      table.scheduledDate,
+    ),
+  ],
+);
+
+export const manualFlagCases = mysqlTable(
+  "manual_flag_cases",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id),
+    agentProfileId: varchar("agent_profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    teamIdSnapshot: varchar("team_id_snapshot", { length: 36 })
+      .notNull()
+      .references(() => teams.id, { onDelete: "restrict" }),
+    raisedById: varchar("raised_by_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    assignedOwnerId: varchar("assigned_owner_id", { length: 36 }).references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    category: varchar("category", { length: 120 }).notNull(),
+    severity: manualFlagSeverityEnum.notNull(),
+    reason: text("reason").notNull(),
+    internalNotes: text("internal_notes"),
+    status: manualFlagStatusEnum.notNull().default("open"),
+    relatedCoachingSessionId: varchar("related_coaching_session_id", {
+      length: 36,
+    }),
+    actionDueDate: date("action_due_date", { mode: "string" }),
+    requiredAction: text("required_action"),
+    resolution: text("resolution"),
+    publishedToAgent: boolean("published_to_agent").notNull().default(false),
+    resolvedById: varchar("resolved_by_id", { length: 36 }).references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    resolvedAt: datetime("resolved_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.relatedCoachingSessionId],
+      foreignColumns: [coachingSessions.id],
+      name: "manual_flag_related_session_fk",
+    }).onDelete("set null"),
+    index("manual_flag_agent_status_idx").on(
+      table.agentProfileId,
+      table.status,
+      table.createdAt,
+    ),
+    index("manual_flag_team_status_idx").on(
+      table.teamIdSnapshot,
+      table.status,
+    ),
+    index("manual_flag_owner_status_idx").on(
+      table.assignedOwnerId,
+      table.status,
+    ),
+  ],
+);
+
+export const manualFlagCaseEvents = mysqlTable(
+  "manual_flag_case_events",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    caseId: varchar("case_id", { length: 36 })
+      .notNull()
+      .references(() => manualFlagCases.id, { onDelete: "restrict" }),
+    actorProfileId: varchar("actor_profile_id", { length: 36 })
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    metadata: json("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("manual_flag_event_case_idx").on(table.caseId, table.createdAt)],
 );
 
 export const auditLogs = mysqlTable(

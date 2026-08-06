@@ -116,6 +116,7 @@ export async function getCurrentUser() {
     .where(
       and(
         eq(teamMemberships.profileId, user.id),
+        eq(teamMemberships.active, true),
         isNull(teamMemberships.endedAt),
         eq(teams.active, true),
         isNull(teams.archivedAt),

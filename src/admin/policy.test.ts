@@ -21,6 +21,36 @@ describe("admin access policy", () => {
     expect(OVERRIDABLE_PERMISSION_KEYS.some((key) => key.startsWith("commissions."))).toBe(false);
   });
 
+  it("keeps role-dashboard operations separated by role", () => {
+    expect(ROLE_DEFAULT_PERMISSIONS.agent).toEqual(expect.arrayContaining([
+      "dashboard.view_own",
+      "commissions.view_own",
+    ]));
+    expect(ROLE_DEFAULT_PERMISSIONS.agent).not.toContain("dashboard.export_team");
+    expect(ROLE_DEFAULT_PERMISSIONS.agent).not.toContain("users.create_team_agent");
+    expect(ROLE_DEFAULT_PERMISSIONS.agent).not.toContain("transfers.request_team");
+    expect(ROLE_DEFAULT_PERMISSIONS.manager).toEqual(expect.arrayContaining([
+      "dashboard.view_team",
+      "dashboard.export_team",
+      "coaching.submit_rubric_team",
+      "shadowing.manage_team",
+      "flags.raise_team_case",
+      "users.create_team_agent",
+      "users.deactivate_team_agent",
+      "users.terminate_team_agent",
+    ]));
+    expect(ROLE_DEFAULT_PERMISSIONS.admin).toEqual(expect.arrayContaining([
+      "dashboard.view_company",
+      "dashboard.export_company",
+      "targets.manage",
+      "rubrics.manage",
+    ]));
+    for (const permissions of Object.values(ROLE_DEFAULT_PERMISSIONS)) {
+      expect(permissions).not.toContain("transfers.request_team");
+      expect(permissions).not.toContain("transfers.approve_company");
+    }
+  });
+
   it("prevents removing the final active admin", () => {
     expect(() =>
       assertCanRemoveAdmin({

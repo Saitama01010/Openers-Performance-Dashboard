@@ -28,6 +28,16 @@ The Phase 2 catalog is seeded from `src/admin/policy.ts`:
 - Flags: `flags.view_own`, `flags.view_team`, `flags.view_company`
 - Other: `leaderboard.view`, `leaderboards.view`, `audit.view`, `audit.view_company`, `integrations.manage`, `commissions.manage`, `flags.manage`
 
+Role-dashboard grants are non-overridable role defaults:
+
+- Agent: `dashboard.view_own`
+- Manager: `dashboard.view_team`, `dashboard.export_team`, `coaching.submit_rubric_team`, `coaching.publish_team`, `shadowing.manage_team`, `flags.raise_team_case`, `flags.update_team_case`, `users.create_team_agent`, `users.deactivate_team_agent`, `users.terminate_team_agent`
+- Admin: `dashboard.view_company`, `dashboard.export_company`, `targets.manage`, `rubrics.manage`
+
+Agents cannot export dashboards. Managers cannot request or perform employee team moves, create managers/admins, assign permission overrides through team-agent creation, or permanently delete users. Every manager mutation rechecks current active-team membership; a historical team snapshot is not sufficient authorization. Administrators directly assign and move agents between teams through the admin team/user-management workflow. The move is transactional, preserves membership history, and writes an audit record.
+
+Operational sales transfers remain a performance metric sourced from the sales data pipeline. They are unrelated to employee team assignment and do not grant employee-movement authority.
+
 Admins receive all defaults. Managers receive team-scoped import/metric grants and leaderboard view. Agents receive own-metric and leaderboard grants.
 
 ## Coaching Sessions and Flags

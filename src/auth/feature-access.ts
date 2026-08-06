@@ -64,3 +64,22 @@ export async function assertCommissionsExportAccess(actor: Actor) {
       : "commissions.export_team",
   );
 }
+
+export async function assertRoleDashboardViewAccess(actor: Actor) {
+  await assertPermission(
+    actor,
+    actor.role === "admin"
+      ? "dashboard.view_company"
+      : actor.role === "manager"
+        ? "dashboard.view_team"
+        : "dashboard.view_own",
+  );
+}
+
+export async function assertDashboardExportAccess(actor: Actor) {
+  if (actor.role === "agent") throw new Error("Forbidden");
+  await assertPermission(
+    actor,
+    actor.role === "admin" ? "dashboard.export_company" : "dashboard.export_team",
+  );
+}

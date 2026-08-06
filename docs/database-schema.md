@@ -48,6 +48,10 @@ Important invariants:
 
 Future source, commission, and flag tables will be introduced only through additive migrations. Applied migrations must not be edited after release.
 
+## Role dashboard operations migration
+
+`drizzle/0018_little_jasper_sitwell.sql` additively introduces employment start/end/status fields plus immutable employment status events, effective-dated performance targets and tenure thresholds, versioned coaching rubric templates and report revisions, shadowing sessions, manual flag cases/events, and manager-requested team transfers. Operational rows are organization-scoped, team movement is represented by snapshots or membership history, and foreign keys use restrictive or nullifying delete behavior so coaching, flags, transfers, and employment history are not erased by routine access changes.
+
 ## Phase 2 migration
 
 `drizzle/0003_amazing_mongu.sql` adds:

@@ -37,7 +37,6 @@ import {
   shadowingSessions,
   sourceUserMappings,
   teamMemberships,
-  teamTransferRequests,
   teams,
   tenureThresholds,
   userPermissionOverrides,
@@ -288,12 +287,10 @@ describe("admin user provisioning integration", () => {
       profileId: created.profileId,
       expiresAt: new Date(Date.now() + 60_000),
     });
-    const destinationTeamId = await createTeam();
     const employmentEventId = newId();
     const shadowingId = newId();
     const manualFlagId = newId();
     const manualFlagEventId = newId();
-    const transferRequestId = newId();
     const coachingSessionId = newId();
     const coachingParticipantId = newId();
     const rubricTemplateId = newId();
@@ -336,17 +333,6 @@ describe("admin user provisioning integration", () => {
       caseId: manualFlagId,
       actorProfileId: adminId,
       eventType: "created",
-    });
-    await getDb().insert(teamTransferRequests).values({
-      id: transferRequestId,
-      organizationId: DEFAULT_ORGANIZATION_ID,
-      agentProfileId: created.profileId,
-      sourceTeamId: teamId,
-      destinationTeamId,
-      reason: "Existing transfer",
-      requestedById: adminId,
-      requestedAt: new Date(),
-      status: "submitted",
     });
     await getDb().insert(coachingSessions).values({
       id: coachingSessionId,
@@ -443,7 +429,6 @@ describe("admin user provisioning integration", () => {
       [shadowingSessions, shadowingId],
       [manualFlagCases, manualFlagId],
       [manualFlagCaseEvents, manualFlagEventId],
-      [teamTransferRequests, transferRequestId],
       [coachingReports, coachingReportId],
       [coachingReportRevisions, coachingRevisionId],
       [coachingSessions, coachingSessionId],

@@ -2,7 +2,7 @@ import "@/test/integration-env";
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 vi.mock("server-only", () => ({}));
 
@@ -24,18 +24,14 @@ import {
   shadowingSessions,
   sourceUserMappings,
   teamMemberships,
-  teamTransferRequests,
   teams,
 } from "@/db/schema";
 import {
-  applyTeamTransferRequest,
   completeShadowingSession,
   createManualFlagCase,
   createShadowingSession,
-  createTeamTransferRequest,
   listManualFlagCases,
   listShadowingSessions,
-  reviewTeamTransferRequest,
   updateManualFlagCase,
 } from "@/operations/service";
 import { recordEmploymentStatus } from "@/operations/settings";
@@ -53,8 +49,6 @@ const ids = {
   staleManager: `ops-stale-manager-${suffix}`,
   eastAgent: `ops-east-agent-${suffix}`,
   westAgent: `ops-west-agent-${suffix}`,
-  transferAgent: `ops-transfer-agent-${suffix}`,
-  concurrentAgent: `ops-concurrent-agent-${suffix}`,
   lifecycleAgent: `ops-lifecycle-agent-${suffix}`,
   lifecycleSession: `ops-session-${suffix}`,
   coachingSession: `ops-coaching-${suffix}`,
@@ -62,7 +56,7 @@ const ids = {
   otherAdmin: `ops-other-admin-${suffix}`,
   otherAgent: `ops-other-agent-${suffix}`,
 };
-const profileIds = [ids.admin, ids.manager, ids.noTeamManager, ids.staleManager, ids.eastAgent, ids.westAgent, ids.transferAgent, ids.concurrentAgent, ids.lifecycleAgent];
+const profileIds = [ids.admin, ids.manager, ids.noTeamManager, ids.staleManager, ids.eastAgent, ids.westAgent, ids.lifecycleAgent];
 const eastManager: Actor = { id: ids.manager, role: "manager", teamIds: [ids.east], organizationId: ids.organization };
 const noTeamManager: Actor = { id: ids.noTeamManager, role: "manager", teamIds: [], organizationId: ids.organization };
 const staleManager: Actor = { id: ids.staleManager, role: "manager", teamIds: [ids.east], organizationId: ids.organization };
@@ -85,8 +79,6 @@ describe("team-scoped performance operations", () => {
       { id: ids.staleManager, organizationId: ids.organization, name: "Stale Manager", email: `${ids.staleManager}@example.com`, role: "manager", accountStatus: "active" },
       { id: ids.eastAgent, organizationId: ids.organization, name: "East Agent", email: `${ids.eastAgent}@example.com`, role: "agent", accountStatus: "active" },
       { id: ids.westAgent, organizationId: ids.organization, name: "West Agent", email: `${ids.westAgent}@example.com`, role: "agent", accountStatus: "active" },
-      { id: ids.transferAgent, organizationId: ids.organization, name: "Transfer Agent", email: `${ids.transferAgent}@example.com`, role: "agent", accountStatus: "active" },
-      { id: ids.concurrentAgent, organizationId: ids.organization, name: "Concurrent Agent", email: `${ids.concurrentAgent}@example.com`, role: "agent", accountStatus: "active" },
       { id: ids.lifecycleAgent, organizationId: ids.organization, name: "Lifecycle Agent", email: `${ids.lifecycleAgent}@example.com`, role: "agent", accountStatus: "active" },
       { id: ids.otherAdmin, organizationId: ids.otherOrganization, name: "Other Admin", email: `${ids.otherAdmin}@example.com`, role: "admin", accountStatus: "active" },
       { id: ids.otherAgent, organizationId: ids.otherOrganization, name: "Other Agent", email: `${ids.otherAgent}@example.com`, role: "agent", accountStatus: "active" },
@@ -96,8 +88,6 @@ describe("team-scoped performance operations", () => {
       { id: randomUUID(), teamId: ids.east, profileId: ids.staleManager, role: "manager" },
       { id: randomUUID(), teamId: ids.east, profileId: ids.eastAgent, role: "agent" },
       { id: randomUUID(), teamId: ids.west, profileId: ids.westAgent, role: "agent" },
-      { id: randomUUID(), teamId: ids.east, profileId: ids.transferAgent, role: "agent" },
-      { id: randomUUID(), teamId: ids.east, profileId: ids.concurrentAgent, role: "agent" },
       { id: randomUUID(), teamId: ids.east, profileId: ids.lifecycleAgent, role: "agent" },
       { id: randomUUID(), teamId: ids.otherTeam, profileId: ids.otherAgent, role: "agent" },
     ]);
@@ -148,7 +138,6 @@ describe("team-scoped performance operations", () => {
     await getDb().delete(coachingSessionParticipants).where(inArray(coachingSessionParticipants.sessionId, [ids.coachingSession, ids.otherCoachingSession]));
     await getDb().delete(coachingSessions).where(inArray(coachingSessions.id, [ids.coachingSession, ids.otherCoachingSession]));
     await getDb().delete(shadowingSessions).where(eq(shadowingSessions.organizationId, ids.organization));
-    await getDb().delete(teamTransferRequests).where(eq(teamTransferRequests.organizationId, ids.organization));
     await getDb().delete(employmentStatusEvents).where(eq(employmentStatusEvents.organizationId, ids.organization));
     await getDb().delete(auditLogs).where(inArray(auditLogs.actorProfileId, profileIds));
     if (createdAgentId) {
@@ -246,106 +235,20 @@ describe("team-scoped performance operations", () => {
     })).rejects.toThrow("Forbidden");
   });
 
-  it("requires management review and applies an approved transfer transactionally", async () => {
-    const requestId = await createTeamTransferRequest(eastManager, {
-      agentProfileId: ids.transferAgent,
-      destinationTeamId: ids.west,
-      reason: "Balance staffing",
-    });
-    await expect(createTeamTransferRequest(eastManager, {
-      agentProfileId: ids.transferAgent,
-      destinationTeamId: ids.west,
-      reason: "Duplicate",
-    })).rejects.toThrow(/open transfer request/);
-    await expect(reviewTeamTransferRequest(eastManager, {
-      requestId,
-      decision: "approved",
-    })).rejects.toThrow("Forbidden");
-    await reviewTeamTransferRequest(admin, { requestId, decision: "approved", reviewNote: "Approved" });
-    await applyTeamTransferRequest(admin, requestId);
-
-    const activeMemberships = await getDb().select({ teamId: teamMemberships.teamId })
-      .from(teamMemberships)
-      .where(and(eq(teamMemberships.profileId, ids.transferAgent), eq(teamMemberships.active, true), isNull(teamMemberships.endedAt)));
-    expect(activeMemberships).toEqual([{ teamId: ids.west }]);
-    const [request] = await getDb().select({ status: teamTransferRequests.status, appliedAt: teamTransferRequests.appliedAt })
-      .from(teamTransferRequests).where(eq(teamTransferRequests.id, requestId));
-    expect(request?.status).toBe("applied");
-    expect(request?.appliedAt).toBeInstanceOf(Date);
-    const requestAudit = await getDb().select({ action: auditLogs.action }).from(auditLogs)
-      .where(eq(auditLogs.entityId, requestId));
-    expect(requestAudit.map((row) => row.action)).toEqual(expect.arrayContaining([
-      "team_transfer.submitted",
-      "team_transfer.approved",
-      "team_transfer.applied",
-    ]));
-  });
-
-  it("rejects same-team, cross-organization, and stale transfer requests", async () => {
-    await expect(createTeamTransferRequest(eastManager, {
-      agentProfileId: ids.eastAgent,
-      destinationTeamId: ids.east,
-      reason: "Same team",
-    })).rejects.toThrow(/must differ/);
-    await expect(createTeamTransferRequest(eastManager, {
-      agentProfileId: ids.eastAgent,
-      destinationTeamId: ids.otherTeam,
-      reason: "Cross organization",
-    })).rejects.toThrow(/not found/);
-    const requestId = await createTeamTransferRequest(eastManager, {
-      agentProfileId: ids.eastAgent,
-      destinationTeamId: ids.west,
-      reason: "Will become stale",
-    });
+  it("removes stale manager visibility after an agent leaves the assigned team", async () => {
     const [membership] = await getDb().select({ id: teamMemberships.id }).from(teamMemberships)
-      .where(and(eq(teamMemberships.profileId, ids.eastAgent), eq(teamMemberships.active, true), isNull(teamMemberships.endedAt)));
+      .where(and(eq(teamMemberships.profileId, ids.eastAgent), eq(teamMemberships.active, true)));
     await getDb().update(teamMemberships).set({ active: false, endedAt: new Date() }).where(eq(teamMemberships.id, membership!.id));
     await getDb().insert(teamMemberships).values({ id: randomUUID(), teamId: ids.west, profileId: ids.eastAgent, role: "agent" });
     expect(await listManualFlagCases(eastManager)).toEqual([]);
     expect(await listShadowingSessions(eastManager)).toEqual([]);
-    await reviewTeamTransferRequest(admin, { requestId, decision: "approved" });
-    await expect(applyTeamTransferRequest(admin, requestId)).rejects.toThrow(/stale/);
-  });
-
-  it("serializes duplicate transfer submissions and concurrent application", async () => {
-    const submissions = await Promise.allSettled([
-      createTeamTransferRequest(eastManager, {
-        agentProfileId: ids.concurrentAgent,
-        destinationTeamId: ids.west,
-        reason: "Concurrent one",
-      }),
-      createTeamTransferRequest(eastManager, {
-        agentProfileId: ids.concurrentAgent,
-        destinationTeamId: ids.west,
-        reason: "Concurrent two",
-      }),
-    ]);
-    expect(submissions.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(submissions.filter((result) => result.status === "rejected")).toHaveLength(1);
-    const requestId = (submissions.find((result) => result.status === "fulfilled") as PromiseFulfilledResult<string>).value;
-    await reviewTeamTransferRequest(admin, { requestId, decision: "approved" });
-
-    const applications = await Promise.allSettled([
-      applyTeamTransferRequest(admin, requestId),
-      applyTeamTransferRequest(admin, requestId),
-    ]);
-    expect(applications.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(applications.filter((result) => result.status === "rejected")).toHaveLength(1);
-    const memberships = await getDb().select({ teamId: teamMemberships.teamId })
-      .from(teamMemberships)
-      .where(and(
-        eq(teamMemberships.profileId, ids.concurrentAgent),
-        eq(teamMemberships.active, true),
-        isNull(teamMemberships.endedAt),
-      ));
-    expect(memberships).toEqual([{ teamId: ids.west }]);
   });
 
   it("keeps a manager with no team at empty mutation scope", async () => {
-    await expect(createTeamTransferRequest(noTeamManager, {
+    await expect(createShadowingSession(noTeamManager, {
       agentProfileId: ids.eastAgent,
-      destinationTeamId: ids.west,
-      reason: "No scope",
+      scheduledDate: "2026-08-12",
+      objective: "No scope",
     })).rejects.toThrow("Forbidden");
   });
 

@@ -131,25 +131,6 @@ CREATE TABLE `shadowing_sessions` (
 	CONSTRAINT `shadowing_sessions_id` PRIMARY KEY(`id`)
 );
 --> statement-breakpoint
-CREATE TABLE `team_transfer_requests` (
-	`id` varchar(36) NOT NULL,
-	`organization_id` varchar(36) NOT NULL,
-	`agent_profile_id` varchar(36) NOT NULL,
-	`source_team_id` varchar(36) NOT NULL,
-	`destination_team_id` varchar(36) NOT NULL,
-	`reason` text NOT NULL,
-	`requested_by_id` varchar(36) NOT NULL,
-	`requested_at` datetime NOT NULL,
-	`team_transfer_request_status` enum('draft','submitted','approved','rejected','applied','cancelled') NOT NULL DEFAULT 'draft',
-	`reviewed_by_id` varchar(36),
-	`review_note` text,
-	`reviewed_at` datetime,
-	`applied_at` datetime,
-	`created_at` timestamp NOT NULL DEFAULT (now()),
-	`updated_at` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
-	CONSTRAINT `team_transfer_requests_id` PRIMARY KEY(`id`)
-);
---> statement-breakpoint
 CREATE TABLE `tenure_thresholds` (
 	`id` varchar(36) NOT NULL,
 	`organization_id` varchar(36) NOT NULL,
@@ -194,8 +175,8 @@ ALTER TABLE `manual_flag_cases` ADD CONSTRAINT `manual_flag_cases_agent_profile_
 ALTER TABLE `manual_flag_cases` ADD CONSTRAINT `manual_flag_cases_team_id_snapshot_teams_id_fk` FOREIGN KEY (`team_id_snapshot`) REFERENCES `teams`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `manual_flag_cases` ADD CONSTRAINT `manual_flag_cases_raised_by_id_profiles_id_fk` FOREIGN KEY (`raised_by_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `manual_flag_cases` ADD CONSTRAINT `manual_flag_cases_assigned_owner_id_profiles_id_fk` FOREIGN KEY (`assigned_owner_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `manual_flag_cases` ADD CONSTRAINT `manual_flag_related_session_fk` FOREIGN KEY (`related_coaching_session_id`) REFERENCES `coaching_sessions`(`id`) ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `manual_flag_cases` ADD CONSTRAINT `manual_flag_cases_resolved_by_id_profiles_id_fk` FOREIGN KEY (`resolved_by_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `manual_flag_cases` ADD CONSTRAINT `manual_flag_related_session_fk` FOREIGN KEY (`related_coaching_session_id`) REFERENCES `coaching_sessions`(`id`) ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `performance_targets` ADD CONSTRAINT `performance_targets_organization_id_organizations_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organizations`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `performance_targets` ADD CONSTRAINT `performance_targets_team_id_teams_id_fk` FOREIGN KEY (`team_id`) REFERENCES `teams`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `performance_targets` ADD CONSTRAINT `performance_targets_created_by_id_profiles_id_fk` FOREIGN KEY (`created_by_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -204,12 +185,6 @@ ALTER TABLE `shadowing_sessions` ADD CONSTRAINT `shadowing_sessions_agent_profil
 ALTER TABLE `shadowing_sessions` ADD CONSTRAINT `shadowing_sessions_team_id_snapshot_teams_id_fk` FOREIGN KEY (`team_id_snapshot`) REFERENCES `teams`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `shadowing_sessions` ADD CONSTRAINT `shadowing_sessions_assigned_leader_id_profiles_id_fk` FOREIGN KEY (`assigned_leader_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `shadowing_sessions` ADD CONSTRAINT `shadowing_sessions_created_by_id_profiles_id_fk` FOREIGN KEY (`created_by_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `team_transfer_requests` ADD CONSTRAINT `team_transfer_requests_organization_id_organizations_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organizations`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `team_transfer_requests` ADD CONSTRAINT `team_transfer_requests_agent_profile_id_profiles_id_fk` FOREIGN KEY (`agent_profile_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `team_transfer_requests` ADD CONSTRAINT `team_transfer_requests_source_team_id_teams_id_fk` FOREIGN KEY (`source_team_id`) REFERENCES `teams`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `team_transfer_requests` ADD CONSTRAINT `team_transfer_requests_destination_team_id_teams_id_fk` FOREIGN KEY (`destination_team_id`) REFERENCES `teams`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `team_transfer_requests` ADD CONSTRAINT `team_transfer_requests_requested_by_id_profiles_id_fk` FOREIGN KEY (`requested_by_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `team_transfer_requests` ADD CONSTRAINT `team_transfer_requests_reviewed_by_id_profiles_id_fk` FOREIGN KEY (`reviewed_by_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `tenure_thresholds` ADD CONSTRAINT `tenure_thresholds_organization_id_organizations_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organizations`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `tenure_thresholds` ADD CONSTRAINT `tenure_thresholds_team_id_teams_id_fk` FOREIGN KEY (`team_id`) REFERENCES `teams`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `tenure_thresholds` ADD CONSTRAINT `tenure_thresholds_created_by_id_profiles_id_fk` FOREIGN KEY (`created_by_id`) REFERENCES `profiles`(`id`) ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -225,10 +200,6 @@ CREATE INDEX `manual_flag_owner_status_idx` ON `manual_flag_cases` (`assigned_ow
 CREATE INDEX `performance_targets_resolution_idx` ON `performance_targets` (`organization_id`,`team_id`,`performance_target_metric`,`effective_from`,`effective_to`);--> statement-breakpoint
 CREATE INDEX `shadowing_agent_status_idx` ON `shadowing_sessions` (`agent_profile_id`,`shadowing_status`,`scheduled_date`);--> statement-breakpoint
 CREATE INDEX `shadowing_team_status_idx` ON `shadowing_sessions` (`team_id_snapshot`,`shadowing_status`,`scheduled_date`);--> statement-breakpoint
-CREATE INDEX `team_transfer_agent_status_idx` ON `team_transfer_requests` (`agent_profile_id`,`team_transfer_request_status`);--> statement-breakpoint
-CREATE INDEX `team_transfer_source_status_idx` ON `team_transfer_requests` (`source_team_id`,`team_transfer_request_status`);--> statement-breakpoint
-CREATE INDEX `team_transfer_destination_status_idx` ON `team_transfer_requests` (`destination_team_id`,`team_transfer_request_status`);--> statement-breakpoint
-CREATE INDEX `team_transfer_organization_status_idx` ON `team_transfer_requests` (`organization_id`,`team_transfer_request_status`);--> statement-breakpoint
 CREATE INDEX `tenure_thresholds_resolution_idx` ON `tenure_thresholds` (`organization_id`,`team_id`,`effective_from`,`effective_to`,`minimum_days`);
 --> statement-breakpoint
 INSERT INTO `permissions` (`permission_key`, `description`) VALUES
@@ -244,8 +215,6 @@ INSERT INTO `permissions` (`permission_key`, `description`) VALUES
   ('shadowing.manage_team', 'Manage assigned-team shadowing'),
   ('flags.raise_team_case', 'Raise assigned-team manual flag cases'),
   ('flags.update_team_case', 'Update assigned-team manual flag cases'),
-  ('transfers.request_team', 'Request assigned-team agent transfers'),
-  ('transfers.approve_company', 'Approve and apply company transfer requests'),
   ('users.create_team_agent', 'Create agents in assigned teams'),
   ('users.deactivate_team_agent', 'Deactivate agents in assigned teams'),
   ('users.terminate_team_agent', 'Terminate agents in assigned teams')
@@ -260,7 +229,6 @@ INSERT INTO `role_permissions` (`role_id`, `permission_key`) VALUES
   ('manager', 'shadowing.manage_team'),
   ('manager', 'flags.raise_team_case'),
   ('manager', 'flags.update_team_case'),
-  ('manager', 'transfers.request_team'),
   ('manager', 'users.create_team_agent'),
   ('manager', 'users.deactivate_team_agent'),
   ('manager', 'users.terminate_team_agent'),
@@ -276,8 +244,6 @@ INSERT INTO `role_permissions` (`role_id`, `permission_key`) VALUES
   ('admin', 'shadowing.manage_team'),
   ('admin', 'flags.raise_team_case'),
   ('admin', 'flags.update_team_case'),
-  ('admin', 'transfers.request_team'),
-  ('admin', 'transfers.approve_company'),
   ('admin', 'users.create_team_agent'),
   ('admin', 'users.deactivate_team_agent'),
   ('admin', 'users.terminate_team_agent')

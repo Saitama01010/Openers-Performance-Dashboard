@@ -55,7 +55,6 @@ import { rankLeaderboardRows } from "@/leaderboard/ranking";
 import {
   listManualFlagCasesForCurrentActor,
   listShadowingSessionsForCurrentActor,
-  listTeamTransferRequestsForCurrentActor,
 } from "@/operations/service";
 import {
   listPerformanceConfigurationForCurrentActor,
@@ -310,7 +309,7 @@ async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: Overv
   const week = resolveWeekWindow(today);
   const month = resolveOverviewDateRange({ range: "this-month" }, now);
   const lastMonth = resolveOverviewDateRange({ range: "last-month" }, now);
-  const [scopedAgents, companyAgents, outcomeSource, configuration, dialer, coachingReports, shadowing, manualFlags, transferRequests, transferFlags, performanceFlags] = await Promise.all([
+  const [scopedAgents, companyAgents, outcomeSource, configuration, dialer, coachingReports, shadowing, manualFlags, transferFlags, performanceFlags] = await Promise.all([
     listScopedActiveAgents(actor),
     listScopedActiveAgents(orgActor),
     loadRoleDashboardOutcomeSource(orgActor),
@@ -319,7 +318,6 @@ async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: Overv
     listCoachingReportsForCurrentActor(actor),
     listShadowingSessionsForCurrentActor(actor),
     listManualFlagCasesForCurrentActor(actor),
-    listTeamTransferRequestsForCurrentActor(actor),
     getTransferFlagsData(actor, {
       dateRange: { from: week.start, to: week.end },
       profileId: actor.role === "agent" ? actor.id : undefined,
@@ -341,7 +339,7 @@ async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: Overv
   const top = rankedRows(companyAgents, lastMonthly)?.[0] ?? null;
   return {
     today, week, month, lastMonth, scopedAgents, companyAgents, outcomeSource,
-    configuration, dialer, coachingReports, shadowing, manualFlags, transferRequests, transferFlags, performanceFlags,
+    configuration, dialer, coachingReports, shadowing, manualFlags, transferFlags, performanceFlags,
     weekly, monthly, lastMonthly, todaySnapshot, selectedSnapshot,
     weeklyRanks: rankedRows(companyAgents, weekly),
     monthlyRanks: rankedRows(companyAgents, monthly),
@@ -540,7 +538,6 @@ async function managerDashboardData(actor: CurrentActor, now: Date, selectedRang
     shadowing: shared.shadowing,
     manualFlags: shared.manualFlags,
     transferFlags: shared.transferFlags,
-    transferRequests: shared.transferRequests,
     topPerformerLastMonth: shared.topPerformerLastMonth,
   };
 }
@@ -611,7 +608,6 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
       manualFlagsRaised: managerFlags.length,
       manualFlagsResolved: resolvedFlags.length,
       averageResolutionHours: resolutionHours.length ? resolutionHours.reduce((a, b) => a + b, 0) / resolutionHours.length : null,
-      transferRequestsSubmitted: shared.transferRequests.filter((request) => request.requestedById === manager.managerId).length,
     };
   });
   const counts = new Map(employmentCounts.map((row) => [row.status, Number(row.count)]));
@@ -796,7 +792,6 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
     shadowing: shared.shadowing,
     manualFlags: shared.manualFlags,
     transferFlags: shared.transferFlags,
-    transferRequests: shared.transferRequests,
     topPerformerLastMonth: shared.topPerformerLastMonth,
     trends: {
       transfers: {

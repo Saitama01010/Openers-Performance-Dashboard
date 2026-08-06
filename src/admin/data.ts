@@ -20,7 +20,7 @@ import {
 import type { Actor, Role } from "@/auth/authorization";
 import { assertPermission } from "@/auth/permissions";
 import { getCurrentSessionId } from "@/auth/session";
-import { resolveCurrentActor } from "@/auth/current-actor";
+import { resolveCurrentActor, type CurrentActor } from "@/auth/current-actor";
 import {
   createOpaqueToken,
   hashOpaqueToken,
@@ -68,7 +68,6 @@ import {
   shadowingSessions,
   sourceUserMappings,
   teamMemberships,
-  teamTransferRequests,
   teams,
   tenureThresholds,
   transfersFixtures,
@@ -1391,18 +1390,6 @@ export async function permanentlyDeleteValidatedUsers(
       .set({ resolvedById: actor.id })
       .where(inArray(manualFlagCases.resolvedById, userIds));
     await tx
-      .delete(teamTransferRequests)
-      .where(inArray(teamTransferRequests.agentProfileId, userIds));
-    await tx
-      .update(teamTransferRequests)
-      .set({ requestedById: actor.id })
-      .where(inArray(teamTransferRequests.requestedById, userIds));
-    await tx
-      .update(teamTransferRequests)
-      .set({ reviewedById: actor.id })
-      .where(inArray(teamTransferRequests.reviewedById, userIds));
-
-    await tx
       .delete(dialerAgentHourlyMetrics)
       .where(inArray(dialerAgentHourlyMetrics.agentProfileId, userIds));
     await tx
@@ -1978,9 +1965,10 @@ export async function updateUserPrimaryDialerName(
   }
 }
 
-export async function moveUserToTeam(
-  actor: Actor,
+async function moveUserToTeamAsAdmin(
+  actor: CurrentActor,
   input: { userId: string; teamId: string },
+  expectedRole?: "agent" | "manager",
 ): Promise<Extract<InlineUserUpdateResult, { field: "teamId" }>> {
   assertAdmin(actor);
 
@@ -2009,6 +1997,12 @@ export async function moveUserToTeam(
     }
     if (profile.role !== "agent" && profile.role !== "manager") {
       throw new Error("Team can only be changed for agents and managers.");
+    }
+    if (expectedRole && profile.role !== expectedRole) {
+      throw new Error(expectedRole === "agent" ? "Active agent was not found." : "User was not found.");
+    }
+    if (expectedRole === "agent" && profile.accountStatus !== "active") {
+      throw new Error("Active agent was not found.");
     }
 
     const teamRows = await tx
@@ -2040,9 +2034,8 @@ export async function moveUserToTeam(
     const currentMembership = activeMemberships[0] ?? null;
 
     if (
-      activeMemberships.some(
-        (membership) => membership.teamId === input.teamId,
-      )
+      activeMemberships.length === 1 &&
+      activeMemberships[0]?.teamId === input.teamId
     ) {
       return {
         field: "teamId",
@@ -2103,6 +2096,13 @@ export async function moveUserToTeam(
       changed: true,
     };
   });
+}
+
+export async function moveUserToTeam(
+  actor: Actor,
+  input: { userId: string; teamId: string },
+): Promise<Extract<InlineUserUpdateResult, { field: "teamId" }>> {
+  return moveUserToTeamAsAdmin(await resolveCurrentActor(actor), input);
 }
 
 export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
@@ -3110,52 +3110,11 @@ export async function moveAgentToTeam(actor: Actor, input: {
   agentId: string;
   teamId: string;
 }) {
-  assertAdmin(actor);
-  await validateTeamForAssignment(actor, input.teamId);
-
-  await getDb().transaction(async (tx) => {
-    const agentRows = await tx
-      .select()
-      .from(profiles)
-      .where(
-        and(
-          eq(profiles.id, input.agentId),
-          eq(profiles.organizationId, actorOrganizationId(actor)),
-          eq(profiles.role, "agent"),
-          eq(profiles.accountStatus, "active"),
-        ),
-      )
-      .limit(1);
-
-    if (!agentRows[0]) throw new Error("Active agent was not found.");
-
-    await tx
-      .update(teamMemberships)
-      .set({ active: false, endedAt: new Date() })
-      .where(
-        and(
-          eq(teamMemberships.profileId, input.agentId),
-          eq(teamMemberships.active, true),
-          isNull(teamMemberships.endedAt),
-        ),
-      );
-    await tx.insert(teamMemberships).values({
-      id: newId(),
-      profileId: input.agentId,
-      teamId: input.teamId,
-      role: "agent",
-      active: true,
-      createdById: actor.id,
-    });
-    await tx.insert(auditLogs).values({
-      id: newId(),
-      actorProfileId: actor.id,
-      action: "team.agent_moved",
-      entityType: "profile",
-      entityId: input.agentId,
-      metadata: { teamId: input.teamId },
-    });
-  });
+  await moveUserToTeamAsAdmin(
+    await resolveCurrentActor(actor),
+    { userId: input.agentId, teamId: input.teamId },
+    "agent",
+  );
 }
 
 export async function removeTeamMembership(actor: Actor, membershipId: string) {

@@ -15,26 +15,6 @@ export function assertManualFlagTransition(from: ManualFlagStatus, to: ManualFla
   }
 }
 
-export const TRANSFER_REQUEST_TRANSITIONS = {
-  draft: ["submitted", "cancelled"],
-  submitted: ["approved", "rejected", "cancelled"],
-  approved: ["applied", "cancelled"],
-  rejected: [],
-  applied: [],
-  cancelled: [],
-} as const;
-
-export type TransferRequestStatus = keyof typeof TRANSFER_REQUEST_TRANSITIONS;
-
-export function assertTransferRequestTransition(
-  from: TransferRequestStatus,
-  to: TransferRequestStatus,
-) {
-  if (!TRANSFER_REQUEST_TRANSITIONS[from].some((allowed) => allowed === to)) {
-    throw new Error(`Transfer request cannot move from ${from} to ${to}.`);
-  }
-}
-
 export function shadowingDisplayStatus(input: {
   status: "scheduled" | "completed" | "cancelled";
   scheduledDate: string;

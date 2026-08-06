@@ -6,11 +6,13 @@
 
 Transfers and Closed outcomes come from the existing combined leaderboard ingestion. Ranking uses the existing leaderboard ranking function, commissions use the existing commission service, and automatic flags remain calculated by the existing flag domain. Dialer queries join through the active dataset-version pointer. Missing sources retain an unavailable or incomplete state instead of becoming zero or absence.
 
-Targets and tenure thresholds are effective-dated. Team targets override company targets only when their effective range applies. Employment tenure uses `profiles.employment_start_date`, never team-membership start. Coaching reports, shadowing records, manual cases, and transfer requests recheck organization and role scope for every mutation.
+Targets and tenure thresholds are effective-dated. Team targets override company targets only when their effective range applies. Employment tenure uses `profiles.employment_start_date`, never team-membership start. Coaching reports, shadowing records, and manual cases recheck organization and role scope for every mutation.
+
+Managers manage performance and coaching for their assigned active teams, but cannot request or perform employee team moves. Administrators directly assign and move agents in the existing admin team/user-management workflow. Direct moves close the previous active membership, create the new active membership transactionally, preserve membership history, and append an audit event. Operational sales transfers remain a dashboard performance metric and are unrelated to employee team assignment.
 
 ## Request cost and scale
 
-A diagnostic run against the disposable QA database measured conservative uncached ceilings of 31 SQL statements for an agent dashboard, 51 for a manager dashboard, and 44 for an admin dashboard. These are bounded per request and do not grow per employee. In the Next.js server render, repeated ORM roster reads use `React.cache` request memoization, so identical actor-scoped calls in flags, operations, and dashboard composition are deduplicated within the render pass. No authorization result or matched employee payload is cached across users.
+The prior disposable-database diagnostic measured conservative uncached ceilings of 31 SQL statements for an agent dashboard, 51 for a manager dashboard, and 44 for an admin dashboard. Removing the single employee transfer-request listing query reduces the current ceilings to 31, 50, and 43 respectively. These are bounded per request and do not grow per employee. In the Next.js server render, repeated ORM roster reads use `React.cache` request memoization, so identical actor-scoped calls in flags, operations, and dashboard composition are deduplicated within the render pass. No authorization result or matched employee payload is cached across users.
 
 The external Transfers/Closed provider performs zero network reads on a cache hit and one combined `listSources` read on a cache miss. Transfers and Closed are fetched together, concurrent misses share the same in-flight promise, and commission/dashboard matching reuse the same three-minute raw-source cache. Matching remains actor-specific after the raw source is loaded.
 
@@ -24,4 +26,4 @@ Agents have no dashboard export permission. Managers export only the server-reso
 
 ## Operational history
 
-Employment changes soft-deactivate access, revoke active sessions, and append employment/audit events. Coaching report revisions are immutable snapshots. Manual case status/ownership changes append case events. Team transfers close the old membership and create the new membership transactionally after management approval. Historical records retain team snapshots, while manager dashboard lists also require the subject to remain in the manager's current active-team roster.
+Employment changes soft-deactivate access, revoke active sessions, and append employment/audit events. Coaching report revisions are immutable snapshots. Manual case status/ownership changes append case events. Administrator-directed team moves close the old membership and create the new membership transactionally. Historical records retain team snapshots, while manager dashboard lists also require the subject to remain in the manager's current active-team roster.

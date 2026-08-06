@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertManualFlagTransition,
-  assertTransferRequestTransition,
   shadowingDisplayStatus,
 } from "@/operations/domain";
 
@@ -10,11 +9,6 @@ describe("performance operation state machines", () => {
   it("validates manual flag transitions", () => {
     expect(() => assertManualFlagTransition("open", "under_review")).not.toThrow();
     expect(() => assertManualFlagTransition("resolved", "open")).toThrow();
-  });
-
-  it("keeps managers from skipping transfer approval through state changes", () => {
-    expect(() => assertTransferRequestTransition("submitted", "approved")).not.toThrow();
-    expect(() => assertTransferRequestTransition("submitted", "applied")).toThrow();
   });
 
   it("derives due and overdue shadowing without mutating history", () => {

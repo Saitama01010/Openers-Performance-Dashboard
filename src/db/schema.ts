@@ -137,11 +137,6 @@ export const manualFlagStatusEnum = mysqlEnum("manual_flag_status", [
   "resolved",
   "dismissed",
 ]);
-export const teamTransferRequestStatusEnum = mysqlEnum(
-  "team_transfer_request_status",
-  ["draft", "submitted", "approved", "rejected", "applied", "cancelled"],
-);
-
 export const organizations = mysqlTable("organizations", {
   id: varchar("id", { length: 36 }).primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -1023,55 +1018,6 @@ export const manualFlagCaseEvents = mysqlTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [index("manual_flag_event_case_idx").on(table.caseId, table.createdAt)],
-);
-
-export const teamTransferRequests = mysqlTable(
-  "team_transfer_requests",
-  {
-    id: varchar("id", { length: 36 }).primaryKey(),
-    organizationId: varchar("organization_id", { length: 36 })
-      .notNull()
-      .references(() => organizations.id),
-    agentProfileId: varchar("agent_profile_id", { length: 36 })
-      .notNull()
-      .references(() => profiles.id, { onDelete: "restrict" }),
-    sourceTeamId: varchar("source_team_id", { length: 36 })
-      .notNull()
-      .references(() => teams.id, { onDelete: "restrict" }),
-    destinationTeamId: varchar("destination_team_id", { length: 36 })
-      .notNull()
-      .references(() => teams.id, { onDelete: "restrict" }),
-    reason: text("reason").notNull(),
-    requestedById: varchar("requested_by_id", { length: 36 })
-      .notNull()
-      .references(() => profiles.id, { onDelete: "restrict" }),
-    requestedAt: datetime("requested_at").notNull(),
-    status: teamTransferRequestStatusEnum.notNull().default("draft"),
-    reviewedById: varchar("reviewed_by_id", { length: 36 }).references(
-      () => profiles.id,
-      { onDelete: "restrict" },
-    ),
-    reviewNote: text("review_note"),
-    reviewedAt: datetime("reviewed_at"),
-    appliedAt: datetime("applied_at"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
-  },
-  (table) => [
-    index("team_transfer_agent_status_idx").on(
-      table.agentProfileId,
-      table.status,
-    ),
-    index("team_transfer_source_status_idx").on(table.sourceTeamId, table.status),
-    index("team_transfer_destination_status_idx").on(
-      table.destinationTeamId,
-      table.status,
-    ),
-    index("team_transfer_organization_status_idx").on(
-      table.organizationId,
-      table.status,
-    ),
-  ],
 );
 
 export const auditLogs = mysqlTable(

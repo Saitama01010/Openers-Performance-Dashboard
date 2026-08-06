@@ -38,4 +38,31 @@ describe("role dashboard feature boundary", () => {
     expect(component).not.toContain("performer.americanName");
     expect(component).toContain("Another employee&apos;s identity and outcomes are not exposed");
   });
+
+  it("removes employee transfer-request controls while preserving sales-transfer reporting", () => {
+    const workflowFiles = [
+      "src/db/schema.ts",
+      "src/operations/domain.ts",
+      "src/operations/service.ts",
+      "src/dashboard/actions.ts",
+      "src/dashboard/role-data.ts",
+      "src/components/dashboard/role-dashboard.tsx",
+      "src/admin/policy.ts",
+    ];
+    for (const file of workflowFiles) {
+      const contents = readFileSync(file, "utf8");
+      expect(contents, file).not.toContain("teamTransferRequests");
+      expect(contents.toLocaleLowerCase("en-US"), file).not.toContain("transfer request");
+      expect(contents, file).not.toContain("transfers.request_team");
+      expect(contents, file).not.toContain("transfers.approve_company");
+    }
+
+    const component = readFileSync("src/components/dashboard/role-dashboard.tsx", "utf8");
+    const roleData = readFileSync("src/dashboard/role-data.ts", "utf8");
+    expect(component).toContain('Metric label="Transfers"');
+    expect(component).toContain('Metric label="Transfers today"');
+    expect(component).toContain('Metric label="Transfer flags"');
+    expect(roleData).toContain("getTransferFlagsData");
+    expect(roleData).toContain("transferCount");
+  });
 });

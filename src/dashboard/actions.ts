@@ -12,12 +12,9 @@ import {
   saveCoachingReport,
 } from "@/coaching/reports";
 import {
-  applyTeamTransferRequest,
   completeShadowingSession,
   createManualFlagCase,
   createShadowingSession,
-  createTeamTransferRequest,
-  reviewTeamTransferRequest,
   updateManualFlagCase,
 } from "@/operations/service";
 import {
@@ -173,31 +170,6 @@ export async function updateManualFlagAction(formData: FormData) {
     publishToAgent: formData.get("publishToAgent") === "on",
   });
   finish("manual-flag-updated");
-}
-
-export async function createTransferRequestAction(formData: FormData) {
-  await createTeamTransferRequest(await actor(), {
-    agentProfileId: text(formData, "agentProfileId"),
-    destinationTeamId: text(formData, "destinationTeamId"),
-    reason: text(formData, "reason"),
-  });
-  finish("transfer-requested");
-}
-
-export async function reviewTransferRequestAction(formData: FormData) {
-  const decision = text(formData, "decision");
-  if (decision !== "approved" && decision !== "rejected") throw new Error("Decision is invalid.");
-  await reviewTeamTransferRequest(await actor(), {
-    requestId: text(formData, "requestId"),
-    decision,
-    reviewNote: optionalText(formData, "reviewNote"),
-  });
-  finish(`transfer-${decision}`);
-}
-
-export async function applyTransferRequestAction(formData: FormData) {
-  await applyTeamTransferRequest(await actor(), text(formData, "requestId"));
-  finish("transfer-applied");
 }
 
 export async function createTeamAgentAction(formData: FormData) {

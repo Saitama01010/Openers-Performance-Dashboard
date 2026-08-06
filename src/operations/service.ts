@@ -16,13 +16,11 @@ import {
   profiles,
   shadowingSessions,
   teamMemberships,
-  teamTransferRequests,
   teams,
 } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import {
   assertManualFlagTransition,
-  assertTransferRequestTransition,
   shadowingDisplayStatus,
   type ManualFlagStatus,
 } from "@/operations/domain";
@@ -331,141 +329,4 @@ export async function listManualFlagCasesForCurrentActor(actor: CurrentActor) {
     ))
     .orderBy(desc(manualFlagCases.createdAt));
   return rows.map((row) => ({ ...row, internalNotes: actor.role === "agent" ? null : row.internalNotes }));
-}
-
-export async function createTeamTransferRequest(actor: Actor, input: {
-  agentProfileId: string;
-  destinationTeamId: string;
-  reason: string;
-}) {
-  actor = await resolveCurrentActor(actor);
-  if (actor.role !== "manager") throw new Error("Only managers submit transfer requests.");
-  await assertPermission(actor, "transfers.request_team");
-  const agent = await currentAgentContext(actor, input.agentProfileId);
-  if (agent.teamId === input.destinationTeamId) throw new Error("Source and destination teams must differ.");
-  const [destination] = await getDb().select({ id: teams.id }).from(teams)
-    .where(and(eq(teams.id, input.destinationTeamId), visibleTeamWhere(actor))).limit(1);
-  if (!destination) throw new Error("Destination team was not found.");
-  const id = newId();
-  await getDb().transaction(async (tx) => {
-    await tx
-      .select({ id: profiles.id })
-      .from(profiles)
-      .where(eq(profiles.id, agent.agentProfileId))
-      .limit(1)
-      .for("update");
-    const duplicate = await tx.select({ id: teamTransferRequests.id }).from(teamTransferRequests)
-      .where(and(
-        eq(teamTransferRequests.agentProfileId, agent.agentProfileId),
-        inArray(teamTransferRequests.status, ["draft", "submitted", "approved"]),
-      )).limit(1).for("update");
-    if (duplicate[0]) throw new Error("This agent already has an open transfer request.");
-    const now = new Date();
-    await tx.insert(teamTransferRequests).values({
-      id, organizationId: actorOrganizationId(actor), agentProfileId: agent.agentProfileId,
-      sourceTeamId: agent.teamId, destinationTeamId: input.destinationTeamId,
-      reason: requiredText(input.reason, "Reason"), requestedById: actor.id,
-      requestedAt: now, status: "submitted",
-    });
-    await tx.insert(auditLogs).values({
-      id: newId(), actorProfileId: actor.id, action: "team_transfer.submitted",
-      entityType: "team_transfer_request", entityId: id,
-      metadata: { agentProfileId: agent.agentProfileId, sourceTeamId: agent.teamId, destinationTeamId: input.destinationTeamId },
-    });
-  });
-  return id;
-}
-
-export async function reviewTeamTransferRequest(actor: Actor, input: {
-  requestId: string;
-  decision: "approved" | "rejected";
-  reviewNote?: string;
-}) {
-  actor = await resolveCurrentActor(actor);
-  if (actor.role !== "admin") throw new Error("Forbidden");
-  await assertPermission(actor, "transfers.approve_company");
-  await getDb().transaction(async (tx) => {
-    const [request] = await tx.select().from(teamTransferRequests)
-      .where(and(eq(teamTransferRequests.id, input.requestId), eq(teamTransferRequests.organizationId, actorOrganizationId(actor))))
-      .limit(1).for("update");
-    if (!request) throw new Error("Transfer request was not found.");
-    assertTransferRequestTransition(request.status, input.decision);
-    const now = new Date();
-    await tx.update(teamTransferRequests).set({
-      status: input.decision, reviewedById: actor.id,
-      reviewNote: input.reviewNote?.trim() || null, reviewedAt: now,
-    }).where(eq(teamTransferRequests.id, input.requestId));
-    await tx.insert(auditLogs).values({
-      id: newId(), actorProfileId: actor.id, action: `team_transfer.${input.decision}`,
-      entityType: "team_transfer_request", entityId: input.requestId,
-    });
-  });
-}
-
-export async function applyTeamTransferRequest(actor: Actor, requestId: string) {
-  actor = await resolveCurrentActor(actor);
-  if (actor.role !== "admin") throw new Error("Forbidden");
-  await assertPermission(actor, "transfers.approve_company");
-  await getDb().transaction(async (tx) => {
-    const [request] = await tx.select().from(teamTransferRequests)
-      .where(and(eq(teamTransferRequests.id, requestId), eq(teamTransferRequests.organizationId, actorOrganizationId(actor))))
-      .limit(1).for("update");
-    if (!request) throw new Error("Transfer request was not found.");
-    assertTransferRequestTransition(request.status, "applied");
-    const [destination] = await tx.select({ id: teams.id }).from(teams)
-      .where(and(eq(teams.id, request.destinationTeamId), visibleTeamWhere(actor))).limit(1).for("update");
-    if (!destination) throw new Error("Destination team is no longer active.");
-    const current = await tx.select({ id: teamMemberships.id, teamId: teamMemberships.teamId })
-      .from(teamMemberships)
-      .where(and(
-        eq(teamMemberships.profileId, request.agentProfileId), eq(teamMemberships.role, "agent"),
-        eq(teamMemberships.active, true), isNull(teamMemberships.endedAt),
-      )).for("update");
-    if (current.length !== 1 || current[0]?.teamId !== request.sourceTeamId) {
-      throw new Error("Transfer request is stale because the agent's current team changed.");
-    }
-    const now = new Date();
-    await tx.update(teamMemberships).set({ active: false, endedAt: now }).where(eq(teamMemberships.id, current[0].id));
-    await tx.insert(teamMemberships).values({
-      id: newId(), profileId: request.agentProfileId, teamId: request.destinationTeamId,
-      role: "agent", active: true, startedAt: now, createdById: actor.id,
-    });
-    await tx.update(teamTransferRequests).set({ status: "applied", appliedAt: now }).where(eq(teamTransferRequests.id, requestId));
-    await tx.insert(auditLogs).values({
-      id: newId(), actorProfileId: actor.id, action: "team_transfer.applied",
-      entityType: "team_transfer_request", entityId: requestId,
-      metadata: { agentProfileId: request.agentProfileId, sourceTeamId: request.sourceTeamId, destinationTeamId: request.destinationTeamId },
-    });
-  });
-}
-
-export async function listTeamTransferRequests(actor: Actor) {
-  return listTeamTransferRequestsForCurrentActor(await resolveCurrentActor(actor));
-}
-
-export async function listTeamTransferRequestsForCurrentActor(actor: CurrentActor) {
-  if (actor.role === "agent") return [];
-  if (actor.role === "manager" && actor.teamIds.length === 0) return [];
-  const sourceTeam = teams;
-  return getDb()
-    .select({
-      id: teamTransferRequests.id,
-      agentProfileId: teamTransferRequests.agentProfileId,
-      agentName: profiles.name,
-      sourceTeamId: teamTransferRequests.sourceTeamId,
-      destinationTeamId: teamTransferRequests.destinationTeamId,
-      reason: teamTransferRequests.reason,
-      status: teamTransferRequests.status,
-      requestedById: teamTransferRequests.requestedById,
-      requestedAt: teamTransferRequests.requestedAt,
-      reviewNote: teamTransferRequests.reviewNote,
-    })
-    .from(teamTransferRequests)
-    .innerJoin(profiles, eq(profiles.id, teamTransferRequests.agentProfileId))
-    .innerJoin(sourceTeam, eq(sourceTeam.id, teamTransferRequests.sourceTeamId))
-    .where(and(
-      eq(teamTransferRequests.organizationId, actorOrganizationId(actor)),
-      actor.role === "manager" ? inArray(teamTransferRequests.sourceTeamId, actor.teamIds) : undefined,
-    ))
-    .orderBy(desc(teamTransferRequests.requestedAt));
 }

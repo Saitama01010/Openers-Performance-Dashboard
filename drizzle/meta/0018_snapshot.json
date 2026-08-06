@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "e74ab5eb-c3e1-465e-b080-1e8baafaa27f",
+  "id": "e333585c-f5f0-42c5-8f40-61c41a304a20",
   "prevId": "70329eb2-baab-4cba-8b6e-e5d7b8e0b5e5",
   "tables": {
     "account_invitation_tokens": {
@@ -3200,19 +3200,6 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "manual_flag_related_session_fk": {
-          "name": "manual_flag_related_session_fk",
-          "tableFrom": "manual_flag_cases",
-          "tableTo": "coaching_sessions",
-          "columnsFrom": [
-            "related_coaching_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "manual_flag_cases_resolved_by_id_profiles_id_fk": {
           "name": "manual_flag_cases_resolved_by_id_profiles_id_fk",
           "tableFrom": "manual_flag_cases",
@@ -3224,6 +3211,19 @@
             "id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manual_flag_related_session_fk": {
+          "name": "manual_flag_related_session_fk",
+          "tableFrom": "manual_flag_cases",
+          "tableTo": "coaching_sessions",
+          "columnsFrom": [
+            "related_coaching_session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -4687,244 +4687,6 @@
       "compositePrimaryKeys": {
         "team_memberships_id": {
           "name": "team_memberships_id",
-          "columns": [
-            "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraint": {}
-    },
-    "team_transfer_requests": {
-      "name": "team_transfer_requests",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "varchar(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "varchar(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "agent_profile_id": {
-          "name": "agent_profile_id",
-          "type": "varchar(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source_team_id": {
-          "name": "source_team_id",
-          "type": "varchar(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "destination_team_id": {
-          "name": "destination_team_id",
-          "type": "varchar(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "requested_by_id": {
-          "name": "requested_by_id",
-          "type": "varchar(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "datetime",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "team_transfer_request_status": {
-          "name": "team_transfer_request_status",
-          "type": "enum('draft','submitted','approved','rejected','applied','cancelled')",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'draft'"
-        },
-        "reviewed_by_id": {
-          "name": "reviewed_by_id",
-          "type": "varchar(36)",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "review_note": {
-          "name": "review_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "reviewed_at": {
-          "name": "reviewed_at",
-          "type": "datetime",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "applied_at": {
-          "name": "applied_at",
-          "type": "datetime",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(now())"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
-        }
-      },
-      "indexes": {
-        "team_transfer_agent_status_idx": {
-          "name": "team_transfer_agent_status_idx",
-          "columns": [
-            "agent_profile_id",
-            "team_transfer_request_status"
-          ],
-          "isUnique": false
-        },
-        "team_transfer_source_status_idx": {
-          "name": "team_transfer_source_status_idx",
-          "columns": [
-            "source_team_id",
-            "team_transfer_request_status"
-          ],
-          "isUnique": false
-        },
-        "team_transfer_destination_status_idx": {
-          "name": "team_transfer_destination_status_idx",
-          "columns": [
-            "destination_team_id",
-            "team_transfer_request_status"
-          ],
-          "isUnique": false
-        },
-        "team_transfer_organization_status_idx": {
-          "name": "team_transfer_organization_status_idx",
-          "columns": [
-            "organization_id",
-            "team_transfer_request_status"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "team_transfer_requests_organization_id_organizations_id_fk": {
-          "name": "team_transfer_requests_organization_id_organizations_id_fk",
-          "tableFrom": "team_transfer_requests",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "team_transfer_requests_agent_profile_id_profiles_id_fk": {
-          "name": "team_transfer_requests_agent_profile_id_profiles_id_fk",
-          "tableFrom": "team_transfer_requests",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "agent_profile_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "team_transfer_requests_source_team_id_teams_id_fk": {
-          "name": "team_transfer_requests_source_team_id_teams_id_fk",
-          "tableFrom": "team_transfer_requests",
-          "tableTo": "teams",
-          "columnsFrom": [
-            "source_team_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "team_transfer_requests_destination_team_id_teams_id_fk": {
-          "name": "team_transfer_requests_destination_team_id_teams_id_fk",
-          "tableFrom": "team_transfer_requests",
-          "tableTo": "teams",
-          "columnsFrom": [
-            "destination_team_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "team_transfer_requests_requested_by_id_profiles_id_fk": {
-          "name": "team_transfer_requests_requested_by_id_profiles_id_fk",
-          "tableFrom": "team_transfer_requests",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "requested_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "team_transfer_requests_reviewed_by_id_profiles_id_fk": {
-          "name": "team_transfer_requests_reviewed_by_id_profiles_id_fk",
-          "tableFrom": "team_transfer_requests",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "reviewed_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "team_transfer_requests_id": {
-          "name": "team_transfer_requests_id",
           "columns": [
             "id"
           ]

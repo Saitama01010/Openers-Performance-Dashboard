@@ -35,19 +35,20 @@ describe("admin access policy", () => {
       "coaching.submit_rubric_team",
       "shadowing.manage_team",
       "flags.raise_team_case",
-      "transfers.request_team",
       "users.create_team_agent",
       "users.deactivate_team_agent",
       "users.terminate_team_agent",
     ]));
-    expect(ROLE_DEFAULT_PERMISSIONS.manager).not.toContain("transfers.approve_company");
     expect(ROLE_DEFAULT_PERMISSIONS.admin).toEqual(expect.arrayContaining([
       "dashboard.view_company",
       "dashboard.export_company",
       "targets.manage",
       "rubrics.manage",
-      "transfers.approve_company",
     ]));
+    for (const permissions of Object.values(ROLE_DEFAULT_PERMISSIONS)) {
+      expect(permissions).not.toContain("transfers.request_team");
+      expect(permissions).not.toContain("transfers.approve_company");
+    }
   });
 
   it("prevents removing the final active admin", () => {

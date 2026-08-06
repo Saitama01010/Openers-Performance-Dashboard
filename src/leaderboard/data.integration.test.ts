@@ -119,4 +119,94 @@ describe("leaderboard profile visibility", () => {
     });
     expect(users.map((user) => user.id)).toEqual([activeId]);
   });
+
+  it("enforces admin, manager, empty-manager, and agent scopes at the profile query", async () => {
+    const organizationId = newId();
+    const eastTeamId = newId();
+    const westTeamId = newId();
+    const eastAgentId = newId();
+    const westAgentId = newId();
+    organizationIds.push(organizationId);
+    teamIds.push(eastTeamId, westTeamId);
+    profileIds.push(eastAgentId, westAgentId);
+
+    await getDb().insert(organizations).values({
+      id: organizationId,
+      name: `Leaderboard scope ${organizationId}`,
+    });
+    await getDb().insert(teams).values([
+      { id: eastTeamId, organizationId, name: "Leaderboard East", active: true },
+      { id: westTeamId, organizationId, name: "Leaderboard West", active: true },
+    ]);
+    await getDb().insert(profiles).values([
+      {
+        id: eastAgentId,
+        organizationId,
+        email: `${eastAgentId}@example.test`,
+        name: "Scoped East Agent",
+        role: "agent",
+        active: true,
+        accountStatus: "active",
+        passwordHash: "test-hash",
+      },
+      {
+        id: westAgentId,
+        organizationId,
+        email: `${westAgentId}@example.test`,
+        name: "Scoped West Agent",
+        role: "agent",
+        active: true,
+        accountStatus: "active",
+        passwordHash: "test-hash",
+      },
+    ]);
+    await getDb().insert(teamMemberships).values([
+      { id: newId(), teamId: eastTeamId, profileId: eastAgentId, role: "agent", active: true },
+      { id: newId(), teamId: westTeamId, profileId: westAgentId, role: "agent", active: true },
+    ]);
+    await getDb().insert(sourceUserMappings).values([
+      {
+        id: newId(),
+        source: "dialer",
+        sourceAgentName: "Scoped East",
+        normalizedAgentName: `scoped-east-${eastAgentId}`,
+        activeMappingKey: activeMappingKey("dialer", `scoped-east-${eastAgentId}`),
+        primaryMappingKey: primaryMappingKey("dialer", eastAgentId),
+        profileId: eastAgentId,
+        active: true,
+        isPrimary: true,
+      },
+      {
+        id: newId(),
+        source: "dialer",
+        sourceAgentName: "Scoped West",
+        normalizedAgentName: `scoped-west-${westAgentId}`,
+        activeMappingKey: activeMappingKey("dialer", `scoped-west-${westAgentId}`),
+        primaryMappingKey: primaryMappingKey("dialer", westAgentId),
+        profileId: westAgentId,
+        active: true,
+        isPrimary: true,
+      },
+    ]);
+
+    const adminUsers = await listMatchableUsers({
+      id: newId(), role: "admin", teamIds: [], organizationId,
+    });
+    const managerUsers = await listMatchableUsers({
+      id: newId(), role: "manager", teamIds: [eastTeamId], organizationId,
+    });
+    const emptyManagerUsers = await listMatchableUsers({
+      id: newId(), role: "manager", teamIds: [], organizationId,
+    });
+    const agentUsers = await listMatchableUsers({
+      id: westAgentId, role: "agent", teamIds: [westTeamId], organizationId,
+    });
+
+    expect(adminUsers.map((user) => user.id).sort()).toEqual(
+      [eastAgentId, westAgentId].sort(),
+    );
+    expect(managerUsers.map((user) => user.id)).toEqual([eastAgentId]);
+    expect(emptyManagerUsers).toEqual([]);
+    expect(agentUsers.map((user) => user.id)).toEqual([westAgentId]);
+  });
 });

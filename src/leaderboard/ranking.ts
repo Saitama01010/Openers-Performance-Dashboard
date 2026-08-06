@@ -7,6 +7,17 @@ export type LeaderboardRow = {
   transferCount: number;
   closedDeals: number;
   rank?: number;
+  comparison?: {
+    transferCount: number;
+    closedDeals: number;
+  } | null;
+  trend?: LeaderboardTrendPoint[];
+};
+
+export type LeaderboardTrendPoint = {
+  date: string;
+  transferCount: number;
+  closedDeals: number;
 };
 
 /**

@@ -2,19 +2,25 @@ import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/auth/session";
 import { DashboardDateFilter } from "@/components/dashboard/overview-date-filter";
+import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { LeaderboardRefreshControls } from "@/components/leaderboard/leaderboard-refresh-controls";
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
-import { PageHeader } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import styles from "@/components/leaderboard/leaderboard-page.module.css";
 import { resolveOverviewDateRange } from "@/dashboard/date-range";
 import { getEnv } from "@/env";
+import { resolveLeaderboardView } from "@/leaderboard/analytics";
 import { getLeaderboardData } from "@/leaderboard/data";
-import { resolveLeaderboardSort } from "@/leaderboard/sorting";
 
 export const dynamic = "force-dynamic";
 
-function firstValue(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
 }
 
 export default async function LeaderboardPage({
@@ -28,46 +34,48 @@ export default async function LeaderboardPage({
   if (!user) redirect("/login");
 
   const params = await searchParams;
-  const query = firstValue(params.q)?.trim() || undefined;
-  const teamId = firstValue(params.teamId)?.trim() || undefined;
   const dateRange = resolveOverviewDateRange(
     params,
     new Date(),
     getEnv().GOOGLE_SHEETS_TIMEZONE,
   );
-  const sort = resolveLeaderboardSort(params);
+  const view = resolveLeaderboardView(params);
   const data = await getLeaderboardData(user, {
-    query,
-    teamId,
     from: dateRange.from,
     to: dateRange.to,
+    comparison: dateRange.comparison ?? undefined,
   });
 
   return (
     <DashboardShell user={user}>
-      <section className="dashboard-page leaderboard-page">
-        <PageHeader
-          actions={
-            <>
+      <section className={`leaderboard-page ${styles.page}`}>
+        <header className={styles.pageHeader}>
+          <div className={styles.headingCopy}>
+            <p>Performance</p>
+            <h1>LeaderBoard</h1>
+            <span>Rank openers by valid Closed worksheet submissions and attributed transfers.</span>
+          </div>
+          <div className={styles.headerControls}>
+            <div className={styles.headerActions}>
               <DashboardDateFilter
                 ariaLabel="Leaderboard date filter"
                 pathname="/leaderboard"
-                preservedParams={{
-                  q: query,
-                  teamId,
-                  sort: sort?.column,
-                  direction: sort?.direction,
-                }}
                 range={dateRange}
               />
               <LeaderboardRefreshControls />
-            </>
-          }
-          description="Rank openers by valid Closed worksheet submissions, attributed automatically by American Name."
-          eyebrow="Performance"
-          title="LeaderBoard"
-        />
-        <LeaderboardView data={data} dateRange={dateRange} sort={sort} />
+            </div>
+            <p className={styles.rangeLabel}>
+              <DashboardIcon name="calendar" />
+              <span>{dateRange.label}:</span>
+              <strong>
+                {dateRange.from && dateRange.to
+                  ? `${formatDate(dateRange.from)} – ${formatDate(dateRange.to)}`
+                  : "All available history"}
+              </strong>
+            </p>
+          </div>
+        </header>
+        <LeaderboardView data={data} dateRange={dateRange} initialView={view} />
       </section>
     </DashboardShell>
   );

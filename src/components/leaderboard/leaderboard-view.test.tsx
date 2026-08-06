@@ -1,13 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
-
-vi.mock("next/navigation", () => ({
-  usePathname: () => "/leaderboard",
-  useRouter: () => ({ replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
-}));
+import { DEFAULT_LEADERBOARD_VIEW } from "@/leaderboard/analytics";
+import type { LeaderboardData } from "@/leaderboard/data";
 
 const dateRange = {
   key: "this-month" as const,
@@ -21,8 +17,39 @@ const dateRange = {
   },
 };
 
+const readyData: LeaderboardData = {
+  status: "ready",
+  rows: [
+    {
+      profileId: "profile-1",
+      realName: "Amira Ayman",
+      americanName: "Gia Monroe",
+      teamId: "team-1",
+      teamName: "Team One",
+      transferCount: 4,
+      closedDeals: 2,
+      rank: 1,
+      comparison: { transferCount: 3, closedDeals: 1 },
+      trend: [
+        { date: "2026-07-01", transferCount: 2, closedDeals: 1 },
+        { date: "2026-07-02", transferCount: 2, closedDeals: 1 },
+      ],
+    },
+  ],
+  teams: [{ id: "team-1", name: "Team One" }],
+  filters: {},
+  totalTransfers: 4,
+  totalClosedDeals: 2,
+  closedSourceEmpty: false,
+  transferSourceRecordCount: 4,
+  transferDiagnosticCount: 0,
+  closedDiagnosticCount: 0,
+  latestSynchronization: "2026-07-30T10:00:00.000Z",
+  stale: false,
+};
+
 describe("LeaderBoard view", () => {
-  it("shows filters and no invented ranking rows", () => {
+  it("shows all controls without inventing unavailable rankings", () => {
     const markup = renderToStaticMarkup(
       <LeaderboardView
         data={{
@@ -33,112 +60,62 @@ describe("LeaderBoard view", () => {
           filters: {},
         }}
         dateRange={dateRange}
+        initialView={DEFAULT_LEADERBOARD_VIEW}
       />,
     );
 
     expect(markup).toContain("Google Apps Script has not been configured");
-    expect(markup).toContain("All agents");
     expect(markup).toContain("All teams");
-    expect(markup).toContain("dashboard-filter-toolbar");
-    expect(markup).toContain('role="combobox"');
-    expect(markup).not.toContain("Apply filters");
+    expect(markup).toContain("Ranking metric");
+    expect(markup).toContain("Top performers only");
+    expect(markup).toContain("Export");
+    expect(markup).not.toContain("<tbody>");
+  });
+
+  it("renders authoritative KPI, podium, table, and dated-trend data", () => {
+    const markup = renderToStaticMarkup(
+      <LeaderboardView
+        data={readyData}
+        dateRange={dateRange}
+        initialView={DEFAULT_LEADERBOARD_VIEW}
+      />,
+    );
+
+    expect(markup).toContain("Total Transfers");
     expect(markup).toContain("Closed Deals");
     expect(markup).toContain("Conversion Rate %");
-    expect(markup).toContain("Unavailable");
-    expect(markup).not.toContain("<tbody>");
-    expect(markup).not.toContain(">0<");
-  });
-
-  it("renders server-provided Closed rankings", () => {
-    const markup = renderToStaticMarkup(
-      <LeaderboardView
-        data={{
-          status: "ready",
-          rows: [
-            {
-              profileId: "profile-1",
-              realName: "Amira Ayman",
-              americanName: "Gia Monroe",
-              teamId: "team-1",
-              teamName: "Team One",
-              transferCount: 4,
-              closedDeals: 4,
-              rank: 1,
-            },
-          ],
-          teams: [{ id: "team-1", name: "Team One" }],
-          filters: { query: "Gia", teamId: "team-1" },
-          totalTransfers: 8,
-          totalClosedDeals: 4,
-          closedSourceEmpty: false,
-          transferSourceRecordCount: 8,
-          transferDiagnosticCount: 0,
-          stale: false,
-        }}
-        dateRange={dateRange}
-      />,
-    );
-
-    expect(markup).toContain("Closed-deal ranking");
+    expect(markup).toContain("Top performer");
     expect(markup).toContain("Gia Monroe");
-    expect(markup).toContain("Transfers");
-    expect(markup).toContain("Closed Deals");
-    expect(markup).toContain('aria-sort="none"');
-    expect(markup).toContain(
-      "/leaderboard?range=this-month&amp;q=Gia&amp;teamId=team-1&amp;sort=transfers&amp;direction=desc",
-    );
-    expect(markup).toContain(
-      "/leaderboard?range=this-month&amp;q=Gia&amp;teamId=team-1&amp;sort=closed-deals&amp;direction=desc",
-    );
-    expect(markup).toContain("Total transfers");
-    expect(markup).toContain('aria-label="4"');
+    expect(markup).toContain("Amira Ayman");
     expect(markup).toContain("50.0%");
-    expect(markup).not.toContain("No real closed-deals provider");
-    expect(markup).not.toContain("leaderboard-unavailable-value");
+    expect(markup).toContain("Jul 1, 2026: 1");
+    expect(markup).toContain('aria-sort="descending"');
+    expect(markup).toContain("/api/leaderboard/export?range=this-month");
   });
 
-  it("exposes active sort state and the next tri-state action accessibly", () => {
+  it("applies the initial metric and filters to podium and table output", () => {
     const markup = renderToStaticMarkup(
       <LeaderboardView
-        data={{
-          status: "ready",
-          rows: [
-            {
-              profileId: "profile-1",
-              realName: "Amira Ayman",
-              americanName: "Gia Monroe",
-              teamId: "team-1",
-              teamName: "Team One",
-              transferCount: 4,
-              closedDeals: 2,
-              rank: 1,
-            },
-          ],
-          teams: [{ id: "team-1", name: "Team One" }],
-          filters: {},
-          totalTransfers: 4,
-          totalClosedDeals: 2,
-          closedSourceEmpty: false,
-          transferSourceRecordCount: 4,
-          transferDiagnosticCount: 0,
-          stale: false,
-        }}
+        data={readyData}
         dateRange={dateRange}
-        sort={{ column: "transfers", direction: "asc" }}
+        initialView={{
+          ...DEFAULT_LEADERBOARD_VIEW,
+          query: "missing",
+          metric: "conversion",
+          sortBy: "conversion",
+          topOnly: true,
+        }}
       />,
     );
 
-    expect(markup).toContain('aria-sort="ascending"');
-    expect(markup).toContain(
-      'aria-label="Transfers sorted ascending. Clear sorting."',
-    );
-    expect(markup).toContain('data-state="asc"');
-    expect(markup).toContain('href="/leaderboard?range=this-month"');
-    expect(markup).toContain('aria-label="Leaderboard sorting"');
+    expect(markup).toContain('value="missing"');
+    expect(markup).toContain('aria-pressed="true" type="button">Conversion');
+    expect(markup).toContain("No ranking data found");
+    expect(markup).not.toContain("<tbody>");
   });
 
-  it("renders an expected transfer-source error as a controlled alert", () => {
-    const markup = renderToStaticMarkup(
+  it("renders source failures as controlled empty states", () => {
+    const transferMarkup = renderToStaticMarkup(
       <LeaderboardView
         data={{
           status: "source_error",
@@ -148,22 +125,14 @@ describe("LeaderBoard view", () => {
           filters: {},
         }}
         dateRange={dateRange}
+        initialView={DEFAULT_LEADERBOARD_VIEW}
       />,
     );
-
-    expect(markup).toContain('role="alert"');
-    expect(markup).toContain("Transfer source needs attention");
-    expect(markup).toContain("missing required headers: Opener");
-    expect(markup).not.toContain("<tbody>");
-  });
-
-  it("renders Closed configuration and empty-source states without fake rankings", () => {
-    const errorMarkup = renderToStaticMarkup(
+    const closedMarkup = renderToStaticMarkup(
       <LeaderboardView
         data={{
           status: "closed_error",
-          message:
-            "The Closed worksheet does not contain all required headers.",
+          message: "The Closed worksheet does not contain all required headers.",
           rows: [],
           teams: [],
           filters: {},
@@ -171,85 +140,45 @@ describe("LeaderBoard view", () => {
           transferDiagnosticCount: 0,
         }}
         dateRange={dateRange}
+        initialView={DEFAULT_LEADERBOARD_VIEW}
       />,
     );
-    expect(errorMarkup).toContain('role="alert"');
-    expect(errorMarkup).toContain("Closed source needs attention");
-    expect(errorMarkup).toContain(
-      "The Closed worksheet does not contain all required headers.",
-    );
-    expect(errorMarkup).not.toContain("<tbody>");
 
-    const emptyMarkup = renderToStaticMarkup(
-      <LeaderboardView
-        data={{
-          status: "ready",
-          rows: [
-            {
-              profileId: "profile-1",
-              realName: "Amira Ayman",
-              americanName: "Gia Monroe",
-              teamId: null,
-              teamName: null,
-              transferCount: 0,
-              closedDeals: 0,
-              rank: 1,
-            },
-          ],
-          teams: [],
-          filters: {},
-          totalTransfers: 0,
-          totalClosedDeals: 0,
-          closedSourceEmpty: true,
-          transferSourceRecordCount: 0,
-          transferDiagnosticCount: 0,
-          stale: false,
-        }}
-        dateRange={dateRange}
-      />,
-    );
-    expect(emptyMarkup).toContain(
-      "The Closed source is connected, but no closed-deal submissions were found.",
-    );
-    expect(emptyMarkup).toContain("<tbody>");
+    expect(transferMarkup).toContain("Transfer source needs attention");
+    expect(transferMarkup).toContain("missing required headers: Opener");
+    expect(closedMarkup).toContain("Closed source needs attention");
+    expect(closedMarkup).not.toContain("<tbody>");
   });
 
-  it("renders only aggregate administrator diagnostics and stale status", () => {
+  it("exposes only aggregate source diagnostics and the empty Closed status", () => {
+    const data: LeaderboardData = {
+      ...readyData,
+      rows: [],
+      closedSourceEmpty: true,
+      stale: true,
+      closedDiagnosticCount: 2,
+      closedDiagnostics: {
+        connectionStatus: "connected",
+        worksheet: "Closed",
+        headerValidationStatus: "valid",
+        totalNonEmptyRows: 4,
+        validRows: 3,
+        matchedRows: 1,
+        unmatchedRows: 1,
+        ambiguousRows: 1,
+        invalidRows: 1,
+        invalidTimestampRows: 1,
+        lastSuccessfulSynchronization: "2026-07-30T10:00:00.000Z",
+      },
+    };
     const markup = renderToStaticMarkup(
-      <LeaderboardView
-        data={{
-          status: "ready",
-          rows: [],
-          teams: [],
-          filters: {},
-          totalTransfers: 0,
-          totalClosedDeals: 0,
-          closedSourceEmpty: false,
-          transferSourceRecordCount: 0,
-          transferDiagnosticCount: 0,
-          stale: true,
-          closedDiagnostics: {
-            connectionStatus: "connected",
-            worksheet: "Closed",
-            headerValidationStatus: "valid",
-            totalNonEmptyRows: 4,
-            validRows: 3,
-            matchedRows: 1,
-            unmatchedRows: 1,
-            ambiguousRows: 1,
-            invalidRows: 1,
-            invalidTimestampRows: 1,
-            lastSuccessfulSynchronization:
-              "2026-07-30T10:00:00.000Z",
-          },
-        }}
-        dateRange={dateRange}
-      />,
+      <LeaderboardView data={data} dateRange={dateRange} initialView={DEFAULT_LEADERBOARD_VIEW} />,
     );
-    expect(markup).toContain("Showing the last successful ranking");
-    expect(markup).toContain("Administrator diagnostics");
+
+    expect(markup).toContain("Some source rows need attention");
+    expect(markup).toContain("Administrator source diagnostics");
+    expect(markup).toContain("no closed-deal submissions were found");
     expect(markup).not.toContain("Customer");
     expect(markup).not.toContain("File Number");
-    expect(markup).not.toContain("Debt Amount");
   });
 });

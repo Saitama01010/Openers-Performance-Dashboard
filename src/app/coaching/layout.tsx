@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 
 import { assertCoachingViewAccess } from "@/auth/feature-access";
 import { getCurrentUser } from "@/auth/session";
-import { PageHeader } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import { SectionTabs } from "@/components/dashboard/section-tabs";
+import { CoachingTabs } from "@/components/dashboard/coaching/coaching-tabs";
+import styles from "@/components/dashboard/coaching/coaching-page.module.css";
 
 export const dynamic = "force-dynamic";
 
@@ -18,24 +18,18 @@ export default async function CoachingLayout({
   if (actor.role === "agent") redirect("/flags");
   await assertCoachingViewAccess(actor);
 
-  const tabs = [
-    ...(actor.role === "admin"
-      ? [{ href: "/coaching/leaderboard", label: "Leaderboard" }]
-      : []),
-    { href: "/coaching/room", label: "Coaching Room" },
-    { href: "/coaching/improvement", label: "Improvement" },
-  ];
-
   return (
     <DashboardShell user={actor}>
-      <section className="dashboard-page feature-page">
-        <PageHeader
-          description="Track coaching coverage, record sessions, and measure outcomes with role-scoped data."
-          eyebrow="Development"
-          title="Coaching Sessions"
-        />
-        <SectionTabs label="Coaching Sessions views" tabs={tabs} />
-        <div aria-label="Selected coaching view" id="feature-tab-panel" role="tabpanel" tabIndex={0}>
+      <section className={styles.page}>
+        <header className={styles.header}>
+          <div className={styles.heading}>
+            <span className={styles.eyebrow}>Coaching</span>
+            <h1>Coaching Sessions</h1>
+            <p>Track coverage, record grouped sessions, and measure outcomes within your authorized reporting scope.</p>
+          </div>
+        </header>
+        <CoachingTabs showLeaderboard={actor.role === "admin"} />
+        <div aria-label="Selected coaching view" className={styles.content} id="coaching-tab-panel" role="tabpanel" tabIndex={0}>
           {children}
         </div>
       </section>

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const performancePage = readFileSync("src/app/flags/performance/page.tsx", "utf8");
 const transferPage = readFileSync("src/app/flags/transfers/page.tsx", "utf8");
 const coachingLeaderboard = readFileSync("src/app/coaching/leaderboard/page.tsx", "utf8");
-const coachingDialog = readFileSync("src/app/coaching/room/new-coaching-session-dialog.tsx", "utf8");
+const coachingComposer = readFileSync("src/components/dashboard/coaching/coaching-session-composer.tsx", "utf8");
 const globalStyles = readFileSync("src/app/globals.css", "utf8");
 const workspacePages = [
   "src/app/dashboard/page.tsx",
@@ -72,13 +72,14 @@ describe("coaching and flags UI contract", () => {
     expect(globalStyles).toContain("animation: none");
   });
 
-  it("uses a wide native modal with searchable persistent checkbox selection", () => {
-    expect(coachingDialog).toContain('aria-modal="true"');
-    expect(coachingDialog).toContain("onCancel");
-    expect(coachingDialog).toContain('type="checkbox"');
-    expect(coachingDialog).toContain("Select all visible");
-    expect(coachingDialog).toContain("Clear selected");
-    expect(coachingDialog).toContain("selectedIds");
+  it("uses an inline four-step composer with persistent paginated selection", () => {
+    expect(coachingComposer).not.toContain('aria-modal="true"');
+    expect(coachingComposer).toContain("Participants");
+    expect(coachingComposer).toContain("Review & confirm");
+    expect(coachingComposer).toContain('type="checkbox"');
+    expect(coachingComposer).toContain("Select all visible");
+    expect(coachingComposer).toContain("new Map(current)");
+    expect(coachingComposer).toContain("/api/coaching/participants");
   });
 
   it("has no read-only Apply filters or week-only inputs on workspace pages", () => {

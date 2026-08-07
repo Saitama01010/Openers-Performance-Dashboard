@@ -76,7 +76,11 @@ describe("import history cache revalidation", () => {
     vi.clearAllMocks();
     mocks.getCurrentUser.mockResolvedValue(admin);
     mocks.assertPermission.mockResolvedValue(undefined);
-    mocks.deleteDialerImportBatch.mockResolvedValue({});
+    mocks.deleteDialerImportBatch.mockResolvedValue({
+      automaticallyActivatedFallbacks: [],
+      deletedFileName: "deleted-import.csv",
+      noActiveVersionSelected: false,
+    });
     mocks.listImportHistory.mockResolvedValue({
       page: 1,
       pageSize: 25,
@@ -182,5 +186,56 @@ describe("import history cache revalidation", () => {
       ["/admin/imports"],
       [`/admin/imports/${batchId}`],
     ]);
+  });
+
+  it("preserves search, filters, pagination, and sorting after restoration", async () => {
+    const formData = mutationFormData("batch-restore-filtered");
+    formData.set(
+      "returnQuery",
+      "q=agent-hours&status=superseded&page=2&pageSize=10&sort=fileName&order=asc",
+    );
+
+    await expect(restoreImportAction(formData)).rejects.toThrow(
+      "REDIRECT:/admin/imports?q=agent-hours&status=superseded&page=2&pageSize=10&sort=fileName&order=asc&restored=true",
+    );
+  });
+
+  it("reports the authoritative fallback after deleting an active import", async () => {
+    const formData = mutationFormData("batch-active-delete");
+    formData.set("confirmation", "DELETE ACTIVE IMPORT");
+    formData.set("returnQuery", "q=hours&page=2&pageSize=10");
+    mocks.deleteDialerImportBatch.mockResolvedValue({
+      automaticallyActivatedFallbacks: [
+        {
+          fileName: "previous-valid.csv",
+          importBatchId: "batch-previous",
+          publishedAt: new Date("2026-08-01T08:00:00Z"),
+        },
+      ],
+      deletedFileName: "active-import.csv",
+      noActiveVersionSelected: false,
+    });
+    mocks.listImportHistory.mockResolvedValue({
+      page: 2,
+      pageSize: 10,
+      total: 20,
+      rows: [],
+    });
+
+    await expect(deleteImportAction(formData)).rejects.toThrow(
+      "REDIRECT:/admin/imports?q=hours&page=2&pageSize=10&deleted=active-import.csv&fallback=previous-valid.csv",
+    );
+
+    expect(mocks.listImportHistory).toHaveBeenCalledWith(admin, {
+      dateRange: "all",
+      importType: undefined,
+      order: "desc",
+      page: 2,
+      pageSize: 10,
+      search: "hours",
+      sort: "uploadedAt",
+      status: undefined,
+      uploadedById: undefined,
+    });
   });
 });

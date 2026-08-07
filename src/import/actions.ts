@@ -201,6 +201,66 @@ function importHistoryHref(page: number, error?: string) {
   return query ? `/admin/imports?${query}` : "/admin/imports";
 }
 
+const HISTORY_QUERY_KEYS = new Set([
+  "q",
+  "status",
+  "type",
+  "uploader",
+  "range",
+  "sort",
+  "order",
+  "page",
+  "pageSize",
+]);
+
+function requestedHistoryQuery(formData: FormData) {
+  const value = formData.get("returnQuery");
+  if (typeof value !== "string" || value.length > 1_000) return null;
+  const requested = new URLSearchParams(value);
+  const safe = new URLSearchParams();
+  for (const [key, entry] of requested) {
+    if (HISTORY_QUERY_KEYS.has(key) && entry.length <= 200) safe.set(key, entry);
+  }
+  return safe;
+}
+
+function importHistoryQueryHref(
+  query: URLSearchParams,
+  additions: Record<string, string | null | undefined> = {},
+) {
+  const params = new URLSearchParams(query);
+  for (const [key, value] of Object.entries(additions)) {
+    if (value) params.set(key, value);
+    else params.delete(key);
+  }
+  const value = params.toString();
+  return value ? `/admin/imports?${value}` : "/admin/imports";
+}
+
+function historyListInput(query: URLSearchParams) {
+  const page = Number(query.get("page") ?? "1");
+  const pageSize = Number(query.get("pageSize") ?? "25");
+  const range = query.get("range");
+  const sort = query.get("sort");
+  return {
+    search: query.get("q") ?? undefined,
+    status: query.get("status") ?? undefined,
+    importType: query.get("type") ?? undefined,
+    uploadedById: query.get("uploader") ?? undefined,
+    dateRange: ["7d", "30d", "90d", "year", "all"].includes(String(range))
+      ? (range as "7d" | "30d" | "90d" | "year" | "all")
+      : "all",
+    sort: ["uploadedAt", "fileName", "reportingPeriod", "status"].includes(
+      String(sort),
+    )
+      ? (sort as "uploadedAt" | "fileName" | "reportingPeriod" | "status")
+      : "uploadedAt",
+    order: query.get("order") === "asc" ? ("asc" as const) : ("desc" as const),
+    page: Number.isInteger(page) && page > 0 ? page : 1,
+    pageSize: [10, 25, 50, 100].includes(pageSize) ? pageSize : 25,
+  };
+}
+
 function importResolutionFromForm(
   formData: FormData,
 ): ActiveImportResolution | null {
@@ -221,6 +281,7 @@ function importResolutionFromForm(
 export async function deactivateImportAction(formData: FormData) {
   const user = await requireAdminMutation(null);
   const returnPage = requestedHistoryPage(formData);
+  const returnQuery = requestedHistoryQuery(formData);
   const batchId = formData.get("batchId");
   const reason = formData.get("reason");
   const resolution = importResolutionFromForm(formData);
@@ -231,7 +292,9 @@ export async function deactivateImportAction(formData: FormData) {
     !resolution
   ) {
     redirect(
-      returnPage
+      returnQuery
+        ? importHistoryQueryHref(returnQuery, { error: "deactivation_input_invalid" })
+        : returnPage
         ? importHistoryHref(returnPage, "deactivation_input_invalid")
         : "/admin/imports?error=deactivation_input_invalid",
     );
@@ -250,7 +313,9 @@ export async function deactivateImportAction(formData: FormData) {
         ? error.code
         : "deactivation_failed";
     redirect(
-      returnPage
+      returnQuery
+        ? importHistoryQueryHref(returnQuery, { error: code })
+        : returnPage
         ? importHistoryHref(returnPage, code)
         : `/admin/imports/${batchId}?error=${code}`,
     );
@@ -260,7 +325,9 @@ export async function deactivateImportAction(formData: FormData) {
   revalidatePath("/admin/imports");
   revalidatePath(`/admin/imports/${batchId}`);
   redirect(
-    returnPage
+    returnQuery
+      ? importHistoryQueryHref(returnQuery, { deactivated: "true", error: null })
+      : returnPage
       ? importHistoryHref(returnPage)
       : `/admin/imports/${batchId}?deactivated=true`,
   );
@@ -291,11 +358,16 @@ export async function rollbackImportAction(formData: FormData) {
 
 export async function restoreImportAction(formData: FormData) {
   const user = await requireAdminMutation("imports.restore");
+  const returnQuery = requestedHistoryQuery(formData);
   const batchId = formData.get("batchId");
   const reason = formData.get("reason");
 
   if (typeof batchId !== "string" || typeof reason !== "string") {
-    redirect("/admin/imports?error=restore");
+    redirect(
+      returnQuery
+        ? importHistoryQueryHref(returnQuery, { error: "restore_input_invalid" })
+        : "/admin/imports?error=restore",
+    );
   }
 
   try {
@@ -303,18 +375,27 @@ export async function restoreImportAction(formData: FormData) {
   } catch (error) {
     const code =
       error instanceof ImportConfirmationError ? error.code : "restore_failed";
-    redirect(`/admin/imports/${batchId}?error=${code}`);
+    redirect(
+      returnQuery
+        ? importHistoryQueryHref(returnQuery, { error: code })
+        : `/admin/imports/${batchId}?error=${code}`,
+    );
   }
 
   revalidatePath("/dashboard");
   revalidatePath("/admin/imports");
   revalidatePath(`/admin/imports/${batchId}`);
-  redirect(`/admin/imports/${batchId}?restored=true`);
+  redirect(
+    returnQuery
+      ? importHistoryQueryHref(returnQuery, { restored: "true", error: null })
+      : `/admin/imports/${batchId}?restored=true`,
+  );
 }
 
 export async function deleteImportAction(formData: FormData) {
   const user = await requireAdminMutation(null);
   const returnPage = requestedHistoryPage(formData);
+  const returnQuery = requestedHistoryQuery(formData);
   const batchId = formData.get("batchId");
   const confirmation = formData.get("confirmation");
   const reason = formData.get("reason");
@@ -325,14 +406,17 @@ export async function deleteImportAction(formData: FormData) {
     typeof reason !== "string"
   ) {
     redirect(
-      returnPage
+      returnQuery
+        ? importHistoryQueryHref(returnQuery, { error: "delete_input_invalid" })
+        : returnPage
         ? importHistoryHref(returnPage, "delete_input_invalid")
         : "/admin/imports?error=delete_input_invalid",
     );
   }
 
+  let result: Awaited<ReturnType<typeof deleteDialerImportBatch>>;
   try {
-    await deleteDialerImportBatch({
+    result = await deleteDialerImportBatch({
       actor: user,
       batchId,
       confirmation,
@@ -350,6 +434,10 @@ export async function deleteImportAction(formData: FormData) {
         error instanceof Error ? error.message : "Unknown deletion error.",
     });
 
+    if (returnQuery) {
+      redirect(importHistoryQueryHref(returnQuery, { error: code }));
+    }
+
     if (returnPage || code === "import_not_found") {
       redirect(importHistoryHref(returnPage ?? 1, code));
     }
@@ -360,6 +448,30 @@ export async function deleteImportAction(formData: FormData) {
   revalidatePath("/admin/imports");
   revalidatePath(`/admin/imports/${batchId}`);
   revalidatePath("/dashboard");
+  if (returnQuery) {
+    const input = historyListInput(returnQuery);
+    const history = await listImportHistory(user, input);
+    const lastPage = Math.max(1, Math.ceil(history.total / history.pageSize));
+    if (input.page > lastPage) {
+      returnQuery.set("page", String(lastPage));
+    }
+    const fallbackNames = Array.from(
+      new Set(result.automaticallyActivatedFallbacks.map((item) => item.fileName)),
+    );
+    redirect(
+      importHistoryQueryHref(returnQuery, {
+        deleted: result.deletedFileName,
+        error: null,
+        fallback:
+          fallbackNames.length === 1
+            ? fallbackNames[0]
+            : fallbackNames.length > 1
+              ? `${fallbackNames.length} previous imports`
+              : null,
+        noActive: result.noActiveVersionSelected ? "true" : null,
+      }),
+    );
+  }
   if (returnPage) {
     const history = await listImportHistory(user, { page: returnPage });
     const lastPage = Math.max(1, Math.ceil(history.total / history.pageSize));

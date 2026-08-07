@@ -17,7 +17,7 @@ vi.mock("@/leaderboard/transfers", () => ({
   }),
 }));
 
-import { getCommissionReport } from "@/commissions/service";
+import { getCommissionDashboard, getCommissionReport } from "@/commissions/service";
 import { getDb, getPool } from "@/db";
 import {
   organizations,
@@ -169,5 +169,30 @@ describe("commission service authorization and visibility", () => {
     );
     expect(report).toMatchObject({ status: "source_unavailable", message: "Closed unavailable" });
     expect(report).not.toHaveProperty("rows");
+  });
+
+  it("loads six authorized months through one source request for manager analytics", async () => {
+    const dashboard = await getCommissionDashboard(
+      { id: ids.manager, role: "manager", teamIds: [ids.east], organizationId: ids.organization },
+      { commissionMonth: "2026-08", now: new Date("2026-08-15T00:00:00Z") },
+    );
+    expect(dashboard.status).toBe("ready");
+    if (dashboard.status !== "ready") return;
+    expect(dashboard.history).toHaveLength(6);
+    expect(dashboard.history.every((report) => report.rows.every((row) => row.id !== ids.westAgent))).toBe(true);
+    expect(dashboard.report.rows.map((row) => row.id)).toEqual([ids.eastAgent, ids.inactiveAgent]);
+    expect(ingestAndMatchLeaderboardSources).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps every personal history point self-only with no aggregate summary", async () => {
+    const dashboard = await getCommissionDashboard(
+      { id: ids.eastAgent, role: "agent", teamIds: [ids.east], organizationId: ids.organization },
+      { commissionMonth: "2026-08", now: new Date("2026-08-15T00:00:00Z") },
+    );
+    expect(dashboard.status).toBe("ready");
+    if (dashboard.status !== "ready") return;
+    expect(dashboard.history.every((report) => report.summary === null)).toBe(true);
+    expect(dashboard.history.every((report) => report.rows.every((row) => row.id === ids.eastAgent))).toBe(true);
+    expect(dashboard.report.rows.map((row) => row.id)).toEqual([ids.eastAgent]);
   });
 });

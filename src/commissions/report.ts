@@ -31,6 +31,8 @@ export type ReadyCommissionReport = {
   teams: { id: string; name: string }[];
   selectedTeamId?: string;
   stale: boolean;
+  sourceFetchedAt: string | null;
+  closedGeneratedAt: string | null;
 };
 
 export function buildCommissionReport(input: {
@@ -42,6 +44,8 @@ export function buildCommissionReport(input: {
   teams: readonly { id: string; name: string }[];
   selectedTeamId?: string;
   stale?: boolean;
+  sourceFetchedAt?: string | null;
+  closedGeneratedAt?: string | null;
 }): ReadyCommissionReport {
   const countsByEmployeeMonth = new Map<string, Map<string, number>>();
   const finalMonthByEmployee = new Map<string, string>();
@@ -110,5 +114,7 @@ export function buildCommissionReport(input: {
     teams: [...input.teams],
     selectedTeamId: input.selectedTeamId,
     stale: input.stale ?? false,
+    sourceFetchedAt: input.sourceFetchedAt ?? null,
+    closedGeneratedAt: input.closedGeneratedAt ?? null,
   };
 }

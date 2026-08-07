@@ -349,6 +349,36 @@ describe("flag data authorization and active-version integration", () => {
       wrapFlag: true,
       pauseFlag: false,
     });
+    expect(data.summary).toMatchObject({
+      scopedAgents: 2,
+      flaggedAgents: 1,
+      wrapFlags: 1,
+      pauseFlags: 0,
+    });
+    expect(data.analytics.composition).toEqual([
+      expect.objectContaining({ key: "wrap", count: 1, agents: 1 }),
+      expect.objectContaining({ key: "pause", count: 0, agents: 0 }),
+    ]);
+    expect(data.analytics.teams[0]).toMatchObject({
+      total: 1,
+      wrapFlags: 1,
+      pauseFlags: 0,
+      agents: 1,
+    });
+    expect(data.analytics.trend[0]).toMatchObject({
+      weekStart: week.start,
+      wrapFlags: 1,
+      pauseFlags: 0,
+      agents: 1,
+    });
+    expect(data.pagination).toMatchObject({ total: 1, page: 1 });
+
+    const pauseOnly = await getPerformanceFlagsData(
+      actor(adminId, "admin", organizationId),
+      { dateRange: { from: week.start, to: week.end }, pause: "flagged" },
+    );
+    expect(pauseOnly.rows).toEqual([]);
+    expect(pauseOnly.analytics.composition.every((item) => item.count === 0)).toBe(true);
   });
 
   it("does not turn a Closed source failure into a false zero-deal Strong Flag", async () => {

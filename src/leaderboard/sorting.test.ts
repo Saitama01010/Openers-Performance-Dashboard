@@ -56,6 +56,12 @@ describe("LeaderBoard table sorting", () => {
     ).toEqual({ column: "closed-deals", direction: "desc" });
     expect(
       resolveLeaderboardSort({
+        sort: "conversion",
+        direction: "desc",
+      }),
+    ).toEqual({ column: "conversion", direction: "desc" });
+    expect(
+      resolveLeaderboardSort({
         sort: "calls",
         direction: "sideways",
       }),
@@ -101,5 +107,14 @@ describe("LeaderBoard table sorting", () => {
         direction: "desc",
       }).map((row) => row.profileId),
     ).toEqual(["c", "b", "a"]);
+  });
+
+  it("sorts conversion while keeping zero-transfer values last", () => {
+    expect(
+      sortLeaderboardDisplayRows(
+        [...rows, { ...rows[0], profileId: "d", americanName: "Drew", transferCount: 0, closedDeals: 0 }],
+        { column: "conversion", direction: "desc" },
+      ).map((row) => row.profileId),
+    ).toEqual(["c", "b", "a", "d"]);
   });
 });

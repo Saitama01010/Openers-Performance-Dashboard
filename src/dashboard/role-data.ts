@@ -11,6 +11,7 @@ import { getCoachingRoomData } from "@/coaching/data";
 import { listCoachingReportsForCurrentActor } from "@/coaching/reports";
 import { resolveWeekWindow } from "@/coaching/week";
 import { getDashboardData } from "@/dashboard/data";
+import { buildCalendarMonthWindows } from "@/dashboard/admin-overview";
 import {
   resolveOverviewDateRange,
   type OverviewDateRange,
@@ -303,12 +304,12 @@ export type RoleDashboardData =
   | { role: "manager"; data: Awaited<ReturnType<typeof managerDashboardData>> }
   | { role: "admin"; data: Awaited<ReturnType<typeof adminDashboardData>> };
 
-async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange) {
+async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange, timeZone: string) {
   const orgActor = organizationActor(actor);
-  const today = dateKeyInTimeZone(now, "Africa/Cairo");
+  const today = dateKeyInTimeZone(now, timeZone);
   const week = resolveWeekWindow(today);
-  const month = resolveOverviewDateRange({ range: "this-month" }, now);
-  const lastMonth = resolveOverviewDateRange({ range: "last-month" }, now);
+  const month = resolveOverviewDateRange({ range: "this-month" }, now, timeZone);
+  const lastMonth = resolveOverviewDateRange({ range: "last-month" }, now, timeZone);
   const [scopedAgents, companyAgents, outcomeSource, configuration, dialer, coachingReports, shadowing, manualFlags, transferFlags, performanceFlags] = await Promise.all([
     listScopedActiveAgents(actor),
     listScopedActiveAgents(orgActor),
@@ -336,11 +337,36 @@ async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: Overv
   const lastMonthly = outcomeSnapshot(outcomeSource, { kind: "date", window: lastMonth });
   const todaySnapshot = outcomeSnapshot(outcomeSource, { kind: "date", window: { from: today, to: today } });
   const selectedSnapshot = outcomeSnapshot(outcomeSource, { kind: "date", window: selectedRange });
+  const selectedComparisonSnapshot = selectedRange.comparison
+    ? outcomeSnapshot(outcomeSource, {
+        kind: "date",
+        window: selectedRange.comparison,
+      })
+    : null;
+  const monthlyHistory = buildCalendarMonthWindows(today).map((window) => {
+    const snapshot = outcomeSnapshot(outcomeSource, {
+      kind: "date",
+      window: { from: window.from, to: window.to },
+    });
+    return {
+      ...window,
+      transfers: snapshot.transfers,
+      closedDeals: snapshot.closedDeals,
+      conversion:
+        snapshot.transfers.value !== null && snapshot.closedDeals.value !== null
+          ? conversionPercentage(
+              snapshot.closedDeals.value,
+              snapshot.transfers.value,
+            )
+          : null,
+    };
+  });
   const top = rankedRows(companyAgents, lastMonthly)?.[0] ?? null;
   return {
     today, week, month, lastMonth, scopedAgents, companyAgents, outcomeSource,
     configuration, dialer, coachingReports, shadowing, manualFlags, transferFlags, performanceFlags,
     weekly, monthly, lastMonthly, todaySnapshot, selectedSnapshot,
+    selectedComparisonSnapshot, monthlyHistory,
     weeklyRanks: rankedRows(companyAgents, weekly),
     monthlyRanks: rankedRows(companyAgents, monthly),
     topPerformerLastMonth: top,
@@ -349,8 +375,8 @@ async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: Overv
   };
 }
 
-async function agentDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange) {
-  const shared = await sharedInputs(actor, now, selectedRange);
+async function agentDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange, timeZone: string) {
+  const shared = await sharedInputs(actor, now, selectedRange, timeZone);
   const shift = lastCompletedShift(now);
   const previousShift = previousCompletedShift(shift);
   const allowed = new Set([actor.id]);
@@ -409,8 +435,8 @@ async function agentDashboardData(actor: CurrentActor, now: Date, selectedRange:
   };
 }
 
-async function managerDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange, requestedPage = 1) {
-  const shared = await sharedInputs(actor, now, selectedRange);
+async function managerDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange, requestedPage = 1, timeZone = "Africa/Cairo") {
+  const shared = await sharedInputs(actor, now, selectedRange, timeZone);
   const agentIds = shared.scopedAgents.map((agent) => agent.id);
   const employment = await profileEmployment(agentIds);
   const shift = lastCompletedShift(now);
@@ -525,6 +551,7 @@ async function managerDashboardData(actor: CurrentActor, now: Date, selectedRang
         shared.monthly.closedDeals.status === "ready"
           ? evaluateTarget(shared.monthly.closedDeals.value ?? 0, teamClosedTarget?.targetValue ?? null)
           : null,
+      targetConfigured: teamClosedTarget !== null,
       shiftCoverage:
         readyCoverages.length === rows.length && rows.length > 0
           ? readyCoverages.reduce((total, value) => total + value, 0) / readyCoverages.length
@@ -542,8 +569,8 @@ async function managerDashboardData(actor: CurrentActor, now: Date, selectedRang
   };
 }
 
-async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange) {
-  const shared = await sharedInputs(actor, now, selectedRange);
+async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange, timeZone: string) {
+  const shared = await sharedInputs(actor, now, selectedRange, timeZone);
   const [employmentCounts, accountCounts, managerRows, commission, companyEmployment, companyShiftRows, operationalHealth] = await Promise.all([
     getDb().select({ status: profiles.employmentStatus, count: sql<number>`count(*)` })
       .from(profiles)
@@ -573,6 +600,11 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
   const leaderPerformance = Array.from(managerGroups.values()).map((manager) => {
     const teamRows = shared.competition.filter((team) => manager.teamIds.includes(team.teamId));
     const activeAgents = teamRows.reduce((total, team) => total + team.activeAgents, 0);
+    const managedAgentIds = new Set(
+      shared.companyAgents
+        .filter((agent) => agent.teams.some((team) => manager.teamIds.includes(team.id)))
+        .map((agent) => agent.id),
+    );
     const managerReports = shared.coachingReports.filter((report) => report.coachProfileId === manager.managerId);
     const completedReports = managerReports.filter((report) => report.status !== "draft");
     const distinctAgentsCoached = new Set(completedReports.map((report) => report.agentProfileId)).size;
@@ -594,6 +626,11 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
             teamRows.reduce((total, team) => total + (team.transfers.value ?? 0), 0),
           )
         : null,
+      commission: commission.status === "ready"
+        ? commission.rows
+            .filter((row) => row.team && manager.teamIds.includes(row.team.id))
+            .reduce((total, row) => total + row.commissionAmount, 0)
+        : null,
       targetAttainment: teamRows.length && teamRows.every((team) => team.targetProgress.status !== "not_configured")
         ? teamRows.reduce((total, team) => total + (team.targetProgress.status === "not_configured" ? 0 : team.targetProgress.percentage), 0) / teamRows.length
         : null,
@@ -604,10 +641,28 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
       coachingReportsPublished: managerReports.filter((report) => ["published", "acknowledged"].includes(report.status)).length,
       qaPending: managerReports.filter((report) => ["draft", "finalized"].includes(report.status)).length,
       shadowingCompleted: shared.shadowing.filter((session) => session.assignedLeaderId === manager.managerId && session.status === "completed").length,
+      shadowingCompletion: (() => {
+        const sessions = shared.shadowing.filter(
+          (session) => session.assignedLeaderId === manager.managerId,
+        );
+        return sessions.length
+          ? (sessions.filter((session) => session.status === "completed").length /
+              sessions.length) *
+              100
+          : null;
+      })(),
       followUpsOverdue: managerReports.filter((report) => report.followUpDate && report.followUpDate < shared.today && report.status !== "acknowledged").length,
       manualFlagsRaised: managerFlags.length,
       manualFlagsResolved: resolvedFlags.length,
       averageResolutionHours: resolutionHours.length ? resolutionHours.reduce((a, b) => a + b, 0) / resolutionHours.length : null,
+      activeFlags:
+        shared.manualFlags.filter(
+          (flag) =>
+            managedAgentIds.has(flag.agentProfileId) &&
+            !["resolved", "dismissed"].includes(flag.status),
+        ).length +
+        shared.performanceFlags.rows.filter((flag) => managedAgentIds.has(flag.agentId)).length +
+        shared.transferFlags.rows.filter((flag) => managedAgentIds.has(flag.agentId)).length,
     };
   });
   const counts = new Map(employmentCounts.map((row) => [row.status, Number(row.count)]));
@@ -624,7 +679,7 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
   );
   const companyClosedTarget = resolveEffectiveTarget(shared.configuration.targets, {
     metric: "closed_deals",
-    date: shared.today,
+    date: selectedRange.to ?? shared.today,
     teamId: null,
   });
   const completedShadowing = shared.shadowing.filter((session) => session.status === "completed").length;
@@ -707,10 +762,10 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
     period: selectedRange,
     source: shared.outcomeSource,
     company: {
-      transfers: sourceValue(shared.monthly.transfers.value ?? undefined, shared.monthly.transfers.status === "ready"),
-      closedDeals: sourceValue(shared.monthly.closedDeals.value ?? undefined, shared.monthly.closedDeals.status === "ready"),
-      conversion: shared.monthly.transfers.value !== null && shared.monthly.closedDeals.value !== null
-        ? conversionPercentage(shared.monthly.closedDeals.value, shared.monthly.transfers.value) : null,
+      transfers: sourceValue(shared.selectedSnapshot.transfers.value ?? undefined, shared.selectedSnapshot.transfers.status === "ready"),
+      closedDeals: sourceValue(shared.selectedSnapshot.closedDeals.value ?? undefined, shared.selectedSnapshot.closedDeals.status === "ready"),
+      conversion: shared.selectedSnapshot.transfers.value !== null && shared.selectedSnapshot.closedDeals.value !== null
+        ? conversionPercentage(shared.selectedSnapshot.closedDeals.value, shared.selectedSnapshot.transfers.value) : null,
       totalCommissions: commission.status === "ready" ? commission.summary?.totalCommission ?? 0 : null,
       activeHeadcount: counts.get("active") ?? 0,
       deactivatedHeadcount: counts.get("deactivated") ?? 0,
@@ -721,8 +776,8 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
           ? readyCompanyCoverages.reduce((a, b) => a + b, 0) / readyCompanyCoverages.length
           : null,
       targetProgress:
-        shared.monthly.closedDeals.status === "ready"
-          ? evaluateTarget(shared.monthly.closedDeals.value ?? 0, companyClosedTarget?.targetValue ?? null)
+        shared.selectedSnapshot.closedDeals.status === "ready"
+          ? evaluateTarget(shared.selectedSnapshot.closedDeals.value ?? 0, companyClosedTarget?.targetValue ?? null)
           : null,
       coachingCompletion: shared.coachingReports.length > 0
         ? (shared.coachingReports.filter((report) => ["published", "acknowledged"].includes(report.status)).length / shared.coachingReports.length) * 100 : null,
@@ -732,6 +787,21 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
       manualFlagsActive: shared.manualFlags.filter((flag) => !["resolved", "dismissed"].includes(flag.status)).length,
       transferFlagsActive: shared.transferFlags.rows.length,
       performanceFlagsActive: shared.performanceFlags.rows.length,
+      comparisonLabel: selectedRange.comparison?.label ?? null,
+      comparison: shared.selectedComparisonSnapshot
+        ? {
+            transfers: shared.selectedComparisonSnapshot.transfers,
+            closedDeals: shared.selectedComparisonSnapshot.closedDeals,
+            conversion:
+              shared.selectedComparisonSnapshot.transfers.value !== null &&
+              shared.selectedComparisonSnapshot.closedDeals.value !== null
+                ? conversionPercentage(
+                    shared.selectedComparisonSnapshot.closedDeals.value,
+                    shared.selectedComparisonSnapshot.transfers.value,
+                  )
+                : null,
+          }
+        : null,
     },
     teamComparison,
     leaderPerformance,
@@ -776,6 +846,19 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
         activeFlags: shared.manualFlags.filter((flag) => flag.agentProfileId === rank.profileId && !["resolved", "dismissed"].includes(flag.status)).length,
       };
     }) ?? [],
+    talentDistributionAgents: shared.companyAgents.map((agent) => ({
+      profileId: agent.id,
+      name: agent.name,
+      tenureDays: employmentTenureDays(
+        companyEmployment.get(agent.id)?.start ?? null,
+        shared.today,
+      ),
+    })),
+    agents: shared.companyAgents.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      employmentStartDate: companyEmployment.get(agent.id)?.start ?? null,
+    })),
     dataHealth: {
       ...operationalHealth,
       dialerStatus: shared.dialer.status,
@@ -794,6 +877,7 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
     transferFlags: shared.transferFlags,
     topPerformerLastMonth: shared.topPerformerLastMonth,
     trends: {
+      months: shared.monthlyHistory,
       transfers: {
         current: shared.monthly.transfers,
         previous: shared.lastMonthly.transfers,
@@ -818,12 +902,15 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
 
 export async function getRoleDashboardData(
   actor: Actor,
-  input: { dateRange: OverviewDateRange; now?: Date; page?: number },
+  input: { dateRange: OverviewDateRange; now?: Date; page?: number; timeZone?: string },
 ): Promise<RoleDashboardData> {
   const currentActor = await resolveCurrentActor(actor);
   await assertRoleDashboardViewAccess(currentActor);
   const now = input.now ?? new Date();
-  if (currentActor.role === "agent") return { role: "agent", data: await agentDashboardData(currentActor, now, input.dateRange) };
-  if (currentActor.role === "manager") return { role: "manager", data: await managerDashboardData(currentActor, now, input.dateRange, input.page) };
-  return { role: "admin", data: await adminDashboardData(currentActor, now, input.dateRange) };
+  const timeZone = input.timeZone ?? "Africa/Cairo";
+  if (currentActor.role === "agent") return { role: "agent", data: await agentDashboardData(currentActor, now, input.dateRange, timeZone) };
+  if (currentActor.role === "manager") return { role: "manager", data: await managerDashboardData(currentActor, now, input.dateRange, input.page, timeZone) };
+  return { role: "admin", data: await adminDashboardData(currentActor, now, input.dateRange, timeZone) };
 }
+
+export type AdminDashboardData = Awaited<ReturnType<typeof adminDashboardData>>;

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
 import type {
@@ -43,6 +43,10 @@ export type LeaderboardFilters = {
   to?: string;
 };
 
+export type LeaderboardLoadOptions = LeaderboardFilters & {
+  comparison?: DashboardDateWindow;
+};
+
 export type SafeClosedDiagnostics = {
   connectionStatus: "connected";
   worksheet: "Closed";
@@ -82,6 +86,8 @@ export type LeaderboardData =
       closedSourceEmpty: boolean;
       transferSourceRecordCount: number;
       transferDiagnosticCount: number;
+      closedDiagnosticCount: number;
+      latestSynchronization: string;
       stale: boolean;
       closedDiagnostics?: SafeClosedDiagnostics;
     })
@@ -113,14 +119,24 @@ export type TransferSummaryData =
     };
 
 async function listLeaderboardTeams(actor: Actor) {
+  if (actor.role !== "admin" && actor.teamIds.length === 0) return [];
+  const scopeWhere =
+    actor.role === "admin" ? undefined : inArray(teams.id, actor.teamIds);
   return getDb()
     .select({ id: teams.id, name: teams.name })
     .from(teams)
-    .where(visibleTeamWhere(actor))
+    .where(and(visibleTeamWhere(actor), scopeWhere))
     .orderBy(asc(teams.name), asc(teams.id));
 }
 
 export async function listMatchableUsers(actor: Actor) {
+  if (actor.role === "manager" && actor.teamIds.length === 0) return [];
+  const scopeWhere =
+    actor.role === "manager"
+      ? inArray(teams.id, actor.teamIds)
+      : actor.role === "agent"
+        ? eq(profiles.id, actor.id)
+        : undefined;
   return getDb()
     .select({
       id: profiles.id,
@@ -153,6 +169,7 @@ export async function listMatchableUsers(actor: Actor) {
         activeProfileWhere(actorOrganizationId(actor)),
         eq(profiles.role, "agent"),
         visibleTeamWhere(actor),
+        scopeWhere,
       ),
     );
 }
@@ -305,6 +322,73 @@ export function buildClosedDealLeaderboardRows(
   );
 }
 
+export function buildLeaderboardAnalyticsRows(
+  users: readonly MatchableUser[],
+  deals: readonly NormalizedClosedDeal[],
+  filters: LeaderboardFilters,
+  timeZone: string,
+  transfers: readonly MatchedTransfer[] = [],
+  comparison?: DashboardDateWindow,
+) {
+  const current = buildClosedDealLeaderboardRows(users, deals, filters, timeZone, transfers);
+  const previous = comparison
+    ? buildClosedDealLeaderboardRows(
+        users,
+        deals,
+        { ...filters, from: comparison.from, to: comparison.to },
+        timeZone,
+        transfers,
+      )
+    : [];
+  const previousById = new Map(previous.map((row) => [row.profileId, row]));
+  const currentIds = new Set(current.map((row) => row.profileId));
+  const trends = new Map<string, Map<string, { date: string; transferCount: number; closedDeals: number }>>();
+
+  function pointFor(profileId: string, date: string) {
+    const byDate = trends.get(profileId) ?? new Map();
+    trends.set(profileId, byDate);
+    const point = byDate.get(date) ?? { date, transferCount: 0, closedDeals: 0 };
+    byDate.set(date, point);
+    return point;
+  }
+
+  for (const match of transfers) {
+    if (
+      match.status !== "matched" ||
+      !currentIds.has(match.user.id) ||
+      !transferMatchesFilters(match, filters, timeZone)
+    ) continue;
+    const date = dateKeyInTimeZone(match.transfer.occurredAt!, timeZone);
+    pointFor(match.user.id, date).transferCount += 1;
+  }
+
+  for (const deal of deals) {
+    if (
+      !deal.matchedUserId ||
+      !currentIds.has(deal.matchedUserId) ||
+      !closedDealMatchesDateFilters(deal, filters, timeZone)
+    ) continue;
+    const date = dateKeyInTimeZone(deal.timestamp!, timeZone);
+    pointFor(deal.matchedUserId, date).closedDeals += 1;
+  }
+
+  return current.map((row) => {
+    const previousRow = previousById.get(row.profileId);
+    return {
+      ...row,
+      comparison: comparison
+        ? {
+            transferCount: previousRow?.transferCount ?? 0,
+            closedDeals: previousRow?.closedDeals ?? 0,
+          }
+        : null,
+      trend: [...(trends.get(row.profileId)?.values() ?? [])].sort((left, right) =>
+        left.date.localeCompare(right.date),
+      ),
+    };
+  });
+}
+
 function safeClosedDiagnostics(
   deals: readonly NormalizedClosedDeal[],
   totalNonEmptyRows: number,
@@ -384,8 +468,9 @@ export async function getTransferSummary(
 
 export async function getLeaderboardData(
   actor: Actor,
-  filters: LeaderboardFilters,
+  options: LeaderboardLoadOptions,
 ): Promise<LeaderboardData> {
+  const { comparison, ...filters } = options;
   const teamRowsPromise = listLeaderboardTeams(actor);
   const config = transferSheetConfigFromEnv();
   if (!config) {
@@ -408,16 +493,16 @@ export async function getLeaderboardData(
   try {
     ingestion = await ingestionPromise;
   } catch (error) {
-    if (error instanceof TransferSheetConfigurationError) {
-      return {
-        status: "source_error",
-        message: error.message,
-        rows: [],
-        teams: await teamRowsPromise,
-        filters,
-      };
-    }
-    throw error;
+    return {
+      status: "source_error",
+      message:
+        error instanceof TransferSheetConfigurationError
+          ? error.message
+          : "The transfer source could not be loaded right now. Retry after checking the Xfers connection.",
+      rows: [],
+      teams: await teamRowsPromise,
+      filters,
+    };
   }
   const teamRows = await teamRowsPromise;
 
@@ -454,12 +539,13 @@ export async function getLeaderboardData(
     };
   }
 
-  const rows = buildClosedDealLeaderboardRows(
+  const rows = buildLeaderboardAnalyticsRows(
     ingestion.users,
     ingestion.closedRecords,
     filters,
     ingestion.timeZone,
     ingestion.transferMatches,
+    comparison,
   );
   const totalClosedDeals = rows.reduce(
     (total, row) => total + row.closedDeals,
@@ -480,6 +566,8 @@ export async function getLeaderboardData(
     closedSourceEmpty: ingestion.totalNonEmptyClosedRows === 0,
     transferSourceRecordCount: ingestion.transferRecords.length,
     transferDiagnosticCount: ingestion.transferDiagnostics.length,
+    closedDiagnosticCount: ingestion.closedDiagnostics.length,
+    latestSynchronization: ingestion.closedGeneratedAt ?? ingestion.fetchedAt,
     stale: ingestion.stale,
     closedDiagnostics:
       actor.role === "admin"

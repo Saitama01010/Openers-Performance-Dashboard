@@ -1,6 +1,6 @@
 import type { LeaderboardRow } from "@/leaderboard/ranking";
 
-export type LeaderboardSortColumn = "transfers" | "closed-deals";
+export type LeaderboardSortColumn = "transfers" | "closed-deals" | "conversion";
 export type LeaderboardSortDirection = "asc" | "desc";
 export type LeaderboardSortState = {
   column: LeaderboardSortColumn;
@@ -25,7 +25,7 @@ export function resolveLeaderboardSort(
   const direction = firstValue(params.direction);
 
   if (
-    (column === "transfers" || column === "closed-deals") &&
+    (column === "transfers" || column === "closed-deals" || column === "conversion") &&
     (direction === "asc" || direction === "desc")
   ) {
     return { column, direction };
@@ -73,18 +73,21 @@ export function sortLeaderboardDisplayRows(
   if (!sort) return [...rows];
 
   return [...rows].sort((left, right) => {
-    const comparison =
-      sort.column === "transfers"
-        ? compareNullableNumber(
-            left.transferCount,
-            right.transferCount,
-            sort.direction,
-          )
-        : compareNullableNumber(
-            left.closedDeals,
-            right.closedDeals,
-            sort.direction,
-          );
+    const leftValue = sort.column === "transfers"
+      ? left.transferCount
+      : sort.column === "closed-deals"
+        ? left.closedDeals
+        : left.transferCount > 0
+          ? (left.closedDeals / left.transferCount) * 100
+          : null;
+    const rightValue = sort.column === "transfers"
+      ? right.transferCount
+      : sort.column === "closed-deals"
+        ? right.closedDeals
+        : right.transferCount > 0
+          ? (right.closedDeals / right.transferCount) * 100
+          : null;
+    const comparison = compareNullableNumber(leftValue, rightValue, sort.direction);
 
     return comparison || rankOrder(left, right);
   });

@@ -18,6 +18,12 @@ import {
   profiles,
 } from "@/db/schema";
 import {
+  aggregatePerformanceFlags,
+  aggregateTransferFlags,
+  paginateRows,
+  weekForDate,
+} from "@/flags/analytics";
+import {
   calculatePerformanceFlags,
   buildTransferFlagRows,
   PAUSE_MINUTES_PER_NET_HOUR_LIMIT,
@@ -38,7 +44,10 @@ import { actorOrganizationId } from "@/teams/visibility";
 import { activeProfileWhere } from "@/users/visibility";
 
 export type FlagFilters = {
-  dateRange: DashboardDateWindow;
+  dateRange: DashboardDateWindow & {
+    comparison?: (DashboardDateWindow & { label: string }) | null;
+    label?: string;
+  };
   teamId?: string;
   managerId?: string;
   profileId?: string;
@@ -105,113 +114,166 @@ function responseRoster(actor: Actor, roster: Awaited<ReturnType<typeof resolveF
     : roster;
 }
 
+async function queryPerformanceMetrics(
+  actor: Actor,
+  agentIds: string[],
+  dateRange: DashboardDateWindow,
+) {
+  if (agentIds.length === 0) return [];
+  return getDb()
+    .select({
+      agentProfileId: dialerAgentHourlyMetrics.agentProfileId,
+      metricDate: dialerAgentHourlyMetrics.metricDate,
+      talkSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.talkSeconds}), 0)`,
+      wrapSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.wrapSeconds}), 0)`,
+      readySeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.readySeconds}), 0)`,
+      pausedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.pausedSeconds}), 0)`,
+    })
+    .from(dialerAgentHourlyMetrics)
+    .innerJoin(
+      dialerDatasetScopes,
+      eq(dialerDatasetScopes.activeVersionId, dialerAgentHourlyMetrics.versionId),
+    )
+    .innerJoin(profiles, eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId))
+    .where(and(
+      inArray(dialerAgentHourlyMetrics.agentProfileId, agentIds),
+      dateRange.from ? gte(dialerAgentHourlyMetrics.metricDate, dateRange.from) : undefined,
+      dateRange.to ? lte(dialerAgentHourlyMetrics.metricDate, dateRange.to) : undefined,
+      activeProfileWhere(actorOrganizationId(actor)),
+      eq(profiles.role, "agent"),
+    ))
+    .groupBy(dialerAgentHourlyMetrics.agentProfileId, dialerAgentHourlyMetrics.metricDate);
+}
+
+function performanceRows(
+  agents: ScopedAgent[],
+  metricRows: Awaited<ReturnType<typeof queryPerformanceMetrics>>,
+  dateRange: DashboardDateWindow,
+) {
+  const totals = new Map<string, { talkSeconds: number; wrapSeconds: number; readySeconds: number; pausedSeconds: number }>();
+  for (const row of metricRows) {
+    const current = totals.get(row.agentProfileId) ?? { talkSeconds: 0, wrapSeconds: 0, readySeconds: 0, pausedSeconds: 0 };
+    current.talkSeconds += Number(row.talkSeconds);
+    current.wrapSeconds += Number(row.wrapSeconds);
+    current.readySeconds += Number(row.readySeconds);
+    current.pausedSeconds += Number(row.pausedSeconds);
+    totals.set(row.agentProfileId, current);
+  }
+  return agents.map((agent) => {
+    const metrics = totals.get(agent.id) ?? { talkSeconds: 0, wrapSeconds: 0, readySeconds: 0, pausedSeconds: 0 };
+    const result = calculatePerformanceFlags(metrics);
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      teamIds: agent.teams.map((team) => team.id),
+      teamNames: agent.teams.map((team) => team.name),
+      dateRange,
+      ...metrics,
+      ...result,
+      wrapThreshold: WRAP_MINUTES_PER_TALK_HOUR_LIMIT,
+      pauseThreshold: PAUSE_MINUTES_PER_NET_HOUR_LIMIT,
+      status: result.triggeredFlags.length === 2 ? "Both flags" : result.triggeredFlags.length === 1 ? "Flagged" : "No active flags",
+    };
+  });
+}
+
+function weeklyPerformanceRows(
+  agents: ScopedAgent[],
+  metricRows: Awaited<ReturnType<typeof queryPerformanceMetrics>>,
+) {
+  const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
+  const weekly = new Map<string, { agentId: string; weekStart: string; weekEnd: string; talkSeconds: number; wrapSeconds: number; readySeconds: number; pausedSeconds: number }>();
+  for (const row of metricRows) {
+    const week = weekForDate(row.metricDate);
+    if (!week) continue;
+    const key = `${row.agentProfileId}:${week.weekStart}`;
+    const value = weekly.get(key) ?? { agentId: row.agentProfileId, ...week, talkSeconds: 0, wrapSeconds: 0, readySeconds: 0, pausedSeconds: 0 };
+    value.talkSeconds += Number(row.talkSeconds);
+    value.wrapSeconds += Number(row.wrapSeconds);
+    value.readySeconds += Number(row.readySeconds);
+    value.pausedSeconds += Number(row.pausedSeconds);
+    weekly.set(key, value);
+  }
+  return Array.from(weekly.values()).flatMap((value) => {
+    const agent = agentsById.get(value.agentId);
+    if (!agent) return [];
+    return [{
+      agentId: value.agentId,
+      teamIds: agent.teams.map((team) => team.id),
+      teamNames: agent.teams.map((team) => team.name),
+      weekStart: value.weekStart,
+      weekEnd: value.weekEnd,
+      ...calculatePerformanceFlags(value),
+    }];
+  });
+}
+
+function performanceFilter<T extends { wrapFlag: boolean; pauseFlag: boolean }>(
+  rows: T[],
+  filters: { wrap?: "flagged" | "all"; pause?: "flagged" | "all" },
+) {
+  return rows.filter((row) => {
+    if (filters.wrap === "flagged" && !row.wrapFlag) return false;
+    if (filters.pause === "flagged" && !row.pauseFlag) return false;
+    return row.wrapFlag || row.pauseFlag;
+  });
+}
+
 export async function getPerformanceFlagsData(
   actor: Actor,
   filters: FlagFilters & {
     wrap?: "flagged" | "all";
     pause?: "flagged" | "all";
     flaggedOnly?: boolean;
+    page?: number;
+    pageSize?: number;
   },
 ) {
   await assertFlagsViewAccess(actor);
   const safeFilters = enforceFlagRequestScope(actor, filters);
   const roster = await resolveFlagRoster(actor, safeFilters);
   const agentIds = roster.agents.map((agent) => agent.id);
-  const metricRows =
-    agentIds.length === 0
-      ? []
-      : await getDb()
-          .select({
-            agentProfileId: dialerAgentHourlyMetrics.agentProfileId,
-            talkSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.talkSeconds}), 0)`,
-            wrapSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.wrapSeconds}), 0)`,
-            readySeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.readySeconds}), 0)`,
-            pausedSeconds: sql<number>`coalesce(sum(${dialerAgentHourlyMetrics.pausedSeconds}), 0)`,
-          })
-          .from(dialerAgentHourlyMetrics)
-          .innerJoin(
-            dialerDatasetScopes,
-            eq(
-              dialerDatasetScopes.activeVersionId,
-              dialerAgentHourlyMetrics.versionId,
-            ),
-          )
-          .innerJoin(profiles, eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId))
-          .where(
-            and(
-              inArray(dialerAgentHourlyMetrics.agentProfileId, agentIds),
-              safeFilters.dateRange.from
-                ? gte(
-                    dialerAgentHourlyMetrics.metricDate,
-                    safeFilters.dateRange.from,
-                  )
-                : undefined,
-              safeFilters.dateRange.to
-                ? lte(
-                    dialerAgentHourlyMetrics.metricDate,
-                    safeFilters.dateRange.to,
-                  )
-                : undefined,
-              activeProfileWhere(actorOrganizationId(actor)),
-              eq(profiles.role, "agent"),
-            ),
-          )
-          .groupBy(dialerAgentHourlyMetrics.agentProfileId);
-  const metricsByAgent = new Map(
-    metricRows.map((row) => [
-      row.agentProfileId,
-      {
-        talkSeconds: Number(row.talkSeconds),
-        wrapSeconds: Number(row.wrapSeconds),
-        readySeconds: Number(row.readySeconds),
-        pausedSeconds: Number(row.pausedSeconds),
-      },
-    ]),
-  );
-  const rows = roster.agents
-    .map((agent) => {
-      const metrics = metricsByAgent.get(agent.id) ?? {
-        talkSeconds: 0,
-        wrapSeconds: 0,
-        readySeconds: 0,
-        pausedSeconds: 0,
-      };
-      const result = calculatePerformanceFlags(metrics);
-      return {
-        agentId: agent.id,
-        agentName: agent.name,
-        teamNames: agent.teams.map((team) => team.name),
-        dateRange: safeFilters.dateRange,
-        ...metrics,
-        ...result,
-        wrapThreshold: WRAP_MINUTES_PER_TALK_HOUR_LIMIT,
-        pauseThreshold: PAUSE_MINUTES_PER_NET_HOUR_LIMIT,
-        status:
-          result.triggeredFlags.length === 2
-            ? "Both flags"
-            : result.triggeredFlags.length === 1
-              ? "Flagged"
-              : "No active flags",
-      };
-    })
-    .filter((row) => {
-      if (safeFilters.wrap === "flagged" && !row.wrapFlag) return false;
-      if (safeFilters.pause === "flagged" && !row.pauseFlag) return false;
-      return row.triggeredFlags.length > 0;
-    });
+  const [metricRows, comparisonMetricRows] = await Promise.all([
+    queryPerformanceMetrics(actor, agentIds, safeFilters.dateRange),
+    safeFilters.dateRange.comparison
+      ? queryPerformanceMetrics(actor, agentIds, safeFilters.dateRange.comparison)
+      : Promise.resolve([]),
+  ]);
+  const allRows = performanceFilter(performanceRows(roster.agents, metricRows, safeFilters.dateRange), safeFilters);
+  const comparisonRows = performanceFilter(performanceRows(roster.agents, comparisonMetricRows, safeFilters.dateRange.comparison ?? {}), safeFilters);
+  const weeklyRows = performanceFilter(weeklyPerformanceRows(roster.agents, metricRows), safeFilters);
+  const analytics = aggregatePerformanceFlags(allRows, weeklyRows);
+  const paginated = paginateRows(allRows, safeFilters.page, safeFilters.pageSize);
   const summary =
     !canViewAggregateFlagSummary(actor)
       ? null
       : {
           scopedAgents: roster.agents.length,
-          flaggedAgents: rows.filter((row) => row.triggeredFlags.length > 0).length,
-          wrapFlags: rows.filter((row) => row.wrapFlag).length,
-          pauseFlags: rows.filter((row) => row.pauseFlag).length,
+          flaggedAgents: allRows.length,
+          wrapFlags: allRows.filter((row) => row.wrapFlag).length,
+          pauseFlags: allRows.filter((row) => row.pauseFlag).length,
+          repeatFlaggedAgents: 0,
         };
 
+  const previousSummary = !safeFilters.dateRange.comparison || comparisonMetricRows.length === 0
+    ? null
+    : {
+        scopedAgents: roster.agents.length,
+        flaggedAgents: comparisonRows.length,
+        wrapFlags: comparisonRows.filter((row) => row.wrapFlag).length,
+        pauseFlags: comparisonRows.filter((row) => row.pauseFlag).length,
+      };
+
   return {
-    rows,
+    rows: paginated.rows,
     summary,
+    previousSummary,
+    analytics,
+    pagination: paginated.pagination,
+    source: {
+      status: metricRows.length > 0 || roster.agents.length === 0 ? "ready" as const : "unavailable" as const,
+      message: metricRows.length > 0 || roster.agents.length === 0 ? null : "No active dialer metrics are available for this period.",
+    },
     ...responseRoster(actor, roster),
     filters: safeFilters,
   };
@@ -221,6 +283,8 @@ export async function getTransferFlagsData(
   actor: Actor,
   filters: FlagFilters & {
     classification?: TransferFlagClassification;
+    page?: number;
+    pageSize?: number;
   },
 ) {
   await assertFlagsViewAccess(actor);
@@ -287,7 +351,7 @@ export async function getTransferFlagsData(
     today,
   });
 
-  const rows = source.status === "ready"
+  const allRows = source.status === "ready"
     ? buildTransferFlagRows({
         agents: roster.agents.map((agent) => ({
           id: agent.id,
@@ -304,20 +368,25 @@ export async function getTransferFlagsData(
         )
         .map((row) => ({ ...row, sourceStatus: source.status }))
     : [];
+  const analytics = aggregateTransferFlags(allRows);
+  const paginated = paginateRows(allRows, safeFilters.page, safeFilters.pageSize);
   const summary =
     !canViewAggregateFlagSummary(actor) || source.status !== "ready"
       ? null
       : {
           scopedAgents: roster.agents.length,
-          strongFlags: rows.filter((row) => row.classification === "strong").length,
-          improvementFlags: rows.filter(
+          strongFlags: allRows.filter((row) => row.classification === "strong").length,
+          improvementFlags: allRows.filter(
             (row) => row.classification === "improvement",
           ).length,
+          repeatFlaggedAgents: analytics.repeatFlaggedAgents,
         };
 
   return {
-    rows,
+    rows: paginated.rows,
     summary,
+    analytics,
+    pagination: paginated.pagination,
     source,
     ...responseRoster(actor, roster),
     filters: safeFilters,

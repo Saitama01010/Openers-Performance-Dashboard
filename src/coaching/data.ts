@@ -27,6 +27,7 @@ import type { DashboardDateWindow } from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
   coachingSessionParticipants,
+  coachingReports,
   coachingSessions,
   profiles,
 } from "@/db/schema";
@@ -57,6 +58,158 @@ export type CoachingRoomRow = {
     teamName: string;
   }>;
 };
+
+export type CoachingSummary = {
+  sessionsCompleted: number;
+  agentsCoached: number;
+  actionsAssigned: number;
+  actionsCompleted: null;
+  completionRate: null;
+  trend: Array<{ date: string; sessions: number; agents: number; actions: number }>;
+};
+
+function coachingScopeCondition(actor: Actor) {
+  return actor.role === "manager"
+    ? actor.teamIds.length > 0
+      ? inArray(coachingSessionParticipants.teamIdSnapshot, actor.teamIds)
+      : emptyScopeCondition()
+    : undefined;
+}
+
+async function coachingSummaryForWindow(
+  actor: Actor,
+  window: DashboardDateWindow,
+  filters: Pick<CoachingRoomFilters, "coachProfileId" | "teamId" | "agentProfileId" | "category"> = {},
+): Promise<CoachingSummary> {
+  const where = and(
+    eq(coachingSessions.organizationId, actorOrganizationId(actor)),
+    coachingScopeCondition(actor),
+    window.from ? sql`${coachingSessions.sessionDate} >= ${window.from}` : undefined,
+    window.to ? sql`${coachingSessions.sessionDate} <= ${window.to}` : undefined,
+    filters.coachProfileId ? eq(coachingSessions.coachProfileId, filters.coachProfileId) : undefined,
+    filters.teamId ? eq(coachingSessionParticipants.teamIdSnapshot, filters.teamId) : undefined,
+    filters.agentProfileId ? eq(coachingSessionParticipants.agentProfileId, filters.agentProfileId) : undefined,
+    filters.category ? eq(coachingSessions.category, filters.category) : undefined,
+  );
+  const rows = await getDb()
+    .select({
+      sessionId: coachingSessions.id,
+      sessionDate: coachingSessions.sessionDate,
+      agentProfileId: coachingSessionParticipants.agentProfileId,
+    })
+    .from(coachingSessions)
+    .innerJoin(
+      coachingSessionParticipants,
+      eq(coachingSessionParticipants.sessionId, coachingSessions.id),
+    )
+    .where(where)
+    .orderBy(asc(coachingSessions.sessionDate));
+
+  const actionRows = rows.length === 0
+    ? []
+    : await getDb()
+        .select({
+          actionItems: coachingReports.actionItems,
+          agentProfileId: coachingReports.agentProfileId,
+          sessionId: coachingReports.coachingSessionId,
+        })
+        .from(coachingReports)
+        .innerJoin(
+          coachingSessionParticipants,
+          and(
+            eq(coachingSessionParticipants.sessionId, coachingReports.coachingSessionId),
+            eq(coachingSessionParticipants.agentProfileId, coachingReports.agentProfileId),
+          ),
+        )
+        .innerJoin(coachingSessions, eq(coachingSessions.id, coachingReports.coachingSessionId))
+        .where(where);
+
+  const sessionIds = new Set(rows.map((row) => row.sessionId));
+  const agentIds = new Set(rows.map((row) => row.agentProfileId));
+  const actionsByDate = new Map<string, number>();
+  const dateBySession = new Map(rows.map((row) => [row.sessionId, String(row.sessionDate)]));
+  let actionsAssigned = 0;
+  for (const row of actionRows) {
+    const count = Array.isArray(row.actionItems) ? row.actionItems.length : 0;
+    actionsAssigned += count;
+    const date = dateBySession.get(row.sessionId);
+    if (date) actionsByDate.set(date, (actionsByDate.get(date) ?? 0) + count);
+  }
+
+  const daily = new Map<string, { sessions: Set<string>; agents: Set<string> }>();
+  for (const row of rows) {
+    const date = String(row.sessionDate);
+    const item = daily.get(date) ?? { sessions: new Set<string>(), agents: new Set<string>() };
+    item.sessions.add(row.sessionId);
+    item.agents.add(row.agentProfileId);
+    daily.set(date, item);
+  }
+
+  return {
+    sessionsCompleted: sessionIds.size,
+    agentsCoached: agentIds.size,
+    actionsAssigned,
+    actionsCompleted: null,
+    completionRate: null,
+    trend: Array.from(daily.entries()).map(([date, item]) => ({
+      date,
+      sessions: item.sessions.size,
+      agents: item.agents.size,
+      actions: actionsByDate.get(date) ?? 0,
+    })),
+  };
+}
+
+export async function getCoachingSummaryData(
+  actor: Actor,
+  input: {
+    dateRange: DashboardDateWindow & { comparison?: (DashboardDateWindow & { label: string }) | null };
+    filters?: Pick<CoachingRoomFilters, "coachProfileId" | "teamId" | "agentProfileId" | "category">;
+  },
+) {
+  await assertCoachingViewAccess(actor);
+  const [current, comparison] = await Promise.all([
+    coachingSummaryForWindow(actor, input.dateRange, input.filters),
+    input.dateRange.comparison
+      ? coachingSummaryForWindow(actor, input.dateRange.comparison, input.filters)
+      : Promise.resolve(null),
+  ]);
+  return { current, comparison, comparisonLabel: input.dateRange.comparison?.label ?? null };
+}
+
+export async function getCoachingParticipantPage(
+  actor: Actor,
+  input: { coachProfileId: string; page: number; pageSize: number; search?: string },
+) {
+  await assertCoachingViewAccess(actor);
+  const [agents, managers] = await Promise.all([
+    listScopedActiveAgents(actor),
+    listOrganizationActiveManagers(actor),
+  ]);
+  const coachAllowed = actor.role === "manager"
+    ? input.coachProfileId === actor.id
+    : input.coachProfileId === actor.id || managers.some((manager) => manager.id === input.coachProfileId);
+  if (!coachAllowed) return { rows: [], page: 1, pageSize: input.pageSize, total: 0 };
+  const query = input.search?.trim().toLocaleLowerCase() ?? "";
+  const filtered = agents.filter((agent) => {
+    const allowed = actor.role === "admin"
+      ? input.coachProfileId === actor.id || agent.managerIds.includes(input.coachProfileId)
+      : true;
+    return allowed && (!query || agent.name.toLocaleLowerCase().includes(query) || agent.teams.some((team) => team.name.toLocaleLowerCase().includes(query)));
+  });
+  const page = Math.min(Math.max(1, input.page), Math.max(1, Math.ceil(filtered.length / input.pageSize)));
+  const start = (page - 1) * input.pageSize;
+  return {
+    rows: filtered.slice(start, start + input.pageSize).map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      teamNames: agent.teams.map((team) => team.name),
+    })),
+    page,
+    pageSize: input.pageSize,
+    total: filtered.length,
+  };
+}
 
 function emptyScopeCondition() {
   return eq(coachingSessions.id, "__empty_scope__");

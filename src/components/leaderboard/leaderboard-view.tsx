@@ -1,16 +1,32 @@
-import Link from "next/link";
+"use client";
 
-import { DashboardFilterToolbar } from "@/components/dashboard/dashboard-filter-toolbar";
-import { MetricPanel } from "@/components/dashboard/performance-visuals";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+
+import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import styles from "@/components/leaderboard/leaderboard-page.module.css";
 import type { OverviewDateRange } from "@/dashboard/date-range";
-import { formatNumber } from "@/import/format";
-import type { LeaderboardData } from "@/leaderboard/data";
 import {
-  nextLeaderboardSort,
-  sortLeaderboardDisplayRows,
-  type LeaderboardSortColumn,
-  type LeaderboardSortState,
-} from "@/leaderboard/sorting";
+  aggregateLeaderboardTrend,
+  calculateLeaderboardConversion,
+  calculateLeaderboardDelta,
+  deriveLeaderboardPodium,
+  leaderboardTotals,
+  prepareLeaderboardRows,
+  type LeaderboardMetric,
+  type LeaderboardPreparedRow,
+  type LeaderboardViewState,
+} from "@/leaderboard/analytics";
+import type { LeaderboardData } from "@/leaderboard/data";
+import type { LeaderboardRow, LeaderboardTrendPoint } from "@/leaderboard/ranking";
+import type { LeaderboardSortColumn } from "@/leaderboard/sorting";
+
+const PAGE_SIZE = 20;
+const EMPTY_LEADERBOARD_ROWS: LeaderboardRow[] = [];
+const metricLabels: Record<LeaderboardMetric, string> = {
+  "closed-deals": "Closed Deals",
+  transfers: "Transfers",
+  conversion: "Conversion",
+};
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -21,500 +37,582 @@ function formatDate(value: string) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function formatDateRange(range: OverviewDateRange) {
+function formatRange(range: OverviewDateRange) {
   if (!range.from || !range.to) return "All available history";
   if (range.from === range.to) return formatDate(range.from);
   return `${formatDate(range.from)} – ${formatDate(range.to)}`;
 }
 
-function sortHref(
-  data: LeaderboardData,
-  dateRange: OverviewDateRange,
-  currentSort: LeaderboardSortState,
-  column: LeaderboardSortColumn,
-) {
-  const nextSort = nextLeaderboardSort(currentSort, column);
-  const params = new URLSearchParams({ range: dateRange.key });
-
-  if (dateRange.key === "custom" && dateRange.from && dateRange.to) {
-    params.set("from", dateRange.from);
-    params.set("to", dateRange.to);
-  }
-  if (data.filters.query) params.set("q", data.filters.query);
-  if (data.filters.teamId) params.set("teamId", data.filters.teamId);
-  if (nextSort) {
-    params.set("sort", nextSort.column);
-    params.set("direction", nextSort.direction);
-  }
-
-  return `/leaderboard?${params.toString()}`;
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
-function sortAriaLabel(
-  label: string,
-  sort: LeaderboardSortState,
-  column: LeaderboardSortColumn,
-) {
-  if (!sort || sort.column !== column) {
-    return `${label} not sorted. Sort descending.`;
-  }
-  if (sort.direction === "desc") {
-    return `${label} sorted descending. Sort ascending.`;
-  }
-  return `${label} sorted ascending. Clear sorting.`;
+function formatMetric(value: number | null, metric: LeaderboardMetric) {
+  if (value === null) return "N/A";
+  return metric === "conversion" ? `${value.toFixed(1)}%` : formatNumber(value);
 }
 
-function ariaSort(
-  sort: LeaderboardSortState,
-  column: LeaderboardSortColumn,
-) {
-  if (sort?.column !== column) return "none";
-  return sort.direction === "asc" ? "ascending" : "descending";
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "—";
+  return `${parts[0][0] ?? ""}${parts[1]?.[0] ?? parts[0][1] ?? ""}`.toLocaleUpperCase("en-US");
 }
 
-function SortLink({
-  column,
-  compact = false,
-  data,
-  dateRange,
+function movementLabel(movement: number | null) {
+  if (movement === null) return "No comparison rank";
+  if (movement > 0) return `Up ${movement}`;
+  if (movement < 0) return `Down ${Math.abs(movement)}`;
+  return "No rank change";
+}
+
+function metricPointValue(point: LeaderboardTrendPoint, metric: LeaderboardMetric) {
+  if (metric === "transfers") return point.transferCount;
+  if (metric === "closed-deals") return point.closedDeals;
+  return calculateLeaderboardConversion(point.closedDeals, point.transferCount);
+}
+
+function sourceTone(status: "healthy" | "partial" | "unavailable") {
+  return status === "healthy" ? "Healthy" : status === "partial" ? "Needs attention" : "Unavailable";
+}
+
+function Sparkline({
+  color,
   label,
-  sort,
+  metric,
+  points,
 }: {
-  column: LeaderboardSortColumn;
-  compact?: boolean;
-  data: LeaderboardData;
-  dateRange: OverviewDateRange;
+  color: string;
   label: string;
-  sort: LeaderboardSortState;
+  metric: LeaderboardMetric;
+  points: LeaderboardTrendPoint[];
 }) {
-  const state = sort?.column === column ? sort.direction : "none";
+  const available = points
+    .map((point) => ({ point, value: metricPointValue(point, metric) }))
+    .filter((entry): entry is { point: LeaderboardTrendPoint; value: number } => entry.value !== null);
+  const [active, setActive] = useState<number | null>(null);
+  if (available.length === 0) {
+    return <span className={styles.sparklineEmpty}>No dated history</span>;
+  }
+  const values = available.map((entry) => entry.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(max - min, 1);
+  const coordinates = available.map((entry, index) => ({
+    ...entry,
+    x: available.length === 1 ? 50 : (index / (available.length - 1)) * 100,
+    y: 31 - ((entry.value - min) / range) * 25,
+  }));
 
   return (
-    <Link
-      aria-label={sortAriaLabel(label, sort, column)}
-      className={`leaderboard-sort-link${
-        compact ? " leaderboard-sort-link--compact" : ""
-      }`}
-      data-active={state === "none" ? undefined : ""}
-      href={sortHref(data, dateRange, sort, column)}
-      scroll={false}
-    >
-      <span>{label}</span>
-      <svg
-        aria-hidden="true"
-        className="leaderboard-sort-link__indicator"
-        data-state={state}
-        viewBox="0 0 12 14"
-      >
-        <path className="leaderboard-sort-link__up" d="m3 5 3-3 3 3" />
-        <path className="leaderboard-sort-link__down" d="m3 9 3 3 3-3" />
+    <span className={styles.sparklineWrap}>
+      <svg aria-label={`${label} dated trend`} className={styles.sparkline} role="group" viewBox="0 0 100 36">
+        <polyline fill="none" points={coordinates.map((point) => `${point.x},${point.y}`).join(" ")} stroke={color} />
+        {coordinates.map((point, index) => (
+          <circle
+            aria-label={`${formatDate(point.point.date)}: ${formatMetric(point.value, metric)}`}
+            cx={point.x}
+            cy={point.y}
+            fill={color}
+            key={point.point.date}
+            onBlur={() => setActive(null)}
+            onClick={(event) => { event.stopPropagation(); setActive(index); }}
+            onFocus={() => setActive(index)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setActive(index);
+              }
+            }}
+            onMouseEnter={() => setActive(index)}
+            onMouseLeave={(event) => {
+              if (!event.currentTarget.contains(document.activeElement)) setActive(null);
+            }}
+            r={active === index ? 3.5 : 2}
+            role="button"
+            tabIndex={0}
+          />
+        ))}
       </svg>
-    </Link>
+      {active !== null && coordinates[active] ? (
+        <span className={styles.sparklineTooltip} role="status">
+          {formatDate(coordinates[active].point.date)} · {formatMetric(coordinates[active].value, metric)}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function KpiCard({
+  current,
+  dateRange,
+  latestSync,
+  metric,
+  onActive,
+  open,
+  previous,
+  sourceStatus,
+  trend,
+}: {
+  current: number | null;
+  dateRange: OverviewDateRange;
+  latestSync: string | null;
+  metric: LeaderboardMetric;
+  onActive: (metric: LeaderboardMetric | null) => void;
+  open: boolean;
+  previous: number | null;
+  sourceStatus: "healthy" | "partial" | "unavailable";
+  trend: LeaderboardTrendPoint[];
+}) {
+  const details = {
+    transfers: { color: "#1765ff", icon: "import" as const, label: "Total Transfers" },
+    "closed-deals": { color: "#16a765", icon: "leaderboard" as const, label: "Closed Deals" },
+    conversion: { color: "#7b42ff", icon: "performance" as const, label: "Conversion Rate %" },
+  }[metric];
+  const tooltipId = `leaderboard-kpi-${metric}-details`;
+  const delta = calculateLeaderboardDelta(current, previous);
+  const deltaTone = (delta.absolute ?? 0) > 0 ? "up" : (delta.absolute ?? 0) < 0 ? "down" : "neutral";
+
+  return (
+    <article
+      aria-label={`${details.label} details`}
+      aria-describedby={open ? tooltipId : undefined}
+      className={styles.kpiCard}
+      data-open={open ? "" : undefined}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) onActive(null); }}
+      onClick={() => onActive(metric)}
+      onFocus={() => onActive(metric)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onActive(null);
+      }}
+      onMouseEnter={() => onActive(metric)}
+      onMouseLeave={(event) => {
+        if (!event.currentTarget.contains(document.activeElement)) onActive(null);
+      }}
+      role="group"
+      style={{ "--leader-color": details.color } as React.CSSProperties}
+      tabIndex={0}
+    >
+      <div className={styles.kpiIdentity}>
+        <span className={styles.kpiIcon}><DashboardIcon name={details.icon} /></span>
+        <div>
+          <p>{details.label}</p>
+          <strong>{formatMetric(current, metric)}</strong>
+          <span className={styles.kpiDelta} data-tone={deltaTone}>
+            {previous === null || delta.absolute === null
+              ? "No equivalent-period comparison"
+              : `${delta.absolute >= 0 ? "↑" : "↓"} ${formatMetric(Math.abs(delta.absolute), metric)}${delta.percentage === null ? "" : ` · ${Math.abs(delta.percentage).toFixed(1)}%`}`}
+          </span>
+        </div>
+      </div>
+      <Sparkline color={details.color} label={details.label} metric={metric} points={trend} />
+      {open ? (
+        <div className={styles.detailPopover} id={tooltipId} role="tooltip">
+          <strong>{details.label}</strong>
+          <span>{dateRange.label} · {formatRange(dateRange)}</span>
+          <dl>
+            <div><dt>Current</dt><dd>{formatMetric(current, metric)}</dd></div>
+            <div><dt>Previous</dt><dd>{formatMetric(previous, metric)}</dd></div>
+            <div><dt>Absolute change</dt><dd>{formatMetric(delta.absolute, metric)}</dd></div>
+            <div><dt>Percentage change</dt><dd>{delta.percentage === null ? "N/A" : `${delta.percentage.toFixed(1)}%`}</dd></div>
+            <div><dt>Source</dt><dd>{sourceTone(sourceStatus)}</dd></div>
+            <div><dt>Last updated</dt><dd>{latestSync ? new Date(latestSync).toLocaleString("en-US") : "N/A"}</dd></div>
+          </dl>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function PodiumCard({
+  active,
+  dateRange,
+  metric,
+  onActive,
+  row,
+  sourceNote,
+}: {
+  active: boolean;
+  dateRange: OverviewDateRange;
+  metric: LeaderboardMetric;
+  onActive: (profileId: string | null) => void;
+  row: LeaderboardPreparedRow;
+  sourceNote: string;
+}) {
+  const rank = row.displayRank;
+  const labels = rank === 1
+    ? { badge: "1", title: "Top performer" }
+    : rank === 2
+      ? { badge: "2", title: "Second place" }
+      : { badge: "3", title: "Third place" };
+  const tooltipId = `leaderboard-podium-${row.profileId}-details`;
+  return (
+    <article
+      aria-describedby={active ? tooltipId : undefined}
+      aria-expanded={active}
+      className={styles.podiumCard}
+      data-active={active ? "" : undefined}
+      data-rank={rank}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) onActive(null); }}
+      onClick={() => onActive(row.profileId)}
+      onFocus={() => onActive(row.profileId)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onActive(null);
+      }}
+      onMouseEnter={() => onActive(row.profileId)}
+      onMouseLeave={(event) => {
+        if (!event.currentTarget.contains(document.activeElement)) onActive(null);
+      }}
+      role="button"
+      tabIndex={0}
+    >
+      <div aria-hidden="true" className={styles.podiumMedal}>
+        {rank === 1 ? <span className={styles.trophy}>♛</span> : null}
+        <strong>{labels.badge}</strong>
+      </div>
+      <span className={styles.monogram}>{initials(row.americanName)}</span>
+      <h3>{row.americanName}</h3>
+      <p>{row.teamName ?? "Unassigned"}</p>
+      {rank === 1 ? <span className={styles.topPerformer}>★ {labels.title}</span> : null}
+      <dl className={styles.podiumStats}>
+        <div><dt>Transfers</dt><dd>{formatNumber(row.transferCount)}</dd></div>
+        <div><dt>Closed Deals</dt><dd>{formatNumber(row.closedDeals)}</dd></div>
+        <div><dt>Conversion</dt><dd>{formatMetric(row.conversion, "conversion")}</dd></div>
+      </dl>
+      <span className={styles.pedestal} aria-hidden="true" />
+      {active ? (
+        <div className={styles.podiumPopover} id={tooltipId} role="tooltip">
+          <strong>Rank {rank} · {metricLabels[metric]}</strong>
+          <span>{row.realName}</span>
+          <span>{row.americanName} · {row.teamName ?? "Unassigned"}</span>
+          <span>{movementLabel(row.movement)}</span>
+          <span>{dateRange.label} · {formatRange(dateRange)}</span>
+          <span>{sourceNote}</span>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function TrendCell({ metric, row }: { metric: LeaderboardMetric; row: LeaderboardPreparedRow }) {
+  const points = row.trend ?? [];
+  if (points.length < 2) {
+    return <span className={styles.limitedTrend}>{points.length === 1 ? "Limited history" : "No history"}</span>;
+  }
+  return <Sparkline color="#16a765" label={`${row.americanName} ${metricLabels[metric]}`} metric={metric} points={points} />;
+}
+
+function EmptyState({ title, description }: { title: string; description: string }) {
+  return (
+    <section className={styles.emptyState}>
+      <span aria-hidden="true">—</span>
+      <h2>{title}</h2>
+      <p>{description}</p>
+    </section>
   );
 }
 
 export function LeaderboardView({
   data,
   dateRange,
-  sort = null,
+  initialView,
 }: {
   data: LeaderboardData;
   dateRange: OverviewDateRange;
-  sort?: LeaderboardSortState;
+  initialView: LeaderboardViewState;
 }) {
-  const totalTransfers =
-    data.status === "ready" ? data.totalTransfers : null;
-  const totalClosedDeals =
-    data.status === "ready" ? data.totalClosedDeals : null;
-  const conversionRate =
-    totalTransfers && totalClosedDeals !== null
-      ? (totalClosedDeals / totalTransfers) * 100
-      : null;
-  const displayRows =
-    data.status === "ready"
-      ? sortLeaderboardDisplayRows(data.rows, sort)
-      : [];
+  const [view, setView] = useState(initialView);
+  const deferredQuery = useDeferredValue(view.query);
+  const effectiveView = useMemo(
+    () => ({ ...view, query: deferredQuery }),
+    [deferredQuery, view],
+  );
+  const rows = data.status === "ready" ? data.rows : EMPTY_LEADERBOARD_ROWS;
+  const preparedScope = useMemo(
+    () => prepareLeaderboardRows(rows, { ...effectiveView, sortBy: effectiveView.metric, direction: "desc", topOnly: false }),
+    [effectiveView, rows],
+  );
+  const displayedRows = useMemo(
+    () => prepareLeaderboardRows(rows, effectiveView),
+    [effectiveView, rows],
+  );
+  const podium = useMemo(
+    () => deriveLeaderboardPodium(rows, effectiveView),
+    [effectiveView, rows],
+  );
+  const scopeRows = preparedScope as LeaderboardRow[];
+  const totals = leaderboardTotals(scopeRows);
+  const trend = aggregateLeaderboardTrend(scopeRows);
+  const currentConversion = calculateLeaderboardConversion(totals.current.closedDeals, totals.current.transferCount);
+  const previousConversion = totals.comparison
+    ? calculateLeaderboardConversion(totals.comparison.closedDeals, totals.comparison.transferCount)
+    : null;
+  const [activeKpi, setActiveKpi] = useState<LeaderboardMetric | null>(null);
+  const [activePodium, setActivePodium] = useState<string | null>(null);
+  const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(displayedRows.length / PAGE_SIZE));
+  const visibleRows = displayedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const updates: Record<string, string | null> = {
+      q: view.query || null,
+      teamId: view.teamId || null,
+      metric: view.metric,
+      sort: view.sortBy,
+      direction: view.direction,
+      top: view.topOnly ? "1" : null,
+    };
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }, [view]);
+
+  const exportHref = useMemo(() => {
+    const params = new URLSearchParams({ range: dateRange.key, metric: view.metric, sort: view.sortBy, direction: view.direction });
+    if (dateRange.key === "custom" && dateRange.from && dateRange.to) {
+      params.set("from", dateRange.from);
+      params.set("to", dateRange.to);
+    }
+    if (view.query) params.set("q", view.query);
+    if (view.teamId) params.set("teamId", view.teamId);
+    if (view.topOnly) params.set("top", "1");
+    return `/api/leaderboard/export?${params.toString()}`;
+  }, [dateRange, view]);
+
+  const transferStatus = data.status !== "ready"
+    ? "unavailable" as const
+    : data.stale || data.transferDiagnosticCount > 0 ? "partial" as const : "healthy" as const;
+  const closedStatus = data.status !== "ready"
+    ? "unavailable" as const
+    : data.stale || data.closedDiagnosticCount > 0 ? "partial" as const : "healthy" as const;
+  const conversionStatus = transferStatus === "unavailable" || closedStatus === "unavailable"
+    ? "unavailable" as const
+    : transferStatus === "partial" || closedStatus === "partial" ? "partial" as const : "healthy" as const;
+  const latestSync = data.status === "ready" ? data.latestSynchronization : null;
+  const sourceNote = `Transfers: ${sourceTone(transferStatus)} · Closed Deals: ${sourceTone(closedStatus)}`;
+
+  function updateView(updater: (current: LeaderboardViewState) => LeaderboardViewState) {
+    setPage(1);
+    setView(updater);
+  }
+
+  function updateMetric(metric: LeaderboardMetric) {
+    updateView((current) => ({ ...current, metric, sortBy: metric, direction: "desc" }));
+  }
+
+  function updateSort(column: LeaderboardSortColumn) {
+    updateView((current) => ({
+      ...current,
+      sortBy: column,
+      direction: current.sortBy === column && current.direction === "desc" ? "asc" : "desc",
+    }));
+  }
 
   return (
-    <>
-      <section aria-labelledby="leaderboard-kpis-heading">
-        <div className="section-heading section-heading--inline">
-          <div>
-            <p className="section-heading__overline">Leaderboard signals</p>
-            <h2 id="leaderboard-kpis-heading">Transfer and outcome snapshot</h2>
-          </div>
-          <p>
-            {dateRange.label} <strong>{formatDateRange(dateRange)}</strong>
-          </p>
-        </div>
-        <div className="metric-panel-grid leaderboard-kpi-grid">
-          <MetricPanel
-            animatedValue={
-              totalTransfers === null
-                ? undefined
-                : { format: "count", value: totalTransfers }
-            }
-            detail={
-              totalTransfers === null
-                ? "The Xfers source is not available for this reporting window."
-                : "Valid Xfers rows matched to active agents."
-            }
-            icon="import"
-            label="Total transfers"
-            value={
-              totalTransfers === null
-                ? "Unavailable"
-                : formatNumber(totalTransfers)
-            }
-          />
-          <MetricPanel
-            animatedValue={
-              totalClosedDeals === null
-                ? undefined
-                : { format: "count", value: totalClosedDeals }
-            }
-            detail="Valid Closed rows matched to active agents."
-            icon="leaderboard"
-            label="Closed Deals"
-            tone="green"
-            value={
-              totalClosedDeals === null
-                ? "Unavailable"
-                : formatNumber(totalClosedDeals)
-            }
-          />
-          <MetricPanel
-            detail="Matched closed deals divided by matched transfers."
-            icon="performance"
-            label="Conversion Rate %"
-            tone="violet"
-            value={
-              conversionRate === null
-                ? "Unavailable"
-                : `${conversionRate.toFixed(1)}%`
-            }
-          />
-        </div>
-      </section>
-
-      <section aria-labelledby="leaderboard-filters-heading" className="leaderboard-filter-section">
-        <h2 className="sr-only" id="leaderboard-filters-heading">
-          Filter LeaderBoard
-        </h2>
-        <DashboardFilterToolbar
-          ariaLabel="Leaderboard filters"
-          filters={[
-            {
-              kind: "combobox",
-              label: "Agent",
-              name: "q",
-              value: data.filters.query,
-              options: [
-                { label: "All agents", value: "" },
-                ...data.rows.map((row) => ({
-                  label: `${row.realName} — ${row.americanName}`,
-                  value: row.realName,
-                })),
-              ],
-            },
-            {
-              label: "Team",
-              name: "teamId",
-              value: data.filters.teamId,
-              options: [
-                { label: "All teams", value: "" },
-                ...data.teams.map((team) => ({ label: team.name, value: team.id })),
-              ],
-            },
-          ]}
+    <div className={styles.content}>
+      <section aria-label="Leaderboard summary" className={styles.kpiGrid}>
+        <KpiCard
+          current={data.status === "ready" ? totals.current.transferCount : null}
+          dateRange={dateRange}
+          latestSync={latestSync}
+          metric="transfers"
+          onActive={setActiveKpi}
+          open={activeKpi === "transfers"}
+          previous={totals.comparison?.transferCount ?? null}
+          sourceStatus={transferStatus}
+          trend={trend}
+        />
+        <KpiCard
+          current={data.status === "ready" ? totals.current.closedDeals : null}
+          dateRange={dateRange}
+          latestSync={latestSync}
+          metric="closed-deals"
+          onActive={setActiveKpi}
+          open={activeKpi === "closed-deals"}
+          previous={totals.comparison?.closedDeals ?? null}
+          sourceStatus={closedStatus}
+          trend={trend}
+        />
+        <KpiCard
+          current={data.status === "ready" ? currentConversion : null}
+          dateRange={dateRange}
+          latestSync={latestSync}
+          metric="conversion"
+          onActive={setActiveKpi}
+          open={activeKpi === "conversion"}
+          previous={previousConversion}
+          sourceStatus={conversionStatus}
+          trend={trend}
         />
       </section>
 
-      {data.status === "ready" && data.stale ? (
-        <section
-          className="ui-card ui-card--padded leaderboard-state-card"
-          role="status"
-        >
-          <p className="text-sm text-muted">
-            Showing the last successful ranking because the latest source
-            refresh could not be completed.
-          </p>
+      {data.status === "ready" && (data.stale || transferStatus === "partial" || closedStatus === "partial") ? (
+        <section className={styles.sourceBanner} role="status">
+          <DashboardIcon name="info" />
+          <div><strong>Some source rows need attention</strong><span>{sourceNote}. Valid matched records remain authoritative.</span></div>
         </section>
       ) : null}
+
+      {data.status === "ready" && podium.length > 0 ? (
+        <section aria-labelledby="leaderboard-podium-title" className={styles.podiumSection}>
+          <h2 className={styles.srOnly} id="leaderboard-podium-title">Top three openers</h2>
+          <div className={styles.lightBurst} aria-hidden="true" />
+          <div className={styles.podiumGrid}>
+            {[podium[1], podium[0], podium[2]].filter(Boolean).map((row) => (
+              <PodiumCard
+                active={activePodium === row.profileId || highlightedRow === row.profileId}
+                dateRange={dateRange}
+                key={row.profileId}
+                metric={view.metric}
+                onActive={setActivePodium}
+                row={row}
+                sourceNote={sourceNote}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section aria-label="Opener rankings" className={styles.rankingPanel}>
+        <div className={styles.toolbar}>
+          <label className={styles.searchControl}>
+            <span className={styles.srOnly}>Search agents</span>
+            <DashboardIcon name="search" />
+            <input
+              onChange={(event) => updateView((current) => ({ ...current, query: event.target.value }))}
+              placeholder="Search agents…"
+              type="search"
+              value={view.query}
+            />
+          </label>
+          <label className={styles.selectControl}>
+            <span className={styles.srOnly}>Filter by team</span>
+            <select onChange={(event) => updateView((current) => ({ ...current, teamId: event.target.value }))} value={view.teamId}>
+              <option value="">All teams</option>
+              {data.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+            </select>
+            <DashboardIcon name="chevronDown" />
+          </label>
+          <label className={styles.selectControl}>
+            <span>Sort by</span>
+            <select onChange={(event) => updateView((current) => ({ ...current, sortBy: event.target.value as LeaderboardSortColumn }))} value={view.sortBy}>
+              <option value="closed-deals">Closed Deals</option>
+              <option value="transfers">Transfers</option>
+              <option value="conversion">Conversion</option>
+            </select>
+            <DashboardIcon name="chevronDown" />
+          </label>
+          <label className={styles.selectControl}>
+            <span>Order</span>
+            <select onChange={(event) => updateView((current) => ({ ...current, direction: event.target.value === "asc" ? "asc" : "desc" }))} value={view.direction}>
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+            <DashboardIcon name="chevronDown" />
+          </label>
+          <div aria-label="Ranking metric" className={styles.metricSelector} role="group">
+            {(Object.keys(metricLabels) as LeaderboardMetric[]).map((metric) => (
+              <button aria-pressed={view.metric === metric} key={metric} onClick={() => updateMetric(metric)} type="button">
+                {metricLabels[metric]}
+              </button>
+            ))}
+          </div>
+          <label className={styles.topToggle}>
+            <input checked={view.topOnly} onChange={(event) => updateView((current) => ({ ...current, topOnly: event.target.checked }))} type="checkbox" />
+            <span aria-hidden="true"><i /></span>
+            Top performers only
+          </label>
+          <a className={styles.exportButton} download href={exportHref}>
+            <DashboardIcon name="import" /> Export
+          </a>
+        </div>
+
+        {data.status === "unconfigured" ? (
+          <EmptyState title="LeaderBoard is awaiting transfer data" description={data.message} />
+        ) : data.status === "source_error" ? (
+          <EmptyState title="Transfer source needs attention" description={data.message} />
+        ) : data.status === "closed_error" ? (
+          <EmptyState title="Closed source needs attention" description={data.message} />
+        ) : displayedRows.length === 0 ? (
+          <EmptyState title="No ranking data found" description="No authorized openers match the active search and team filters." />
+        ) : (
+          <>
+            <div className={styles.tableMeta}>
+              <div><h2 id="leaderboard-table-heading">Opener rankings</h2><p>Ranked by {metricLabels[view.metric].toLocaleLowerCase("en-US")} within the selected authorized scope.</p></div>
+              <strong>{formatNumber(displayedRows.length)} {displayedRows.length === 1 ? "opener" : "openers"}</strong>
+            </div>
+            <div aria-label="LeaderBoard rankings. Scroll horizontally inside this region to view all columns." className={styles.tableScroller} role="region" tabIndex={0}>
+              <table className={styles.table}>
+                <caption>Authorized LeaderBoard results for {formatRange(dateRange)}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Real Name</th>
+                    <th scope="col">American Name</th>
+                    <th scope="col">Team</th>
+                    <th aria-sort={view.sortBy === "transfers" ? (view.direction === "asc" ? "ascending" : "descending") : "none"} scope="col"><button onClick={() => updateSort("transfers")} type="button">Transfers ↕</button></th>
+                    <th aria-sort={view.sortBy === "closed-deals" ? (view.direction === "asc" ? "ascending" : "descending") : "none"} scope="col"><button onClick={() => updateSort("closed-deals")} type="button">Closed Deals ↕</button></th>
+                    <th aria-sort={view.sortBy === "conversion" ? (view.direction === "asc" ? "ascending" : "descending") : "none"} scope="col"><button onClick={() => updateSort("conversion")} type="button">Conversion % ↕</button></th>
+                    <th scope="col">Trend</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.map((row) => (
+                    <tr
+                      data-highlighted={highlightedRow === row.profileId ? "" : undefined}
+                      data-podium={row.displayRank <= 3 ? row.displayRank : undefined}
+                      key={row.profileId}
+                      onBlur={() => setHighlightedRow(null)}
+                      onFocus={() => setHighlightedRow(row.profileId)}
+                      onMouseEnter={() => setHighlightedRow(row.profileId)}
+                      onMouseLeave={() => setHighlightedRow(null)}
+                      tabIndex={0}
+                    >
+                      <td><span className={styles.rankBadge} data-rank={row.displayRank <= 3 ? row.displayRank : undefined}>{row.displayRank <= 3 ? "♛" : null} {row.displayRank}</span><small data-tone={(row.movement ?? 0) > 0 ? "up" : (row.movement ?? 0) < 0 ? "down" : "neutral"}>{row.movement === null ? "—" : row.movement > 0 ? `↑ ${row.movement}` : row.movement < 0 ? `↓ ${Math.abs(row.movement)}` : "—"}</small></td>
+                      <th scope="row">{row.realName}</th>
+                      <td>{row.americanName}</td>
+                      <td><span className={styles.teamPill}>{row.teamName ?? "Unassigned"}</span></td>
+                      <td className={styles.numeric}>{formatNumber(row.transferCount)}</td>
+                      <td className={`${styles.numeric} ${view.metric === "closed-deals" ? styles.activeMetric : ""}`}>{formatNumber(row.closedDeals)}</td>
+                      <td className={styles.numeric}><span className={styles.conversionPill} data-tone={(row.conversion ?? 0) >= 40 ? "high" : (row.conversion ?? 0) >= 25 ? "medium" : "low"}>{formatMetric(row.conversion, "conversion")}</span></td>
+                      <td><TrendCell metric={view.metric} row={row} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className={styles.pagination}>
+              <span>Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, displayedRows.length)} of {displayedRows.length}</span>
+              <div>
+                <button disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} type="button">Previous</button>
+                <strong>{page} / {pageCount}</strong>
+                <button disabled={page >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))} type="button">Next</button>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
 
       {data.status === "ready" && data.closedSourceEmpty ? (
-        <section
-          className="ui-card ui-card--padded leaderboard-state-card"
-          role="status"
-        >
-          <p className="text-sm text-muted">
-            The Closed source is connected, but no closed-deal submissions
-            were found.
-          </p>
-        </section>
+        <p className={styles.quietStatus} role="status">The Closed source is connected, but no closed-deal submissions were found.</p>
       ) : null}
 
-      {data.status === "unconfigured" ? (
-        <section
-          aria-labelledby="leaderboard-unconfigured"
-          className="ui-card ui-card--padded leaderboard-state-card"
-        >
-          <div className="mx-auto max-w-2xl py-10 text-center">
-            <div
-              aria-hidden="true"
-              className="mx-auto flex size-12 items-center justify-center rounded-full border border-border bg-background text-xl"
-            >
-              —
-            </div>
-            <h2
-              className="mt-4 text-lg font-semibold"
-              id="leaderboard-unconfigured"
-            >
-              LeaderBoard is awaiting transfer data
-            </h2>
-            <p className="mt-2 text-sm text-muted">{data.message}</p>
-            <p className="mt-2 text-sm text-muted">
-              Rankings will appear after the server-only Google Apps Script
-              connection is configured.
-            </p>
-          </div>
-        </section>
-      ) : data.status === "source_error" ? (
-        <section
-          aria-labelledby="leaderboard-source-error"
-          className="ui-card ui-card--padded leaderboard-state-card"
-          role="alert"
-        >
-          <div className="mx-auto max-w-2xl py-10 text-center">
-            <h2
-              className="text-lg font-semibold"
-              id="leaderboard-source-error"
-            >
-              Transfer source needs attention
-            </h2>
-            <p className="mt-2 text-sm text-muted">{data.message}</p>
-            <p className="mt-2 text-sm text-muted">
-              Verify the Xfers response format, then retry this page.
-            </p>
-          </div>
-        </section>
-      ) : data.status === "closed_error" ? (
-        <section
-          aria-labelledby="leaderboard-closed-error"
-          className="ui-card ui-card--padded leaderboard-state-card"
-          role="alert"
-        >
-          <div className="mx-auto max-w-2xl py-10 text-center">
-            <h2
-              className="text-lg font-semibold"
-              id="leaderboard-closed-error"
-            >
-              Closed source needs attention
-            </h2>
-            <p className="mt-2 text-sm text-muted">{data.message}</p>
-            <p className="mt-2 text-sm text-muted">
-              Xfers remains connected, but rankings require a valid Closed
-              worksheet response.
-            </p>
-          </div>
-        </section>
-      ) : data.rows.length === 0 ? (
-        <section className="ui-card ui-card--padded leaderboard-state-card">
-          <div className="py-10 text-center">
-            <h2 className="text-lg font-semibold">No ranking data found</h2>
-            <p className="mt-2 text-sm text-muted">
-              No active agents matched the selected search and team filters.
-            </p>
-          </div>
-        </section>
-      ) : (
-        <section className="ui-card leaderboard-table-card">
-          <div className="ui-card__header">
-            <div>
-              <h2 className="ui-card__title">Closed-deal rankings</h2>
-              <p className="ui-card__subtitle">
-                Ranked by matched Closed rows, then American Name.
-              </p>
-            </div>
-            <p className="leaderboard-table-card__count">
-              {formatNumber(data.rows.length)}{" "}
-              {data.rows.length === 1 ? "opener" : "openers"}
-            </p>
-          </div>
-          <div
-            aria-label="Closed-deal rankings. Scroll horizontally to view all columns."
-            className="hidden overflow-x-auto md:block"
-            role="region"
-            tabIndex={0}
-          >
-            <table className="ui-table">
-              <caption>Closed-deal ranking for all authenticated users</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Rank</th>
-                  <th scope="col">Real Name</th>
-                  <th scope="col">American Name</th>
-                  <th scope="col">Team</th>
-                  <th
-                    aria-sort={ariaSort(sort, "transfers")}
-                    className="numeric leaderboard-sort-heading"
-                    scope="col"
-                  >
-                    <SortLink
-                      column="transfers"
-                      data={data}
-                      dateRange={dateRange}
-                      label="Transfers"
-                      sort={sort}
-                    />
-                  </th>
-                  <th
-                    aria-sort={ariaSort(sort, "closed-deals")}
-                    className="numeric leaderboard-sort-heading"
-                    scope="col"
-                  >
-                    <SortLink
-                      column="closed-deals"
-                      data={data}
-                      dateRange={dateRange}
-                      label="Closed Deals"
-                      sort={sort}
-                    />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayRows.map((row) => (
-                  <tr key={row.profileId}>
-                    <td className="numeric">{row.rank}</td>
-                    <th scope="row">{row.realName}</th>
-                    <td>{row.americanName}</td>
-                    <td>{row.teamName ?? "Unassigned"}</td>
-                    <td className="numeric">{row.transferCount}</td>
-                    <td className="numeric">{row.closedDeals}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div
-            aria-label="Leaderboard sorting"
-            className="leaderboard-mobile-sort md:hidden"
-          >
-            <p>Sort rows</p>
-            <div>
-              <SortLink
-                column="transfers"
-                compact
-                data={data}
-                dateRange={dateRange}
-                label="Transfers"
-                sort={sort}
-              />
-              <SortLink
-                column="closed-deals"
-                compact
-                data={data}
-                dateRange={dateRange}
-                label="Closed Deals"
-                sort={sort}
-              />
-            </div>
-          </div>
-          <ol className="leaderboard-mobile-list md:hidden">
-            {displayRows.map((row) => (
-              <li key={row.profileId}>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      Rank {row.rank}
-                    </p>
-                    <h2 className="mt-1 font-semibold">{row.realName}</h2>
-                    <p className="text-sm text-muted">{row.americanName}</p>
-                    <p className="mt-2 text-sm">
-                      {row.teamName ?? "Unassigned"}
-                    </p>
-                  </div>
-                  <dl className="leaderboard-mobile-metrics">
-                    <div>
-                      <dt>Transfers</dt>
-                      <dd>{row.transferCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Closed Deals</dt>
-                      <dd>{row.closedDeals}</dd>
-                    </div>
-                  </dl>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      {"closedDiagnostics" in data && data.closedDiagnostics ? (
-        <section
-          aria-labelledby="closed-diagnostics-heading"
-          className="ui-card ui-card--padded"
-        >
-          <div className="section-heading">
-            <p className="section-heading__overline">Administrator diagnostics</p>
-            <h2 id="closed-diagnostics-heading">Closed source health</h2>
-          </div>
-          <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <dt className="text-xs text-muted">Connection</dt>
-              <dd>{data.closedDiagnostics.connectionStatus}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Worksheet</dt>
-              <dd>{data.closedDiagnostics.worksheet}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Headers</dt>
-              <dd>{data.closedDiagnostics.headerValidationStatus}</dd>
-            </div>
-            {"totalNonEmptyRows" in data.closedDiagnostics ? (
-              <>
-                <div>
-                  <dt className="text-xs text-muted">Non-empty rows</dt>
-                  <dd>{formatNumber(data.closedDiagnostics.totalNonEmptyRows)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Valid rows</dt>
-                  <dd>{formatNumber(data.closedDiagnostics.validRows)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Matched rows</dt>
-                  <dd>{formatNumber(data.closedDiagnostics.matchedRows)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Unmatched rows</dt>
-                  <dd>{formatNumber(data.closedDiagnostics.unmatchedRows)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Ambiguous rows</dt>
-                  <dd>{formatNumber(data.closedDiagnostics.ambiguousRows)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Invalid rows</dt>
-                  <dd>{formatNumber(data.closedDiagnostics.invalidRows)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Invalid timestamps</dt>
-                  <dd>
-                    {formatNumber(data.closedDiagnostics.invalidTimestampRows)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Last synchronization</dt>
-                  <dd>{data.closedDiagnostics.lastSuccessfulSynchronization}</dd>
-                </div>
-              </>
-            ) : null}
+      {data.status === "ready" && data.closedDiagnostics ? (
+        <details className={styles.diagnostics}>
+          <summary>Administrator source diagnostics</summary>
+          <dl>
+            <div><dt>Connection</dt><dd>{data.closedDiagnostics.connectionStatus}</dd></div>
+            <div><dt>Worksheet</dt><dd>{data.closedDiagnostics.worksheet}</dd></div>
+            <div><dt>Valid rows</dt><dd>{formatNumber(data.closedDiagnostics.validRows)}</dd></div>
+            <div><dt>Matched rows</dt><dd>{formatNumber(data.closedDiagnostics.matchedRows)}</dd></div>
+            <div><dt>Unmatched rows</dt><dd>{formatNumber(data.closedDiagnostics.unmatchedRows)}</dd></div>
+            <div><dt>Invalid rows</dt><dd>{formatNumber(data.closedDiagnostics.invalidRows)}</dd></div>
           </dl>
-        </section>
+        </details>
       ) : null}
-    </>
+    </div>
   );
 }

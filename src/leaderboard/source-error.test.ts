@@ -83,7 +83,7 @@ describe("LeaderBoard transfer-source errors", () => {
     });
   });
 
-  it("does not convert unexpected failures into configuration errors", async () => {
+  it("renders unexpected transfer-source failures as a controlled unavailable state", async () => {
     mocks.ingestAndMatchLeaderboardSources.mockRejectedValueOnce(
       new Error("Database or network failure"),
     );
@@ -93,7 +93,14 @@ describe("LeaderBoard transfer-source errors", () => {
         { id: "admin-1", role: "admin", teamIds: [] },
         {},
       ),
-    ).rejects.toThrow("Database or network failure");
+    ).resolves.toEqual({
+      status: "source_error",
+      message:
+        "The transfer source could not be loaded right now. Retry after checking the Xfers connection.",
+      rows: [],
+      teams: [{ id: "team-1", name: "Team One" }],
+      filters: {},
+    });
   });
 
   it("isolates a Closed configuration error while preserving safe Xfers status", async () => {
@@ -215,6 +222,14 @@ describe("LeaderBoard transfer-source errors", () => {
       transferCount: 0,
       closedDeals: 1,
       rank: 1,
+      comparison: null,
+      trend: [
+        {
+          date: "2026-07-12",
+          transferCount: 0,
+          closedDeals: 1,
+        },
+      ],
     });
     expect(result.closedDiagnostics).toMatchObject({
       matchedRows: 1,

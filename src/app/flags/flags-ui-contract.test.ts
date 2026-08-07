@@ -2,9 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const performancePage = readFileSync("src/app/flags/performance/page.tsx", "utf8");
-const transferPage = readFileSync("src/app/flags/transfers/page.tsx", "utf8");
 const coachingLeaderboard = readFileSync("src/app/coaching/leaderboard/page.tsx", "utf8");
-const coachingDialog = readFileSync("src/app/coaching/room/new-coaching-session-dialog.tsx", "utf8");
+const coachingComposer = readFileSync("src/components/dashboard/coaching/coaching-session-composer.tsx", "utf8");
 const globalStyles = readFileSync("src/app/globals.css", "utf8");
 const workspacePages = [
   "src/app/dashboard/page.tsx",
@@ -20,16 +19,18 @@ const workspacePages = [
 ].map((path) => readFileSync(path, "utf8"));
 
 describe("coaching and flags UI contract", () => {
-  it("uses exactly the requested six Performance Flag headers", () => {
-    for (const label of ["Agent", "Team", "Talk Time", "Wrap Time", "Pause Time", "Triggered Flag"]) {
-      expect(performancePage).toContain(`>${label}<`);
+  it("uses the approved Performance Flag headers and real severity fallback", () => {
+    const client = readFileSync("src/components/dashboard/flags/flags-page-client.tsx", "utf8");
+    for (const label of ["Agent", "Team", "Talk Time", "Wrap Time", "Pause Time", "Triggered Flag", "Severity", "Action"]) {
+      expect(client).toContain(`>${label}<`);
     }
-    for (const removed of ["Week", "Wrap / Talk Hour", "Wrap Limit", "Net Counted", "Pause / Net Hour", "Pause Limit", "Status"]) {
-      expect(performancePage).not.toContain(`>${removed}<`);
+    for (const removed of ["Wrap / Talk Hour", "Wrap Limit", "Net Counted", "Pause / Net Hour", "Pause Limit", "Status"]) {
+      expect(client).not.toContain(`>${removed}<`);
     }
-    expect(performancePage).toContain("No active flags");
-    expect(performancePage).toContain("min per talk hour, above the");
-    expect(performancePage).toContain("min per net counted hour, above the");
+    expect(client).toContain("No active flags");
+    expect(client).toContain("min per talk hour, above the");
+    expect(client).toContain("min per net counted hour, above the");
+    expect(client).toContain("No authoritative severity policy is configured");
   });
 
   it("renders Manager and Agent as real single-select controls", () => {
@@ -51,13 +52,13 @@ describe("coaching and flags UI contract", () => {
     expect(agentFilter).toContain("value: agent.id");
   });
 
-  it("uses exactly the requested four Transfer Flag headers and no fake unavailable rows", () => {
-    for (const label of ["Agent", "Team", "Closed Deals This Week", "Flag Type"]) {
-      expect(transferPage).toContain(`>${label}<`);
+  it("uses the approved Transfer Flag headers and no fake unavailable rows", () => {
+    const client = readFileSync("src/components/dashboard/flags/flags-page-client.tsx", "utf8");
+    for (const label of ["Agent", "Team", "Closed Deals This Week", "Week Range", "Flag Type", "Severity", "Action"]) {
+      expect(client).toContain(`>${label}<`);
     }
-    expect(transferPage).not.toContain(">Source Status<");
-    expect(transferPage).not.toContain(">Week<");
-    expect(transferPage).toContain("Missing-source data was not classified as zero deals");
+    expect(client).not.toContain(">Source Status<");
+    expect(client).toContain("Missing-source data was not classified as zero deals");
   });
 
   it("uses exactly six Coaching Leaderboard headers and an accessible progress bar", () => {
@@ -72,13 +73,14 @@ describe("coaching and flags UI contract", () => {
     expect(globalStyles).toContain("animation: none");
   });
 
-  it("uses a wide native modal with searchable persistent checkbox selection", () => {
-    expect(coachingDialog).toContain('aria-modal="true"');
-    expect(coachingDialog).toContain("onCancel");
-    expect(coachingDialog).toContain('type="checkbox"');
-    expect(coachingDialog).toContain("Select all visible");
-    expect(coachingDialog).toContain("Clear selected");
-    expect(coachingDialog).toContain("selectedIds");
+  it("uses an inline four-step composer with persistent paginated selection", () => {
+    expect(coachingComposer).not.toContain('aria-modal="true"');
+    expect(coachingComposer).toContain("Participants");
+    expect(coachingComposer).toContain("Review & confirm");
+    expect(coachingComposer).toContain('type="checkbox"');
+    expect(coachingComposer).toContain("Select all visible");
+    expect(coachingComposer).toContain("new Map(current)");
+    expect(coachingComposer).toContain("/api/coaching/participants");
   });
 
   it("has no read-only Apply filters or week-only inputs on workspace pages", () => {

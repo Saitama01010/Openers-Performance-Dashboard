@@ -1,0 +1,1 @@
+ALTER TABLE `performance_targets` ADD `visible_to_non_admins` boolean DEFAULT true NOT NULL;

@@ -5,9 +5,11 @@ export type DashboardIconName =
   | "agent"
   | "arrowRight"
   | "audit"
+  | "bell"
   | "calendar"
   | "calls"
   | "close"
+  | "chevronDown"
   | "coaching"
   | "commissions"
   | "dashboard"
@@ -22,6 +24,7 @@ export type DashboardIconName =
   | "permissions"
   | "ringing"
   | "search"
+  | "signOut"
   | "talk"
   | "teams"
   | "untracked"
@@ -54,6 +57,12 @@ export function DashboardIcon({
         <path d="M8 12h8M8 16h5" />
       </>
     ),
+    bell: (
+      <>
+        <path d="M6 17h12l-1.5-2.3V10a4.5 4.5 0 0 0-9 0v4.7z" />
+        <path d="M10 20h4" />
+      </>
+    ),
     calendar: (
       <>
         <rect height="16" rx="2" width="18" x="3" y="5" />
@@ -69,6 +78,7 @@ export function DashboardIcon({
         <path d="M18 6 6 18" />
       </>
     ),
+    chevronDown: <path d="m7 10 5 5 5-5" />,
     coaching: (
       <>
         <path d="M4 5h16v11H9l-5 4z" />
@@ -158,6 +168,12 @@ export function DashboardIcon({
       <>
         <circle cx="10.5" cy="10.5" r="6.5" />
         <path d="m15.5 15.5 4 4" />
+      </>
+    ),
+    signOut: (
+      <>
+        <path d="M10 5H5v14h5" />
+        <path d="M13 8l4 4-4 4M8 12h9" />
       </>
     ),
     talk: (

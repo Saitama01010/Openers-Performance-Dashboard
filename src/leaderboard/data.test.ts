@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import {
   buildClosedDealLeaderboardRows,
+  buildLeaderboardAnalyticsRows,
   countScopedTransfers,
 } from "@/leaderboard/data";
 import type {
@@ -175,6 +176,34 @@ describe("Closed LeaderBoard aggregation", () => {
       "Africa/Cairo",
     );
     expect(rows[0].closedDeals).toBe(0);
+  });
+
+  it("builds honest Cairo daily trends and equivalent-period comparisons", () => {
+    const rows = buildLeaderboardAnalyticsRows(
+      [users.gia],
+      [
+        closedDeal("gia", new Date("2026-08-01T20:59:59.000Z")),
+        closedDeal("gia", new Date("2026-08-01T21:00:00.000Z")),
+        closedDeal("gia", new Date("2026-07-01T21:00:00.000Z")),
+      ],
+      { from: "2026-08-01", to: "2026-08-02" },
+      "Africa/Cairo",
+      [
+        matchedTransfer(users.gia, new Date("2026-08-01T21:30:00.000Z"), 2),
+        matchedTransfer(users.gia, new Date("2026-07-01T21:30:00.000Z"), 3),
+      ],
+      { from: "2026-07-01", to: "2026-07-02" },
+    );
+
+    expect(rows[0]).toMatchObject({
+      transferCount: 1,
+      closedDeals: 2,
+      comparison: { transferCount: 1, closedDeals: 1 },
+      trend: [
+        { date: "2026-08-01", transferCount: 0, closedDeals: 1 },
+        { date: "2026-08-02", transferCount: 1, closedDeals: 1 },
+      ],
+    });
   });
 });
 

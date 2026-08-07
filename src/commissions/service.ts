@@ -36,6 +36,18 @@ export type CommissionReport =
       message: string;
     };
 
+export type CommissionDashboard =
+  | {
+      status: "ready";
+      report: ReadyCommissionReport;
+      history: ReadyCommissionReport[];
+    }
+  | {
+      status: "source_unavailable";
+      month: CommissionMonth;
+      message: string;
+    };
+
 export type CommissionReportOptions = {
   commissionMonth?: string;
   teamId?: string;
@@ -52,6 +64,8 @@ function actorScopeWhere(actor: Actor) {
   }
   return undefined;
 }
+
+type CommissionTeam = { id: string; name: string };
 
 async function listVisibleTeams(actor: Actor) {
   const rows = await getDb()
@@ -71,7 +85,11 @@ async function listVisibleTeams(actor: Actor) {
   return rows;
 }
 
-async function resolveCommissionRoster(actor: Actor, month: CommissionMonth) {
+async function resolveCommissionRoster(
+  actor: Actor,
+  month: CommissionMonth,
+  visibleTeams?: CommissionTeam[],
+) {
   const organizationId = actorOrganizationId(actor);
   const [profileRows, teamRows] = await Promise.all([
     getDb()
@@ -115,7 +133,7 @@ async function resolveCommissionRoster(actor: Actor, month: CommissionMonth) {
         ),
       )
       .orderBy(asc(profiles.name), asc(profiles.id)),
-    listVisibleTeams(actor),
+    visibleTeams ?? listVisibleTeams(actor),
   ]);
 
   const profilesById = new Map<string, (typeof profileRows)[number]>();
@@ -188,6 +206,19 @@ async function resolveCommissionRoster(actor: Actor, month: CommissionMonth) {
   return { employees, teams: teamRows };
 }
 
+function commissionHistoryKeys(selectedMonth: string, count = 6) {
+  const [yearText, monthText] = selectedMonth.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  return Array.from({ length: count }, (_, index) => {
+    const offset = count - index - 1;
+    const value = year * 12 + month - 1 - offset;
+    const resolvedYear = Math.floor(value / 12);
+    const resolvedMonth = value % 12 + 1;
+    return `${String(resolvedYear).padStart(4, "0")}-${String(resolvedMonth).padStart(2, "0")}`;
+  });
+}
+
 export async function getCommissionReport(
   actor: Actor,
   options: CommissionReportOptions = {},
@@ -240,11 +271,103 @@ export async function getCommissionReport(
       teams: roster.teams,
       selectedTeamId: options.teamId,
       stale: ingestion.stale,
+      sourceFetchedAt: ingestion.fetchedAt,
+      closedGeneratedAt: ingestion.closedGeneratedAt,
     });
   } catch {
     return {
       status: "source_unavailable",
       month,
+      message: "The Closed worksheet source could not be loaded.",
+    };
+  }
+}
+
+export async function getCommissionDashboard(
+  actor: Actor,
+  options: Omit<CommissionReportOptions, "purpose"> = {},
+): Promise<CommissionDashboard> {
+  await assertCommissionsViewAccess(actor);
+  assertCommissionTeamFilter(actor, options.teamId);
+
+  const timeZone = getEnv().GOOGLE_SHEETS_TIMEZONE;
+  const selectedMonth = resolveCommissionMonth(
+    options.commissionMonth,
+    options.now,
+    timeZone,
+  );
+  const visibleTeams = await listVisibleTeams(actor);
+  if (
+    options.teamId &&
+    !visibleTeams.some((team) => team.id === options.teamId)
+  ) {
+    throw new Error("Forbidden");
+  }
+
+  const months = commissionHistoryKeys(selectedMonth.key).map((key) =>
+    resolveCommissionMonth(key, options.now, timeZone),
+  );
+  const rosters = await Promise.all(
+    months.map((month) => resolveCommissionRoster(actor, month, visibleTeams)),
+  );
+  const employeesById = new Map<string, CommissionEmployee>();
+  for (const roster of rosters) {
+    for (const employee of roster.employees) employeesById.set(employee.id, employee);
+  }
+
+  const config = transferSheetConfigFromEnv();
+  if (!config) {
+    return {
+      status: "source_unavailable",
+      month: selectedMonth,
+      message: "The Closed worksheet source is not configured.",
+    };
+  }
+
+  try {
+    const ingestion = await ingestAndMatchLeaderboardSources(
+      Array.from(employeesById.values()).flatMap((employee) =>
+        employee.americanName
+          ? [{
+              id: employee.id,
+              realName: employee.realName,
+              americanName: employee.americanName,
+              teamId: employee.team?.id ?? null,
+              teamName: employee.team?.name ?? null,
+            }]
+          : [],
+      ),
+      config,
+    );
+    if (ingestion.status !== "ready") {
+      return {
+        status: "source_unavailable",
+        month: selectedMonth,
+        message: ingestion.message,
+      };
+    }
+
+    const history = months.map((month, index) =>
+      buildCommissionReport({
+        role: actor.role,
+        month,
+        timeZone: ingestion.timeZone,
+        employees: rosters[index]?.employees ?? [],
+        deals: ingestion.closedRecords,
+        teams: visibleTeams,
+        selectedTeamId: options.teamId,
+        stale: ingestion.stale,
+        sourceFetchedAt: ingestion.fetchedAt,
+        closedGeneratedAt: ingestion.closedGeneratedAt,
+      }),
+    );
+    const report = history.at(-1);
+    if (!report) throw new Error("Commission history could not be resolved.");
+    return { status: "ready", report, history };
+  } catch {
+    return {
+      status: "source_unavailable",
+      month: selectedMonth,
       message: "The Closed worksheet source could not be loaded.",
     };
   }

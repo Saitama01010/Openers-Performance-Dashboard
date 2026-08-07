@@ -182,11 +182,20 @@ describe("compact import preview table state", () => {
     ).toBe("Agent 004");
     expect(
       filterPreviewAgents(agents, {
+        include: "excluded",
         query: "",
-        status: "excluded",
+        status: "all",
         team: "all",
       }),
     ).toHaveLength(4);
+    expect(
+      filterPreviewAgents(agents, {
+        include: "included",
+        query: "",
+        status: "all",
+        team: "all",
+      }),
+    ).toHaveLength(1);
     expect(
       filterPreviewAgents(agents, {
         query: "",

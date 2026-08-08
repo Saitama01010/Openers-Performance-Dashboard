@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
+import { AreaTrend } from "@/components/ui/area-trend";
 import { calculatePerformanceDelta, productivityStatePercentage, type PerformanceSeriesPoint } from "@/performance/aggregations";
 import type { PerformancePageData, PerformanceSource } from "@/performance/data";
 import styles from "@/components/dashboard/performance/performance-page.module.css";
@@ -154,18 +155,6 @@ function MenuButton({ children, onClick }: { children: ReactNode; onClick: () =>
   return <button onClick={onClick} role="menuitem" type="button">{children}</button>;
 }
 
-function Sparkline({ color, values }: { color: string; values: Array<number | null> }) {
-  const available = values.map((value, index) => value === null ? null : { value, index }).filter((value): value is { value: number; index: number } => value !== null);
-  if (available.length < 2) return <span className={styles.sparklineEmpty} aria-hidden="true" />;
-  const max = Math.max(...available.map((item) => item.value), 1);
-  const points = available.map((item) => `${(item.index / Math.max(1, values.length - 1)) * 100},${28 - (item.value / max) * 24}`).join(" ");
-  return (
-    <svg aria-hidden="true" className={styles.sparkline} viewBox="0 0 100 32">
-      <polyline fill="none" points={points} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-    </svg>
-  );
-}
-
 function MetricCard({
   color,
   current,
@@ -188,7 +177,7 @@ function MetricCard({
   id: string;
   label: string;
   previous: number | null;
-  series: Array<number | null>;
+  series: Array<{ label: string; value: number | null }>;
   sources: PerformanceSource[];
 }) {
   const [pinned, setPinned] = useState(false);
@@ -238,7 +227,14 @@ function MetricCard({
       <p className={styles.metricTrend} data-tone={trendTone}>
         <span>{trend}</span> vs {data.comparison?.label ?? "previous period"}
       </p>
-      <Sparkline color={color} values={series} />
+      <AreaTrend
+        ariaLabel={`${label} trend`}
+        className={styles.sparkline}
+        color={color}
+        emptyLabel="No trend history"
+        formatValue={(value) => format(value)}
+        points={series}
+      />
       <p className={styles.metricDescription} id={`${id}-description`}>{description}</p>
       <div className={styles.metricTooltip} role="tooltip">
         <strong>{label}</strong>
@@ -678,10 +674,10 @@ export function PerformancePageClient({ data, exportHref }: { data: PerformanceP
   return (
     <div className={styles.content}>
       <div className={styles.kpiGrid}>
-        <MetricCard color="#1767f2" current={data.totals.transfers} data={data} description="Total transfers in the active scope" format={formatNumber} icon="calls" id="performance-transfers" label="Transfers" previous={previous?.transfers ?? null} series={data.series.map((row) => row.transfers)} sources={[data.sources.transfers]} />
-        <MetricCard color="#20ae68" current={data.totals.closedDeals} data={data} description="Total closed deals in the active scope" format={formatNumber} icon="leaderboard" id="performance-closed-deals" label="Closed Deals" previous={previous?.closedDeals ?? null} series={data.series.map((row) => row.closedDeals)} sources={[data.sources.closedDeals]} />
-        <MetricCard color="#f47b20" current={data.totals.loggedInSeconds} data={data} description="Total active time in the system" format={formatDuration} icon="freshness" id="performance-logged-in" label="Logged-in Time" previous={previous?.loggedInSeconds ?? null} series={data.series.map((row) => row.loggedInSeconds)} sources={[data.sources.dialer]} />
-        <MetricCard color="#7c3aed" current={data.totals.closedDealRate} data={data} description="Closed deals divided by transfers" format={formatPercent} icon="performance" id="performance-rate" label="Closed Deal Rate" previous={previous?.closedDealRate ?? null} series={data.series.map((row) => row.closedDealRate)} sources={[data.sources.transfers, data.sources.closedDeals]} />
+        <MetricCard color="#1767f2" current={data.totals.transfers} data={data} description="Total transfers in the active scope" format={formatNumber} icon="calls" id="performance-transfers" label="Transfers" previous={previous?.transfers ?? null} series={data.series.map((row) => ({ label: formatDate(row.rangeStart, data.granularity, row.rangeEnd), value: row.transfers }))} sources={[data.sources.transfers]} />
+        <MetricCard color="#20ae68" current={data.totals.closedDeals} data={data} description="Total closed deals in the active scope" format={formatNumber} icon="leaderboard" id="performance-closed-deals" label="Closed Deals" previous={previous?.closedDeals ?? null} series={data.series.map((row) => ({ label: formatDate(row.rangeStart, data.granularity, row.rangeEnd), value: row.closedDeals }))} sources={[data.sources.closedDeals]} />
+        <MetricCard color="#f47b20" current={data.totals.loggedInSeconds} data={data} description="Total active time in the system" format={formatDuration} icon="freshness" id="performance-logged-in" label="Logged-in Time" previous={previous?.loggedInSeconds ?? null} series={data.series.map((row) => ({ label: formatDate(row.rangeStart, data.granularity, row.rangeEnd), value: row.loggedInSeconds }))} sources={[data.sources.dialer]} />
+        <MetricCard color="#7c3aed" current={data.totals.closedDealRate} data={data} description="Closed deals divided by transfers" format={formatPercent} icon="performance" id="performance-rate" label="Closed Deal Rate" previous={previous?.closedDealRate ?? null} series={data.series.map((row) => ({ label: formatDate(row.rangeStart, data.granularity, row.rangeEnd), value: row.closedDealRate }))} sources={[data.sources.transfers, data.sources.closedDeals]} />
       </div>
       <SourceBanner data={data} />
       <div className={styles.analyticsGrid}>

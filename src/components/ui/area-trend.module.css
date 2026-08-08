@@ -1,0 +1,89 @@
+/* Direction: compact operational area charts with restrained depth and truthful interaction states. */
+.root {
+  --area-trend-color: #1f5eff;
+  display: block;
+  min-width: 0;
+  position: relative;
+  width: 100%;
+}
+
+.root[data-size="compact"] { height: 2.5rem; }
+.root[data-size="standard"] { height: 4rem; }
+.root[data-size="large"] { height: 6.5rem; }
+
+.chart {
+  display: block;
+  height: 100%;
+  outline: none;
+  overflow: visible;
+  width: 100%;
+}
+
+.chart:focus-visible {
+  border-radius: 6px;
+  outline: 3px solid rgb(31 94 255 / 22%);
+  outline-offset: 2px;
+}
+
+.area { pointer-events: none; }
+
+.line {
+  pointer-events: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.crosshair {
+  pointer-events: none;
+  stroke: color-mix(in srgb, var(--area-trend-color) 60%, #5c6b82);
+  stroke-dasharray: 2 2;
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.activeDot {
+  filter: drop-shadow(0 2px 3px rgb(6 21 47 / 25%));
+  pointer-events: none;
+  stroke: #fff;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.tooltip {
+  background: rgb(6 21 47 / 94%);
+  border-radius: 6px;
+  bottom: calc(100% + 0.35rem);
+  box-shadow: 0 8px 20px rgb(6 21 47 / 18%);
+  color: #fff;
+  display: grid;
+  font-size: 0.6875rem;
+  gap: 0.1rem;
+  left: var(--area-trend-active-x);
+  line-height: 1.2;
+  max-width: 10rem;
+  min-width: max-content;
+  padding: 0.38rem 0.48rem;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 12;
+}
+
+.tooltip[data-edge="start"] { transform: none; }
+.tooltip[data-edge="end"] { transform: translateX(-100%); }
+.tooltip > span { color: #b9c6d8; }
+.tooltip > strong { font-variant-numeric: tabular-nums; }
+
+.empty {
+  align-items: center;
+  color: #5c6b82;
+  display: flex;
+  font-size: 0.6875rem;
+  min-height: 2.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart { scroll-behavior: auto; }
+}

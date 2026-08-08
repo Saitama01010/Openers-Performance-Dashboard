@@ -138,18 +138,6 @@
   width: 100%;
 }
 
-.sparkline polyline {
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2;
-  transition: stroke-width 180ms ease;
-}
-
-.kpi:focus-within .sparkline polyline,
-.kpi:hover .sparkline polyline { stroke-width: 3; }
-.sparklineEmpty { display: block; height: 1.25rem; }
-
 .kpiPopover {
   background: #0a1e3d;
   border-radius: 0.55rem;

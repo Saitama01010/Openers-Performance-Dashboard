@@ -14,6 +14,7 @@ import { useFormStatus } from "react-dom";
 import styles from "@/components/dashboard/admin-overview/admin-overview.module.css";
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import { OverviewDateFilter } from "@/components/dashboard/overview-date-filter";
+import { AreaTrend } from "@/components/ui/area-trend";
 import {
   createRubricTemplateDialogAction,
   createTargetDialogAction,
@@ -103,24 +104,6 @@ function Panel({
   );
 }
 
-function Sparkline({ values, tone }: { values: Array<number | null>; tone: string }) {
-  const ready = values.flatMap((value) => value === null ? [] : [value]);
-  if (ready.length < 2) return <span aria-hidden="true" className={styles.sparklineEmpty} />;
-  const max = Math.max(...ready);
-  const min = Math.min(...ready);
-  const range = Math.max(1, max - min);
-  const points = values.map((value, index) => {
-    const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100;
-    const y = value === null ? 28 : 28 - ((value - min) / range) * 22;
-    return `${x},${y}`;
-  }).join(" ");
-  return (
-    <svg aria-hidden="true" className={styles.sparkline} viewBox="0 0 100 32">
-      <polyline points={points} style={{ stroke: tone }} />
-    </svg>
-  );
-}
-
 function KpiCard({
   attention,
   comparisonLabel,
@@ -138,7 +121,7 @@ function KpiCard({
   comparisonLabel: string | null;
   current: number | null;
   format?: (value: number | null) => string;
-  history: Array<number | null>;
+  history: Array<{ label: string; value: number | null }>;
   icon: DashboardIconName;
   id: string;
   label: string;
@@ -168,7 +151,15 @@ function KpiCard({
           {delta ? `${delta.absolute > 0 ? "↑" : delta.absolute < 0 ? "↓" : "—"} ${formatNumber(Math.abs(delta.absolute))}${delta.percentage === null ? "" : ` (${formatPercent(Math.abs(delta.percentage))})`}` : "—"}
         </span>
         <span className={styles.comparison}>{comparisonLabel ? `vs ${comparisonLabel}` : "No comparable period"}</span>
-        <Sparkline tone={tone} values={history} />
+        <AreaTrend
+          ariaLabel={`${label} monthly trend`}
+          className={styles.sparkline}
+          color={tone}
+          emptyLabel="No monthly trend"
+          formatValue={(value) => format(value)}
+          interactive={false}
+          points={history}
+        />
       </button>
       {open ? (
         <div className={styles.kpiPopover} role="status">
@@ -445,9 +436,9 @@ export function AdminOverviewClient({ data }: { data: AdminDashboardData }) {
   const params = new URLSearchParams({ range: data.period.key });
   if (data.period.key === "custom" && data.period.from && data.period.to) { params.set("from", data.period.from); params.set("to", data.period.to); }
   const kpis = [
-    { id: "overview-metric-transfers", label: "Transfers", current: metricValue(data.company.transfers), previous: comparison ? metricValue(comparison.transfers) : null, format: formatNumber, icon: "performance" as const, tone: "#1767f2", history: history.map((month) => month.transfers.value), source: data.company.transfers.status },
-    { id: "overview-metric-closed-deals", label: "Closed Deals", current: metricValue(data.company.closedDeals), previous: comparison ? metricValue(comparison.closedDeals) : null, format: formatNumber, icon: "leaderboard" as const, tone: "#16a66a", history: history.map((month) => month.closedDeals.value), source: data.company.closedDeals.status },
-    { id: "overview-metric-conversion", label: "Conversion", current: data.company.conversion, previous: comparison?.conversion ?? null, format: formatPercent, icon: "activity" as const, tone: "#f28705", history: history.map((month) => month.conversion), source: data.company.conversion === null ? "unavailable" : "ready" },
+    { id: "overview-metric-transfers", label: "Transfers", current: metricValue(data.company.transfers), previous: comparison ? metricValue(comparison.transfers) : null, format: formatNumber, icon: "performance" as const, tone: "#1767f2", history: history.map((month) => ({ label: month.label, value: month.transfers.value })), source: data.company.transfers.status },
+    { id: "overview-metric-closed-deals", label: "Closed Deals", current: metricValue(data.company.closedDeals), previous: comparison ? metricValue(comparison.closedDeals) : null, format: formatNumber, icon: "leaderboard" as const, tone: "#16a66a", history: history.map((month) => ({ label: month.label, value: month.closedDeals.value })), source: data.company.closedDeals.status },
+    { id: "overview-metric-conversion", label: "Conversion", current: data.company.conversion, previous: comparison?.conversion ?? null, format: formatPercent, icon: "activity" as const, tone: "#f28705", history: history.map((month) => ({ label: month.label, value: month.conversion })), source: data.company.conversion === null ? "unavailable" : "ready" },
     { id: "overview-metric-commissions", label: "Total Commissions", current: data.company.totalCommissions, previous: null, format: formatMoney, icon: "commissions" as const, tone: "#ef355d", history: [], source: data.company.totalCommissions === null ? "unavailable" : "ready" },
     { id: "overview-metric-headcount", label: "Active Headcount", current: data.company.activeHeadcount, previous: null, format: formatNumber, icon: "users" as const, tone: "#8055e8", history: [], source: "ready" },
     { id: "overview-metric-deactivated", label: "Deactivated Employees", current: data.company.deactivatedHeadcount, previous: null, format: formatNumber, icon: "agent" as const, tone: "#8a52db", history: [], source: "ready" },

@@ -10,6 +10,7 @@ import {
   type AgentDirectorySortKey,
 } from "@/agents/directory-analytics";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { AreaTrend } from "@/components/ui/area-trend";
 import styles from "@/components/dashboard/agents/agents-page.module.css";
 
 const SORT_OPTIONS: Array<{ value: AgentDirectorySortKey; label: string }> = [
@@ -67,29 +68,16 @@ function Comparison({ current, previous, suffix }: { current: number | null; pre
   );
 }
 
-function Sparkline({ values, label, color = "#1769ef", large = false }: { values: Array<number | null>; label: string; color?: string; large?: boolean }) {
-  const available = values.flatMap((value, index) => value === null ? [] : [{ value, index }]);
-  if (available.length < 2) return <span className={styles.noTrend}>No trend</span>;
-  const min = Math.min(...available.map((point) => point.value));
-  const max = Math.max(...available.map((point) => point.value));
-  const spread = Math.max(max - min, 1);
-  const width = large ? 320 : 76;
-  const height = large ? 92 : 28;
-  const points = available.map((point) => {
-    const x = (point.index / Math.max(values.length - 1, 1)) * width;
-    const y = height - 5 - ((point.value - min) / spread) * (height - 10);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
+function Sparkline({ values, labels, label, color = "#1769ef", large = false }: { values: Array<number | null>; labels?: string[]; label: string; color?: string; large?: boolean }) {
   return (
-    <svg aria-label={label} className={large ? styles.largeSparkline : styles.sparkline} role="img" viewBox={`0 0 ${width} ${height}`}>
-      {large ? <path d={`M0 ${height - 5}H${width}`} stroke="#dfe7f4" strokeDasharray="3 4" /> : null}
-      <polyline fill="none" points={points} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={large ? 2.4 : 1.8} />
-      {large ? available.map((point) => {
-        const x = (point.index / Math.max(values.length - 1, 1)) * width;
-        const y = height - 5 - ((point.value - min) / spread) * (height - 10);
-        return <circle cx={x} cy={y} fill="#fff" key={point.index} r="2.5" stroke={color} strokeWidth="1.6" />;
-      }) : null}
-    </svg>
+    <AreaTrend
+      ariaLabel={label}
+      className={large ? styles.largeSparkline : styles.sparkline}
+      color={color}
+      emptyLabel="No trend"
+      points={values.map((value, index) => ({ label: labels?.[index] ?? `Period ${index + 1}`, value }))}
+      size={large ? "large" : "compact"}
+    />
   );
 }
 
@@ -271,7 +259,7 @@ export function AgentsPageClient({ data, exportHref }: { data: AgentDirectoryDat
                         <td className={styles.numeric}>{formatNumber(row.closedDeals)}</td>
                         <td className={styles.numeric}>{formatPercentage(row.conversion)}</td>
                         <td className={styles.numeric}>{formatPercentage(row.talkPercentage)}</td>
-                        <td><Sparkline color={initialColor(row.realName)} label={`${SORT_OPTIONS.find((option) => option.value === data.filters.sortBy)?.label} trend for ${row.realName}`} values={trendValues(row, data.filters.sortBy)} /></td>
+                        <td><Sparkline color={initialColor(row.realName)} label={`${SORT_OPTIONS.find((option) => option.value === data.filters.sortBy)?.label} trend for ${row.realName}`} labels={row.trend.map((point) => point.date)} values={trendValues(row, data.filters.sortBy)} /></td>
                         <td><button aria-label={`Open ${row.realName} preview`} className={styles.rowButton} onClick={(event) => { event.stopPropagation(); select(row); }} type="button"><DashboardIcon name="arrowRight" /></button></td>
                       </tr>
                     );
@@ -308,7 +296,7 @@ export function AgentsPageClient({ data, exportHref }: { data: AgentDirectoryDat
               </div>
               <section className={styles.previewChart}>
                 <div><h3>Talk % trend</h3><span>Last {selected.trend.length || 0} recorded days</span></div>
-                <Sparkline color="#1769ef" label={`Talk percentage trend for ${selected.realName}`} large values={selected.trend.map((point) => point.talkPercentage)} />
+                <Sparkline color="#1769ef" label={`Talk percentage trend for ${selected.realName}`} labels={selected.trend.map((point) => point.date)} large values={selected.trend.map((point) => point.talkPercentage)} />
               </section>
               <section className={styles.previewActions}>
                 <h3>What opens next</h3>

@@ -288,7 +288,6 @@
 .statusBadge:not([data-status="active"]) { background: #eef1f5; color: #536078; }
 .numeric { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sparkline { display: block; height: 28px; overflow: visible; width: 76px; }
-.noTrend { color: #8a95a8; display: inline-block; font-size: 9px; min-width: 54px; text-align: center; }
 .rowButton { border: 0; min-height: 44px; min-width: 44px; }
 .rowButton svg { height: 16px; width: 16px; }
 

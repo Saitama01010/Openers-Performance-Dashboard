@@ -28,11 +28,6 @@
 .kpiComparison[data-direction="down"] { color: #d6434e; }
 .kpiCard > .muted { grid-column: 1 / -1; }
 .spark { align-self: end; grid-column: 1 / -1; min-height: 34px; position: relative; }
-.spark svg { display: block; height: 34px; overflow: visible; width: 100%; }
-.spark path { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
-.spark circle { fill: #fff; stroke: currentColor; stroke-width: 1.8; }
-.sparkTip { background: #0b2143; border-radius: 6px; color: #fff; display: none; font-size: 8px; padding: 5px 7px; pointer-events: none; position: absolute; right: 0; top: -20px; z-index: 3; }
-.spark:focus-within .sparkTip, .spark:hover .sparkTip { display: block; }
 .content { display: grid; gap: 12px; }
 .panel { background: #fff; border: 1px solid var(--coach-line); border-radius: 11px; box-shadow: 0 5px 16px rgb(15 35 68 / 4%); overflow: hidden; }
 .panelHeader { align-items: center; display: flex; gap: 12px; justify-content: space-between; padding: 14px 16px 10px; }
@@ -118,7 +113,7 @@
 .error { color: #c93643; font-size: 10px; margin: 10px 0 0; }
 .success { background: #e7f7ed; border: 1px solid #bde8ce; border-radius: 8px; color: #126f40; font-size: 10px; padding: 10px 12px; }
 
-.tab:focus-visible, .button:focus-visible, .secondaryButton:focus-visible, .reset:focus-visible, .export:focus-visible, .filters select:focus-visible, .filters input:focus-visible, .spark:focus-visible, .pagination a:focus-visible, .formGrid input:focus-visible, .formGrid select:focus-visible, .formGrid textarea:focus-visible, .searchBox:focus-visible, .participant input:focus-visible, .selectedList button:focus-visible { outline: 2px solid var(--coach-blue); outline-offset: 2px; }
+.tab:focus-visible, .button:focus-visible, .secondaryButton:focus-visible, .reset:focus-visible, .export:focus-visible, .filters select:focus-visible, .filters input:focus-visible, .pagination a:focus-visible, .formGrid input:focus-visible, .formGrid select:focus-visible, .formGrid textarea:focus-visible, .searchBox:focus-visible, .participant input:focus-visible, .selectedList button:focus-visible { outline: 2px solid var(--coach-blue); outline-offset: 2px; }
 
 @media (max-width: 1280px) { .kpiGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpiGrid[data-columns="4"] { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } .composerGrid { grid-template-columns: 150px minmax(0, 1.3fr) minmax(260px, .8fr); } }
 @media (max-width: 1024px) { .page { padding: 18px 16px 28px; } .header { flex-direction: column; } .headerActions { justify-content: flex-start; width: 100%; } .composerGrid { grid-template-columns: 140px 1fr; } .summary { border-left: 0; border-top: 1px solid var(--coach-line); grid-column: 1 / -1; } }

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import styles from "@/components/dashboard/flags/flags-page.module.css";
+import { AreaTrend } from "@/components/ui/area-trend";
 import type { getPerformanceFlagsData, getTransferFlagsData } from "@/flags/data";
 import { TRANSFER_FLAG_LABELS } from "@/flags/domain";
 import { formatDurationSeconds } from "@/import/format";
@@ -42,20 +43,6 @@ function comparison(current: number, previous: number | undefined) {
   return { delta, percentage };
 }
 
-function Sparkline({ values, color, label }: { values: number[]; color: string; label: string }) {
-  if (values.length < 2) return <span className={styles.noTrend}>No trend history</span>;
-  const maximum = Math.max(1, ...values);
-  const minimum = Math.min(...values);
-  const spread = Math.max(1, maximum - minimum);
-  const points = values.map((value, index) => `${5 + (index / Math.max(1, values.length - 1)) * 80},${27 - ((value - minimum) / spread) * 20}`).join(" ");
-  return (
-    <svg aria-label={`${label} weekly trend`} className={styles.sparkline} role="img" viewBox="0 0 90 34">
-      <polyline fill="none" points={points} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-      {values.map((value, index) => <circle cx={5 + (index / Math.max(1, values.length - 1)) * 80} cy={27 - ((value - minimum) / spread) * 20} fill="#fff" key={index} r="2.5" stroke={color}><title>{`Period ${index + 1}: ${value}`}</title></circle>)}
-    </svg>
-  );
-}
-
 function KpiCard({
   color,
   current,
@@ -89,7 +76,14 @@ function KpiCard({
             {change ? `${change.delta > 0 ? "↑" : change.delta < 0 ? "↓" : "—"} ${Math.abs(change.delta)}${change.percentage === null ? "" : ` (${Math.abs(change.percentage).toFixed(1)}%)`} vs ${range.comparison?.label ?? "prior period"}` : source === "ready" ? "No comparable period" : "Source unavailable"}
           </span>
         </span>
-        <Sparkline color={color} label={label} values={trend} />
+        <AreaTrend
+          ariaLabel={`${label} weekly trend`}
+          className={styles.sparkline}
+          color={color}
+          emptyLabel="No trend history"
+          interactive={false}
+          points={trend.map((value, index) => ({ label: `Period ${index + 1}`, value }))}
+        />
       </summary>
       <div className={styles.kpiPopover} role="tooltip">
         <strong>{label}</strong>

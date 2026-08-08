@@ -145,30 +145,7 @@
 
 .sparklineWrap { display: block; min-width: 0; position: relative; }
 .sparkline { display: block; height: 2.8rem; overflow: visible; width: 100%; }
-.sparkline polyline { stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; transition: filter 160ms ease, stroke-width 160ms ease; }
-.kpiCard:hover .sparkline polyline,
-.kpiCard:focus-visible .sparkline polyline,
-.kpiCard[data-open] .sparkline polyline,
-tr:hover .sparkline polyline,
-tr:focus-visible .sparkline polyline { filter: drop-shadow(0 2px 3px rgb(23 101 255 / 0.22)); stroke-width: 2.7; }
-.sparkline circle { cursor: pointer; outline: none; stroke: #fff; stroke-width: 1.2; transition: r 150ms ease; }
-.sparkline circle:focus-visible { outline: 2px solid #1765ff; outline-offset: 1px; }
-.sparklineEmpty,
 .limitedTrend { color: #8794a8; font-size: 0.6rem; white-space: nowrap; }
-.sparklineTooltip {
-  background: #0c2145;
-  border-radius: 0.35rem;
-  bottom: calc(100% + 0.3rem);
-  color: #fff;
-  font-size: 0.58rem;
-  left: 50%;
-  padding: 0.3rem 0.4rem;
-  pointer-events: none;
-  position: absolute;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  z-index: 9;
-}
 
 .detailPopover,
 .podiumPopover {
@@ -592,8 +569,6 @@ tr:focus-visible .sparkline polyline { filter: drop-shadow(0 2px 3px rgb(23 101 
 @media (prefers-reduced-motion: reduce) {
   .kpiCard,
   .kpiIcon,
-  .sparkline polyline,
-  .sparkline circle,
   .podiumCard,
   .metricSelector button,
   .topToggle > span,

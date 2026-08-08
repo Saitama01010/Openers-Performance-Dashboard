@@ -29,9 +29,6 @@
 .kpiComparison[data-direction="up"] { color: #13864b; }
 .kpiComparison[data-direction="down"] { color: #cf3949; }
 .sparkline { height: 36px; overflow: visible; width: 90px; }
-.sparkline circle { opacity: 0; }
-.sparkline:hover circle, .sparkline:focus circle { opacity: 1; }
-.noTrend { color: #8995a8; font-size: 8px; text-align: right; }
 .kpiPopover { background: #0b203f; border-radius: 8px; box-shadow: 0 12px 28px rgb(8 26 54 / 28%); color: #fff; display: none; font-size: 9px; gap: 5px; left: 14px; min-width: 220px; padding: 11px 12px; position: absolute; top: calc(100% - 3px); z-index: 20; }
 .kpiCard[open] .kpiPopover { display: grid; }
 .kpiPopover > span { align-items: center; color: #c8d4e6; display: flex; justify-content: space-between; }

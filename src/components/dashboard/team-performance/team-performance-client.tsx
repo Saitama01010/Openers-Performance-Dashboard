@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { AreaTrend } from "@/components/ui/area-trend";
 import {
   metricValue,
   type TeamPerformanceData,
@@ -67,16 +68,20 @@ function Comparison({ current, previous, points = false }: { current: number | n
 }
 
 function MiniTrend({ row, metric, color = "#1769ef" }: { row: TeamPerformanceRow; metric: TeamPerformanceMetric; color?: string }) {
-  const values = row.trend.flatMap((point) => {
+  const points = row.trend.map((point) => {
     const value = metric === "transfers" ? point.transfers : metric === "closed-deals" ? point.closedDeals : point.conversion;
-    return value === null ? [] : [value];
+    return { label: point.date, value };
   });
-  if (values.length < 2) return <span className={styles.noTrend}>No trend</span>;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const spread = Math.max(1, max - min);
-  const points = values.map((value, index) => `${(index / Math.max(1, values.length - 1)) * 78},${25 - ((value - min) / spread) * 20}`).join(" ");
-  return <svg aria-label={`${metricLabel(metric)} trend for ${row.teamName}`} className={styles.miniTrend} role="img" viewBox="0 0 78 30"><polyline fill="none" points={points} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" /></svg>;
+  return (
+    <AreaTrend
+      ariaLabel={`${metricLabel(metric)} trend for ${row.teamName}`}
+      className={styles.miniTrend}
+      color={color}
+      emptyLabel="No trend"
+      formatValue={(value) => metric === "conversion" ? formatPercent(value) : formatNumber(value)}
+      points={points}
+    />
+  );
 }
 
 function KpiCard({ label, value, icon, color, children }: { label: string; value: string; icon: "teams" | "calls" | "leaderboard" | "performance" | "freshness"; color: string; children: React.ReactNode }) {

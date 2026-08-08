@@ -4,6 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import styles from "@/components/leaderboard/leaderboard-page.module.css";
+import { AreaTrend } from "@/components/ui/area-trend";
 import type { OverviewDateRange } from "@/dashboard/date-range";
 import {
   aggregateLeaderboardTrend,
@@ -86,58 +87,16 @@ function Sparkline({
   metric: LeaderboardMetric;
   points: LeaderboardTrendPoint[];
 }) {
-  const available = points
-    .map((point) => ({ point, value: metricPointValue(point, metric) }))
-    .filter((entry): entry is { point: LeaderboardTrendPoint; value: number } => entry.value !== null);
-  const [active, setActive] = useState<number | null>(null);
-  if (available.length === 0) {
-    return <span className={styles.sparklineEmpty}>No dated history</span>;
-  }
-  const values = available.map((entry) => entry.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(max - min, 1);
-  const coordinates = available.map((entry, index) => ({
-    ...entry,
-    x: available.length === 1 ? 50 : (index / (available.length - 1)) * 100,
-    y: 31 - ((entry.value - min) / range) * 25,
-  }));
-
   return (
     <span className={styles.sparklineWrap}>
-      <svg aria-label={`${label} dated trend`} className={styles.sparkline} role="group" viewBox="0 0 100 36">
-        <polyline fill="none" points={coordinates.map((point) => `${point.x},${point.y}`).join(" ")} stroke={color} />
-        {coordinates.map((point, index) => (
-          <circle
-            aria-label={`${formatDate(point.point.date)}: ${formatMetric(point.value, metric)}`}
-            cx={point.x}
-            cy={point.y}
-            fill={color}
-            key={point.point.date}
-            onBlur={() => setActive(null)}
-            onClick={(event) => { event.stopPropagation(); setActive(index); }}
-            onFocus={() => setActive(index)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setActive(index);
-              }
-            }}
-            onMouseEnter={() => setActive(index)}
-            onMouseLeave={(event) => {
-              if (!event.currentTarget.contains(document.activeElement)) setActive(null);
-            }}
-            r={active === index ? 3.5 : 2}
-            role="button"
-            tabIndex={0}
-          />
-        ))}
-      </svg>
-      {active !== null && coordinates[active] ? (
-        <span className={styles.sparklineTooltip} role="status">
-          {formatDate(coordinates[active].point.date)} · {formatMetric(coordinates[active].value, metric)}
-        </span>
-      ) : null}
+      <AreaTrend
+        ariaLabel={`${label} dated trend`}
+        className={styles.sparkline}
+        color={color}
+        emptyLabel="No dated history"
+        formatValue={(value) => formatMetric(value, metric)}
+        points={points.map((point) => ({ label: formatDate(point.date), value: metricPointValue(point, metric) }))}
+      />
     </span>
   );
 }

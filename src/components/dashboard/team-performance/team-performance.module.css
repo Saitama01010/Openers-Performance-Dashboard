@@ -146,7 +146,7 @@
 .healthBadge[data-health="healthy"] { background: #e4f6ec; color: #16814a; }
 .healthBadge[data-health="under-target"] { background: #fde9eb; color: #c73544; }
 .healthBadge[data-health="not-configured"] { background: #fff3d9; color: #9c6810; }
-.noTarget, .noTrend { color: var(--team-muted); font-size: 8px; }
+.noTarget { color: var(--team-muted); font-size: 8px; }
 .rowAction { align-items: center; border: 1px solid #d9e1ed; border-radius: 6px; color: #1f3d69; display: inline-flex; height: 44px; justify-content: center; width: 44px; }
 .rowAction svg { height: 14px; width: 14px; }
 .miniTrend { height: 30px; width: 78px; }

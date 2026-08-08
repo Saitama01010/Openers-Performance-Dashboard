@@ -20,8 +20,9 @@ export type PreviewSortKey =
 export type PreviewStatusFilter =
   | "all"
   | AgentMappingStatus
-  | "excluded"
   | "invalid_rows";
+
+export type PreviewIncludeFilter = "all" | "included" | "excluded";
 
 export const mappingStatusLabels: Record<AgentMappingStatus, string> = {
   mapped: "Mapped",
@@ -60,6 +61,7 @@ export function getPreviewTeams(agents: AgentPreviewSummary[]) {
 export function filterPreviewAgents(
   agents: AgentPreviewSummary[],
   filters: {
+    include?: PreviewIncludeFilter;
     query: string;
     status: PreviewStatusFilter;
     team: string;
@@ -73,15 +75,19 @@ export function filterPreviewAgents(
       agent.dialerAgentName.toLocaleLowerCase().includes(normalizedQuery);
     const matchesTeam =
       filters.team === "all" || agent.teamNames.includes(filters.team);
+    const matchesInclude =
+      !filters.include ||
+      filters.include === "all" ||
+      (filters.include === "included"
+        ? agent.importStatus === "Ready"
+        : agent.importStatus !== "Ready");
     const matchesStatus =
       filters.status === "all" ||
-      (filters.status === "excluded"
-        ? agent.importStatus !== "Ready"
-        : filters.status === "invalid_rows"
-          ? agent.invalidRowCount > 0
-          : agent.mappingStatus === filters.status);
+      (filters.status === "invalid_rows"
+        ? agent.invalidRowCount > 0
+        : agent.mappingStatus === filters.status);
 
-    return matchesQuery && matchesTeam && matchesStatus;
+    return matchesQuery && matchesTeam && matchesStatus && matchesInclude;
   });
 }
 

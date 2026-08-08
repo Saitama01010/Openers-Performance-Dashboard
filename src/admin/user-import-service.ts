@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { and, eq, gt } from "drizzle-orm";
 
 import { createAdminUser } from "@/admin/data";
+import { roleRequiresTeam } from "@/admin/policy";
 import {
   MAX_USER_CSV_BYTES,
   parseUserImportCsv,
@@ -179,15 +180,18 @@ export async function confirmUserImport(input: {
       });
       continue;
     }
-    if (!assignment.role || !assignment.teamId) {
+    if (
+      !assignment.role ||
+      (roleRequiresTeam(assignment.role) && !assignment.teamId)
+    ) {
       outcomes.push({
         rowNumber: row.rowNumber,
         status: "skipped",
-        reason: "Assign a valid role and active team before import.",
+        reason: "Assign a valid role and, when required, an active team before import.",
       });
       continue;
     }
-    if (!activeTeams.has(assignment.teamId)) {
+    if (assignment.teamId && !activeTeams.has(assignment.teamId)) {
       outcomes.push({
         rowNumber: row.rowNumber,
         status: "skipped",
@@ -204,7 +208,7 @@ export async function confirmUserImport(input: {
         shift: row.shift,
         email: row.email,
         role: assignment.role,
-        teamId: assignment.teamId,
+        teamId: assignment.teamId ?? undefined,
         permissionOverrides: [],
         importBatchId: batch.id,
       });

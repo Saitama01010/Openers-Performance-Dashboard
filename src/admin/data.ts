@@ -3064,30 +3064,52 @@ export async function listTeams(actor: Actor) {
 export async function renameTeam(actor: Actor, input: { teamId: string; name: string }) {
   assertAdmin(actor);
   const name = trimText(input.name);
+  const normalizedName = normalizeTeamName(name);
 
   if (name.length < 2) throw new Error("Team name is required.");
 
-  await getDb().transaction(async (tx) => {
-    const rows = await tx
-      .select()
-      .from(teams)
-      .where(and(eq(teams.id, input.teamId), teamBelongsToActorWhere(actor)))
-      .limit(1)
-      .for("update");
-    const team = rows[0];
+  try {
+    await getDb().transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(teams)
+        .where(and(eq(teams.id, input.teamId), teamBelongsToActorWhere(actor)))
+        .limit(1)
+        .for("update");
+      const team = rows[0];
 
-    if (!team) throw new Error("Team was not found.");
+      if (!team) throw new Error("Team was not found.");
+      if (normalizeTeamName(team.name) === normalizedName) return;
 
-    await tx.update(teams).set({ name }).where(eq(teams.id, input.teamId));
-    await tx.insert(auditLogs).values({
-      id: newId(),
-      actorProfileId: actor.id,
-      action: "team.renamed",
-      entityType: "team",
-      entityId: input.teamId,
-      metadata: { before: { name: team.name }, after: { name } },
+      const duplicate = await tx
+        .select({ id: teams.id })
+        .from(teams)
+        .where(and(
+          eq(teams.organizationId, actorOrganizationId(actor)),
+          sql`lower(${teams.name}) = ${normalizedName}`,
+          ne(teams.id, input.teamId),
+          isNull(teams.deletedAt),
+        ))
+        .limit(1)
+        .for("update");
+      if (duplicate[0]) throw new Error("A team with this name already exists.");
+
+      await tx.update(teams).set({ name }).where(eq(teams.id, input.teamId));
+      await tx.insert(auditLogs).values({
+        id: newId(),
+        actorProfileId: actor.id,
+        action: "team.renamed",
+        entityType: "team",
+        entityId: input.teamId,
+        metadata: { before: { name: team.name }, after: { name } },
+      });
     });
-  });
+  } catch (error) {
+    if (isDuplicateEntryError(error)) {
+      throw new Error("A team with this name already exists.");
+    }
+    throw error;
+  }
 }
 
 export async function setTeamStatus(actor: Actor, input: {
@@ -3106,6 +3128,29 @@ export async function setTeamStatus(actor: Actor, input: {
     const team = rows[0];
 
     if (!team) throw new Error("Team was not found.");
+    if (team.active === input.active) return;
+
+    if (!input.active) {
+      const currentMembers = await tx
+        .select({
+          id: teamMemberships.id,
+          role: teamMemberships.role,
+        })
+        .from(teamMemberships)
+        .where(and(
+          eq(teamMemberships.teamId, input.teamId),
+          eq(teamMemberships.active, true),
+          isNull(teamMemberships.endedAt),
+        ))
+        .for("update");
+      const agents = currentMembers.filter((row) => row.role === "agent").length;
+      const managers = currentMembers.filter((row) => row.role === "manager").length;
+      if (agents + managers > 0) {
+        throw new Error(
+          `Move or remove ${managers} manager(s) and ${agents} agent(s) before deactivating this team.`,
+        );
+      }
+    }
 
     await tx
       .update(teams)
@@ -3148,17 +3193,51 @@ export async function assignTeamManager(actor: Actor, input: {
 
     if (!managerRows[0]) throw new Error("Active manager was not found.");
 
-    await tx
+    const targetManagers = await tx
+      .select({
+        id: teamMemberships.id,
+        profileId: teamMemberships.profileId,
+        teamId: teamMemberships.teamId,
+      })
+      .from(teamMemberships)
+      .where(and(
+        eq(teamMemberships.teamId, input.teamId),
+        eq(teamMemberships.role, "manager"),
+        eq(teamMemberships.active, true),
+        isNull(teamMemberships.endedAt),
+      ))
+      .for("update");
+    const incomingMemberships = await tx
+      .select({
+        id: teamMemberships.id,
+        profileId: teamMemberships.profileId,
+        teamId: teamMemberships.teamId,
+      })
+      .from(teamMemberships)
+      .where(and(
+        eq(teamMemberships.profileId, input.managerId),
+        eq(teamMemberships.active, true),
+        isNull(teamMemberships.endedAt),
+      ))
+      .for("update");
+    const membershipIds = Array.from(new Set([
+      ...targetManagers.map((membership) => membership.id),
+      ...incomingMemberships.map((membership) => membership.id),
+    ]));
+    if (
+      targetManagers.length === 1 &&
+      targetManagers[0]?.profileId === input.managerId &&
+      incomingMemberships.length === 1 &&
+      incomingMemberships[0]?.teamId === input.teamId
+    ) {
+      return;
+    }
+    if (membershipIds.length > 0) {
+      await tx
       .update(teamMemberships)
       .set({ active: false, endedAt: new Date() })
-      .where(
-        and(
-          eq(teamMemberships.teamId, input.teamId),
-          eq(teamMemberships.role, "manager"),
-          eq(teamMemberships.active, true),
-          isNull(teamMemberships.endedAt),
-        ),
-      );
+        .where(inArray(teamMemberships.id, membershipIds));
+    }
     await tx.insert(teamMemberships).values({
       id: newId(),
       profileId: input.managerId,
@@ -3173,7 +3252,13 @@ export async function assignTeamManager(actor: Actor, input: {
       action: "team.manager_changed",
       entityType: "team",
       entityId: input.teamId,
-      metadata: { managerId: input.managerId },
+      metadata: {
+        before: {
+          managers: targetManagers.map((membership) => membership.profileId),
+          managerTeams: incomingMemberships.map((membership) => membership.teamId),
+        },
+        after: { managerId: input.managerId, teamId: input.teamId },
+      },
     });
   });
 }
@@ -3185,6 +3270,37 @@ export async function moveAgentToTeam(actor: Actor, input: {
   await moveUserToTeamAsAdmin(
     await resolveCurrentActor(actor),
     { userId: input.agentId, teamId: input.teamId },
+    "agent",
+  );
+}
+
+export async function moveTeamMember(actor: Actor, input: {
+  userId: string;
+  teamId: string;
+}) {
+  const currentActor = await resolveCurrentActor(actor);
+  assertAdmin(currentActor);
+  const [profile] = await getDb()
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(and(
+      eq(profiles.id, input.userId),
+      eq(profiles.organizationId, actorOrganizationId(currentActor)),
+      isNull(profiles.deletedAt),
+    ))
+    .limit(1);
+  if (!profile || (profile.role !== "agent" && profile.role !== "manager")) {
+    throw new Error("User was not found.");
+  }
+  if (profile.role === "manager") {
+    return assignTeamManager(currentActor, {
+      teamId: input.teamId,
+      managerId: input.userId,
+    });
+  }
+  return moveUserToTeamAsAdmin(
+    currentActor,
+    { userId: input.userId, teamId: input.teamId },
     "agent",
   );
 }

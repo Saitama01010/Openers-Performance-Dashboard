@@ -8,14 +8,27 @@ function source(path: string) {
 }
 
 describe("admin interface contract", () => {
-  it("preserves the existing teams surface", () => {
+  it("renders the redesigned teams directory and authoritative workspace", () => {
     const page = source("src/app/admin/teams/page.tsx");
-    const tableHeader = page.slice(page.indexOf("<thead"), page.indexOf("</thead>"));
+    const workspace = source("src/components/admin/admin-teams-workspace.tsx");
+    const tableHeader = workspace.slice(workspace.indexOf("<thead"), workspace.indexOf("</thead>"));
 
-    expect(page).toContain("Create a team");
-    expect(page).toContain("Current members");
-    expect(tableHeader.match(/<th /g)).toHaveLength(4);
-    expect(page).toContain("<InlineTeamSelect");
+    expect(workspace).toContain("Create a team");
+    expect(page).toContain("Create reporting teams and maintain active manager and agent assignments.");
+    expect(page).toContain("listAdminTeamsDirectory");
+    expect(tableHeader.match(/<SortableHeader/g)).toHaveLength(5);
+    expect(tableHeader.match(/<th scope="col">/g)).toHaveLength(2);
+    for (const label of ["Team name", "Team manager", "Members", "Agents", "Status", "Created", "Actions"]) {
+      expect(tableHeader).toContain(label);
+    }
+    expect(workspace).toContain('aria-labelledby="team-drawer-title"');
+    expect(workspace).toContain('action: "move-member"');
+    expect(workspace).toContain('action: "remove-member"');
+    expect(workspace).toContain("Team performance (last 7 days)");
+    expect(workspace).toContain("Overview");
+    expect(workspace).toContain("Members");
+    expect(workspace).toContain("Settings");
+    expect(workspace).toContain("Activity");
   });
 
   it("renders the redesigned directory columns and authoritative controls", () => {

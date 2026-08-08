@@ -872,12 +872,22 @@ export async function deleteDialerImportBatch(input: {
 
     return {
       deletedImportId: batch.id,
+      deletedFileName: batch.fileName,
       storedFileDeleted,
       storedFileWasAlreadyMissing: !assessment.storedFilePresent,
       storageCleanupPending,
       sharedRecordsRetained,
       zeroReferenceMetricRowsDeleted,
       deletedCounts,
+      automaticallyActivatedFallbacks: fallbackAuditVersions.map(
+        (fallback) => ({
+          importBatchId: fallback.importBatchId,
+          fileName: fallback.fileName ?? "Previous valid import",
+          publishedAt: fallback.publishedAt,
+        }),
+      ),
+      noActiveVersionSelected:
+        activeTransition?.noActiveVersionSelected ?? false,
     };
   });
 }

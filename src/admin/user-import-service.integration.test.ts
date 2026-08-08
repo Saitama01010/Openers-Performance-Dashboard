@@ -167,4 +167,49 @@ describe("user CSV import integration", () => {
       .where(eq(accountInvitationTokens.profileId, createdId));
     expect(invitations).toEqual([]);
   });
+
+  it("does not force a fabricated team assignment for imported administrators", async () => {
+    const suffix = newId();
+    const adminId = newId();
+    profileIds.push(adminId);
+
+    await getDb().insert(profiles).values({
+      id: adminId,
+      email: `import-admin-actor-${suffix}@example.test`,
+      name: "Import Admin Actor",
+      role: "admin",
+      active: true,
+      accountStatus: "active",
+      passwordHash: "test-hash",
+    });
+
+    const email = `imported-admin-${suffix}@example.test`;
+    const draft = await createUserImportPreview({
+      actor: actor(adminId),
+      fileName: "administrators.csv",
+      content: [
+        "Real Name,American Name,Shift,Email",
+        `Imported Administrator,Admin Dialer ${suffix},Day Shift,${email}`,
+      ].join("\n"),
+    });
+    batchIds.push(draft.batchId!);
+
+    const result = await confirmUserImport({
+      actor: actor(adminId),
+      batchId: draft.batchId!,
+      assignments: [
+        { rowNumber: 2, selected: true, role: "admin", teamId: null },
+      ],
+    });
+
+    expect(result.summary).toEqual({ created: 1, skipped: 0, failed: 0 });
+    const createdId = result.outcomes[0].userId!;
+    profileIds.push(createdId);
+
+    const memberships = await getDb()
+      .select()
+      .from(teamMemberships)
+      .where(eq(teamMemberships.profileId, createdId));
+    expect(memberships).toEqual([]);
+  });
 });

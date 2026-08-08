@@ -1,67 +1,91 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { ActiveImportDialog } from "@/app/admin/imports/active-import-dialog";
-import { ImportDeleteForm } from "@/app/admin/imports/import-delete-form";
+import { ImportHistoryWorkspace } from "@/app/admin/imports/import-history-workspace";
+import styles from "@/app/admin/imports/import-history.module.css";
 import { getCurrentUser } from "@/auth/session";
-import {
-  EmptyTableRow,
-  PageHeader,
-  StatusBadge,
-  StatusBanner,
-  TableScroll,
-} from "@/components/dashboard/dashboard-primitives";
+import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { PageHeader, StatusBanner } from "@/components/dashboard/dashboard-primitives";
 import { getActiveImportLifecycleOptions } from "@/import/active-lifecycle";
-import { listImportHistory } from "@/import/service";
 import {
-  humanizeIdentifier,
-  importStatusLabel,
-  importTypeLabel,
-} from "@/presentation/labels";
+  listImportHistory,
+  type ImportHistoryFilters,
+} from "@/import/service";
+import { humanizeIdentifier } from "@/presentation/labels";
 
 export const dynamic = "force-dynamic";
 
-function statusTone(
-  status: string,
-): "danger" | "neutral" | "success" | "warning" {
-  if (status === "active") return "success";
-  if (["failed", "validation_failed", "rejected"].includes(status)) {
-    return "danger";
-  }
-  if (["ready_to_publish", "draft", "processing", "uploaded"].includes(status)) {
-    return "warning";
-  }
-  return "neutral";
-}
+const ranges = new Set<NonNullable<ImportHistoryFilters["dateRange"]>>([
+  "7d",
+  "30d",
+  "90d",
+  "year",
+  "all",
+]);
+const sorts = new Set<NonNullable<ImportHistoryFilters["sort"]>>([
+  "uploadedAt",
+  "fileName",
+  "reportingPeriod",
+  "status",
+]);
 
-function fmt(value: Date | null) {
-  return value?.toLocaleString("en-US") ?? "-";
-}
-
-function reportingPeriod(start: string | null, end: string | null) {
-  if (!start) return "-";
-  return end && end !== start ? `${start} – ${end}` : start;
+function positiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export default async function AdminImportsPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    deactivated?: string;
+    deleted?: string;
     error?: string;
+    fallback?: string;
+    noActive?: string;
+    order?: string;
     page?: string;
+    pageSize?: string;
+    q?: string;
+    range?: string;
+    restored?: string;
+    sort?: string;
+    status?: string;
+    type?: string;
+    uploader?: string;
   }>;
 }) {
   const actor = await getCurrentUser();
-
-  if (!actor || actor.role !== "admin") {
-    return null;
-  }
+  if (!actor) redirect("/login");
+  if (actor.role !== "admin") redirect("/dashboard");
 
   const params = await searchParams;
-  const requestedPage = Number(params.page ?? "1");
+  const pageSizeValue = positiveInteger(params.pageSize, 25);
+  const pageSize = [10, 25, 50, 100].includes(pageSizeValue)
+    ? pageSizeValue
+    : 25;
+  const filters = {
+    search: params.q?.trim() ?? "",
+    status: params.status ?? "",
+    importType: params.type ?? "",
+    uploadedById: params.uploader ?? "",
+    dateRange: ranges.has(params.range as NonNullable<ImportHistoryFilters["dateRange"]>)
+      ? (params.range as NonNullable<ImportHistoryFilters["dateRange"]>)
+      : "all",
+    sort: sorts.has(params.sort as NonNullable<ImportHistoryFilters["sort"]>)
+      ? (params.sort as NonNullable<ImportHistoryFilters["sort"]>)
+      : "uploadedAt",
+    order: params.order === "asc" ? "asc" : "desc",
+  } satisfies ImportHistoryFilters & {
+    dateRange: NonNullable<ImportHistoryFilters["dateRange"]>;
+    order: NonNullable<ImportHistoryFilters["order"]>;
+    sort: NonNullable<ImportHistoryFilters["sort"]>;
+  };
   const history = await listImportHistory(actor, {
-    page: Number.isInteger(requestedPage) ? requestedPage : 1,
+    ...filters,
+    page: positiveInteger(params.page, 1),
+    pageSize,
   });
-  const totalPages = Math.max(1, Math.ceil(history.total / history.pageSize));
   const lifecycleEntries = await Promise.all(
     history.rows
       .filter((row) => row.activeVersionCount > 0)
@@ -70,146 +94,60 @@ export default async function AdminImportsPage({
         await getActiveImportLifecycleOptions(actor, row.id),
       ] as const),
   );
-  const lifecycleByBatchId = new Map(lifecycleEntries);
 
   return (
-    <section className="dashboard-page">
+    <section className={`${styles.historyPage} dashboard-page`}>
       <PageHeader
         actions={
-          <Link className="ui-button ui-button--primary" href="/import">
+          <Link className={styles.uploadButton} href="/import">
+            <DashboardIcon name="import" />
             Upload CSV
           </Link>
         }
-        description="Review every permanent CSV record, publish drafts, and restore valid historical dataset versions."
-        eyebrow="Administrator only"
+        description="Review all past imports, their status, and manage active datasets."
+        eyebrow="Data operations"
         title="Import history"
       />
 
       {params.error ? (
         <StatusBanner tone="danger">
-          Import deletion failed: {humanizeIdentifier(params.error)}.
+          The Import History action failed: {humanizeIdentifier(params.error)}.
+          Review the selected version and try again.
+        </StatusBanner>
+      ) : null}
+      {params.deactivated ? (
+        <StatusBanner tone="success">
+          The active import was deactivated and its affected dataset scopes were
+          resolved transactionally.
+        </StatusBanner>
+      ) : null}
+      {params.restored ? (
+        <StatusBanner tone="success">
+          The selected historical import was restored and now powers its valid
+          dataset scopes.
+        </StatusBanner>
+      ) : null}
+      {params.deleted ? (
+        <StatusBanner tone="success">
+          {params.deleted} was permanently deleted.
+          {params.fallback
+            ? ` ${params.fallback} is now the active fallback.`
+            : params.noActive
+              ? " No previous valid version was available, so the affected scope has no active dataset."
+              : ""}
         </StatusBanner>
       ) : null}
 
-      <section className="ui-card">
-        <TableScroll label="Import history">
-          <table className="ui-table import-history-table">
-            <caption>Permanent dialer CSV import history</caption>
-            <thead>
-              <tr>
-                <th scope="col">Uploaded Date</th>
-                <th scope="col">Type</th>
-                <th scope="col">Reporting Period</th>
-                <th scope="col">Uploaded By</th>
-                <th scope="col">Status</th>
-                <th scope="col">Published</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.rows.length === 0 ? (
-                <EmptyTableRow
-                  colSpan={7}
-                  description="Upload a CSV to create the first permanent import record."
-                  title="No imports"
-                />
-              ) : (
-                history.rows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="import-history-table__date">
-                      {fmt(row.uploadedAt)}
-                    </td>
-                    <td>
-                      <span className="block">
-                        {importTypeLabel(row.importType)}
-                      </span>
-                      <span className="block text-xs capitalize text-muted">
-                        {row.granularity}
-                      </span>
-                    </td>
-                    <td>
-                      {reportingPeriod(
-                        row.reportingStartDate,
-                        row.reportingEndDate,
-                      )}
-                    </td>
-                    <td>{row.uploadedBy}</td>
-                    <td>
-                      <StatusBadge tone={statusTone(row.status)}>
-                        {importStatusLabel(row.status)}
-                      </StatusBadge>
-                    </td>
-                    <td className="import-history-table__date">{fmt(row.publishedAt)}</td>
-                    <td className="import-history-table__actions">
-                      <div className="import-history-actions">
-                        <Link
-                          className="ui-button ui-button--secondary ui-button--compact"
-                          href={`/admin/imports/${row.id}`}
-                        >
-                          View Details
-                        </Link>
-                        {lifecycleByBatchId.get(row.id)?.canDeactivate ? (
-                          <ActiveImportDialog
-                            batchId={row.id}
-                            compactTrigger
-                            dialer={row.dialerId ?? "Default"}
-                            fileName={row.fileName}
-                            importType={row.importType}
-                            lifecycle={lifecycleByBatchId.get(row.id)!}
-                            reportingPeriod={reportingPeriod(
-                              row.reportingStartDate,
-                              row.reportingEndDate,
-                            )}
-                            returnPage={history.page}
-                            rowCount={row.rowCount}
-                            status={row.status}
-                            team={row.teams.join(", ") || "Company"}
-                            triggerLabel="Deactivate"
-                            uploadDate={fmt(row.uploadedAt)}
-                          />
-                        ) : null}
-                        <ImportDeleteForm
-                          assessment={row.deletion}
-                          batchId={row.id}
-                          compactTrigger
-                          returnPage={history.page}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </TableScroll>
-      </section>
-
-      <nav
-        aria-label="Import history pagination"
-        className="mt-4 flex items-center justify-between"
-      >
-        <span className="text-sm text-muted">
-          Page {history.page} of {totalPages} · {history.total} imports
-        </span>
-        <div className="flex gap-2">
-          {history.page > 1 ? (
-            <Link
-              className="ui-button ui-button--secondary"
-              href={`/admin/imports?page=${history.page - 1}`}
-            >
-              Previous
-            </Link>
-          ) : null}
-          {history.page < totalPages ? (
-            <Link
-              className="ui-button ui-button--secondary"
-              href={`/admin/imports?page=${history.page + 1}`}
-            >
-              Next
-            </Link>
-          ) : null}
-        </div>
-      </nav>
+      <ImportHistoryWorkspace
+        facets={history.facets}
+        filters={filters}
+        lifecycleEntries={lifecycleEntries}
+        page={history.page}
+        pageSize={history.pageSize}
+        rows={history.rows}
+        summary={history.summary}
+        total={history.total}
+      />
     </section>
   );
 }

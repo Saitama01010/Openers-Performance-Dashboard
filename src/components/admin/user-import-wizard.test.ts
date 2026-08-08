@@ -11,29 +11,18 @@ const normalizedWizard = wizard.replace(/\r\n/g, "\n");
 
 describe("user import wizard contract", () => {
   it("advertises only the new required headers", () => {
+    expect(normalizedWizard).toContain("<h3>Required CSV headers</h3>");
     expect(normalizedWizard).toContain(
-      "Required headers: Real Name, American Name,\n            Shift, Email.",
+      "<ul><li>Real Name</li><li>American Name</li><li>Shift</li><li>Email</li></ul>",
     );
     expect(wizard).not.toContain("Required headers: Username");
     expect(wizard).not.toContain("Required headers: Dialer name");
   });
 
-  it("shows the accessible header tooltip on hover and keyboard focus", () => {
-    expect(wizard).toContain('aria-label="CSV header requirements"');
-    expect(wizard).toContain('role="tooltip"');
-    expect(wizard).toContain("group-hover:visible");
-    expect(wizard).toContain("group-hover:opacity-100");
-    expect(wizard).toContain("group-focus-within:visible");
-    expect(wizard).toContain("group-focus-within:opacity-100");
-    expect(wizard).toContain(
-      "Required CSV headers: Real Name, American Name, Shift, Email.",
-    );
-    expect(wizard).toContain(
-      "The header names are not case-sensitive, but all four columns",
-    );
-    expect(wizard).toContain(
-      "Example: Real Name,American Name,Shift,Email",
-    );
+  it("shows the header guidance persistently and provides a template", () => {
+    expect(wizard).toContain("Header names are case-insensitive.");
+    expect(wizard).toContain("Download CSV template");
+    expect(wizard).toContain("openers-user-import-template.csv");
   });
 
   it("renders the seven requested validation preview columns", () => {
@@ -65,17 +54,17 @@ describe("user import wizard contract", () => {
 
   it("preserves role and team assignment, confirmation, and invitation behavior", () => {
     for (const step of [
-      "Upload",
+      "Upload CSV",
       "Validate users",
-      "Assign roles and teams",
-      "Confirm import",
+      "Assign roles & teams",
+      "Review & publish",
       "Results",
     ]) {
       expect(wizard).toContain(`"${step}"`);
     }
     expect(wizard).toContain("Assign role to selected");
     expect(wizard).toContain("Assign team to selected");
-    expect(wizard).toContain("Confirm import");
-    expect(wizard).toContain("No invitation emails will be");
+    expect(wizard).toContain("Publish valid users");
+    expect(wizard).toContain("Invitation emails are not sent automatically.");
   });
 });

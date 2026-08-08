@@ -3,10 +3,14 @@ import {
   asc,
   desc,
   eq,
+  gte,
   inArray,
   isNull,
+  like,
   ne,
+  or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
@@ -92,6 +96,12 @@ export type ImportHistoryRow = {
   rowCount: number;
   matchedAgentCount: number;
   unmatchedAgentCount: number;
+  mappedRowCount: number | null;
+  unmatchedRowCount: number | null;
+  unauthorizedRowCount: number | null;
+  invalidRowCount: number | null;
+  unchangedRowCount: number | null;
+  duplicateFile: boolean | null;
   status: string;
   publishedAt: Date | null;
   activeVersionCount: number;
@@ -99,6 +109,45 @@ export type ImportHistoryRow = {
   teams: string[];
   dialerId: string | null;
   deletion: ImportDeletionAssessment;
+};
+
+export type ImportHistoryFilters = {
+  search?: string;
+  status?: string;
+  importType?: string;
+  uploadedById?: string;
+  dateRange?: "7d" | "30d" | "90d" | "year" | "all";
+  sort?: "uploadedAt" | "fileName" | "reportingPeriod" | "status";
+  order?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
+};
+
+export type ImportHistorySummary = {
+  total: number;
+  active: number;
+  published: number;
+  failed: number;
+  drafts: number;
+  earliestImportAt: Date | null;
+  latestImportAt: Date | null;
+  activeImports: Array<{
+    id: string;
+    fileName: string;
+    reportingStartDate: string | null;
+    reportingEndDate: string | null;
+    publishedAt: Date | null;
+    uploadedBy: string;
+  }>;
+  mostRecentFailure: { fileName: string; uploadedAt: Date } | null;
+  oldestDraft: { fileName: string; uploadedAt: Date } | null;
+  newestDraft: { fileName: string; uploadedAt: Date } | null;
+};
+
+export type ImportHistoryFacets = {
+  statuses: string[];
+  importTypes: string[];
+  uploaders: Array<{ id: string; name: string }>;
 };
 
 export class ImportConfirmationError extends Error {
@@ -1619,15 +1668,88 @@ export async function restoreDialerImportBatch(input: {
   });
 }
 
+const HISTORY_DRAFT_STATUSES = [
+  "uploaded",
+  "processing",
+  "draft",
+  "ready_to_publish",
+] as const;
+
+const HISTORY_FAILED_STATUSES = ["failed", "validation_failed"] as const;
+
+function historyDateStart(
+  range: ImportHistoryFilters["dateRange"],
+  now = new Date(),
+) {
+  if (!range || range === "all") return null;
+  if (range === "year") return new Date(now.getFullYear(), 0, 1);
+  const days = range === "7d" ? 7 : range === "90d" ? 90 : 30;
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+}
+
+function historyWhere(input: ImportHistoryFilters) {
+  const conditions: SQL[] = [];
+  const search = input.search?.trim();
+  if (search) {
+    const pattern = `%${search}%`;
+    conditions.push(
+      or(
+        like(dialerImportBatches.fileName, pattern),
+        like(dialerImportBatches.id, pattern),
+        like(profiles.name, pattern),
+      )!,
+    );
+  }
+  if (input.status) {
+    conditions.push(sql`${dialerImportBatches.status} = ${input.status}`);
+  }
+  if (input.importType) {
+    conditions.push(eq(dialerImportBatches.importType, input.importType));
+  }
+  if (input.uploadedById) {
+    conditions.push(eq(dialerImportBatches.uploadedById, input.uploadedById));
+  }
+  const start = historyDateStart(input.dateRange);
+  if (start) conditions.push(gte(dialerImportBatches.createdAt, start));
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+function previewNumber(
+  summary: Record<string, unknown> | null,
+  key: string,
+) {
+  const value = summary?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 export async function listImportHistory(
   actor: Actor,
-  input: { page?: number; pageSize?: number } = {},
+  input: ImportHistoryFilters = {},
 ) {
   assertAdmin(actor);
   const page = Math.max(1, input.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 25));
   const offset = (page - 1) * pageSize;
-  const [batches, [countRow]] = await Promise.all([
+  const where = historyWhere(input);
+  const sortColumn = {
+    fileName: dialerImportBatches.fileName,
+    reportingPeriod: dialerImportBatches.reportingStartDate,
+    status: dialerImportBatches.status,
+    uploadedAt: dialerImportBatches.createdAt,
+  }[input.sort ?? "uploadedAt"];
+  const direction = input.order === "asc" ? asc : desc;
+  const [
+    batches,
+    [countRow],
+    [summaryRow],
+    activeImports,
+    [mostRecentFailure],
+    [oldestDraft],
+    [newestDraft],
+    statusRows,
+    importTypeRows,
+    uploaderRows,
+  ] = await Promise.all([
     getDb()
       .select({
         id: dialerImportBatches.id,
@@ -1646,6 +1768,7 @@ export async function listImportHistory(
         rowCount: dialerImportBatches.rowCount,
         matchedAgentCount: dialerImportBatches.matchedAgentCount,
         unmatchedAgentCount: dialerImportBatches.unmatchedAgentCount,
+        previewSummary: dialerImportBatches.previewSummary,
         status: dialerImportBatches.status,
         publishedById: dialerImportBatches.publishedById,
         publishedAt: dialerImportBatches.publishedAt,
@@ -1654,30 +1777,100 @@ export async function listImportHistory(
         storageProvider: dialerImportBatches.storageProvider,
         storageLocation: dialerImportBatches.storageLocation,
         storedFileBytes: sql<number>`octet_length(${dialerImportBatches.rawFileContent})`,
+        uploaderName: profiles.name,
       })
       .from(dialerImportBatches)
-      .orderBy(desc(dialerImportBatches.createdAt))
+      .leftJoin(profiles, eq(profiles.id, dialerImportBatches.uploadedById))
+      .where(where)
+      .orderBy(direction(sortColumn), desc(dialerImportBatches.createdAt))
       .limit(pageSize)
       .offset(offset),
     getDb()
       .select({ count: sql<number>`count(*)` })
+      .from(dialerImportBatches)
+      .leftJoin(profiles, eq(profiles.id, dialerImportBatches.uploadedById))
+      .where(where),
+    getDb()
+      .select({
+        total: sql<number>`count(*)`,
+        published: sql<number>`sum(case when ${dialerImportBatches.publishedAt} is not null then 1 else 0 end)`,
+        failed: sql<number>`sum(case when ${dialerImportBatches.status} in ('failed', 'validation_failed') then 1 else 0 end)`,
+        drafts: sql<number>`sum(case when ${dialerImportBatches.status} in ('uploaded', 'processing', 'draft', 'ready_to_publish') then 1 else 0 end)`,
+        earliestImportAt: sql<Date | null>`min(${dialerImportBatches.createdAt})`,
+        latestImportAt: sql<Date | null>`max(${dialerImportBatches.createdAt})`,
+      })
       .from(dialerImportBatches),
+    getDb()
+      .select({
+        id: dialerImportBatches.id,
+        fileName: dialerImportBatches.fileName,
+        reportingStartDate: dialerImportBatches.reportingStartDate,
+        reportingEndDate: dialerImportBatches.reportingEndDate,
+        publishedAt: dialerImportBatches.publishedAt,
+        uploadedBy: profiles.name,
+      })
+      .from(dialerDatasetVersions)
+      .innerJoin(
+        dialerDatasetScopes,
+        eq(dialerDatasetScopes.activeVersionId, dialerDatasetVersions.id),
+      )
+      .innerJoin(
+        dialerImportBatches,
+        eq(dialerImportBatches.id, dialerDatasetVersions.importBatchId),
+      )
+      .leftJoin(profiles, eq(profiles.id, dialerImportBatches.uploadedById))
+      .groupBy(
+        dialerImportBatches.id,
+        dialerImportBatches.fileName,
+        dialerImportBatches.reportingStartDate,
+        dialerImportBatches.reportingEndDate,
+        dialerImportBatches.publishedAt,
+        profiles.name,
+      )
+      .orderBy(desc(dialerImportBatches.publishedAt)),
+    getDb()
+      .select({
+        fileName: dialerImportBatches.fileName,
+        uploadedAt: dialerImportBatches.createdAt,
+      })
+      .from(dialerImportBatches)
+      .where(inArray(dialerImportBatches.status, [...HISTORY_FAILED_STATUSES]))
+      .orderBy(desc(dialerImportBatches.createdAt))
+      .limit(1),
+    getDb()
+      .select({
+        fileName: dialerImportBatches.fileName,
+        uploadedAt: dialerImportBatches.createdAt,
+      })
+      .from(dialerImportBatches)
+      .where(inArray(dialerImportBatches.status, [...HISTORY_DRAFT_STATUSES]))
+      .orderBy(asc(dialerImportBatches.createdAt))
+      .limit(1),
+    getDb()
+      .select({
+        fileName: dialerImportBatches.fileName,
+        uploadedAt: dialerImportBatches.createdAt,
+      })
+      .from(dialerImportBatches)
+      .where(inArray(dialerImportBatches.status, [...HISTORY_DRAFT_STATUSES]))
+      .orderBy(desc(dialerImportBatches.createdAt))
+      .limit(1),
+    getDb()
+      .selectDistinct({ status: dialerImportBatches.status })
+      .from(dialerImportBatches)
+      .orderBy(asc(dialerImportBatches.status)),
+    getDb()
+      .selectDistinct({ importType: dialerImportBatches.importType })
+      .from(dialerImportBatches)
+      .orderBy(asc(dialerImportBatches.importType)),
+    getDb()
+      .selectDistinct({ id: profiles.id, name: profiles.name })
+      .from(dialerImportBatches)
+      .innerJoin(profiles, eq(profiles.id, dialerImportBatches.uploadedById))
+      .orderBy(asc(profiles.name)),
   ]);
-  const userIds = Array.from(
-    new Set(
-      batches
-        .flatMap((batch) => [batch.uploadedById, batch.publishedById])
-        .filter((id): id is string => Boolean(id)),
-    ),
-  );
   const batchIds = batches.map((batch) => batch.id);
-  const [userRows, versionRows, activeRows] = await Promise.all([
-    userIds.length > 0
-      ? getDb()
-          .select({ id: profiles.id, name: profiles.name })
-          .from(profiles)
-          .where(inArray(profiles.id, userIds))
-      : Promise.resolve([]),
+  const [versionRows, activeRows] = await Promise.all([
     batchIds.length > 0
       ? getDb()
           .select({
@@ -1707,13 +1900,37 @@ export async function listImportHistory(
           .groupBy(dialerDatasetVersions.importBatchId)
       : Promise.resolve([]),
   ]);
-  const userNames = new Map(userRows.map((user) => [user.id, user.name]));
   const deletionAssessments = await getImportDeletionAssessments(actor, batches);
+
+  const summary: ImportHistorySummary = {
+    total: Number(summaryRow?.total ?? 0),
+    active: activeImports.length,
+    published: Number(summaryRow?.published ?? 0),
+    failed: Number(summaryRow?.failed ?? 0),
+    drafts: Number(summaryRow?.drafts ?? 0),
+    earliestImportAt: summaryRow?.earliestImportAt ?? null,
+    latestImportAt: summaryRow?.latestImportAt ?? null,
+    activeImports: activeImports.map((row) => ({
+      ...row,
+      uploadedBy: row.uploadedBy ?? "Unavailable",
+    })),
+    mostRecentFailure: mostRecentFailure ?? null,
+    oldestDraft: oldestDraft ?? null,
+    newestDraft: newestDraft ?? null,
+  };
+
+  const facets: ImportHistoryFacets = {
+    statuses: statusRows.map((row) => row.status),
+    importTypes: importTypeRows.map((row) => row.importType),
+    uploaders: uploaderRows,
+  };
 
   return {
     page,
     pageSize,
     total: Number(countRow?.count ?? 0),
+    summary,
+    facets,
     rows: batches.map((batch) => ({
       id: batch.id,
       fileName: batch.fileName,
@@ -1725,11 +1942,23 @@ export async function listImportHistory(
       reportingStartDate: batch.reportingStartDate,
       reportingEndDate: batch.reportingEndDate,
       selectedReportingDate: batch.selectedReportingDate,
-      uploadedBy: userNames.get(batch.uploadedById) ?? batch.uploadedById,
+      uploadedBy: batch.uploaderName ?? batch.uploadedById,
       uploadedAt: batch.createdAt,
       rowCount: batch.rowCount,
       matchedAgentCount: batch.matchedAgentCount,
       unmatchedAgentCount: batch.unmatchedAgentCount,
+      mappedRowCount: previewNumber(batch.previewSummary, "mappedRowsToImport"),
+      unmatchedRowCount: previewNumber(batch.previewSummary, "unmappedRowsToSkip"),
+      unauthorizedRowCount: previewNumber(
+        batch.previewSummary,
+        "outOfScopeRowsToSkip",
+      ),
+      invalidRowCount: previewNumber(batch.previewSummary, "invalidRows"),
+      unchangedRowCount: previewNumber(batch.previewSummary, "unchangedRows"),
+      duplicateFile:
+        typeof batch.previewSummary?.duplicateFile === "boolean"
+          ? batch.previewSummary.duplicateFile
+          : null,
       status: batch.status,
       publishedAt: batch.publishedAt,
       activeVersionCount: Number(

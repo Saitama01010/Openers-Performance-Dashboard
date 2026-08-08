@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
+import styles from "@/app/admin/imports/import-history.module.css";
 import { deactivateImportAction } from "@/import/actions";
 import {
   importStatusLabel,
@@ -32,16 +33,18 @@ export type ActiveImportDialogProps = ImportIdentity & {
   lifecycle: ActiveImportLifecycleOptions;
   compactTrigger?: boolean;
   returnPage?: number;
+  returnQuery?: string;
+  triggerClassName?: string;
   triggerLabel?: string;
 };
 
-function SubmitButton() {
+function SubmitButton({ className }: { className?: string }) {
   const { pending } = useFormStatus();
 
   return (
     <button
       aria-busy={pending || undefined}
-      className="ui-button ui-button--danger"
+      className={className ?? "ui-button ui-button--danger"}
       disabled={pending}
       type="submit"
     >
@@ -220,8 +223,11 @@ export function ActiveImportDialog(props: ActiveImportDialogProps) {
       {props.returnPage ? (
         <input name="returnPage" type="hidden" value={props.returnPage} />
       ) : null}
+      {props.returnQuery ? (
+        <input name="returnQuery" type="hidden" value={props.returnQuery} />
+      ) : null}
       <button
-        className={`ui-button ui-button--danger${props.compactTrigger ? " ui-button--compact" : ""}`}
+        className={props.triggerClassName ?? `ui-button ui-button--danger${props.compactTrigger ? " ui-button--compact" : ""}`}
         disabled={!props.lifecycle.canDeactivate}
         onClick={() => dialogRef.current?.showModal()}
         ref={triggerRef}
@@ -232,7 +238,7 @@ export function ActiveImportDialog(props: ActiveImportDialogProps) {
       <dialog
         aria-describedby={descriptionId}
         aria-labelledby={titleId}
-        className="ui-dialog"
+        className={styles.confirmDialog}
         onCancel={(event) => {
           event.preventDefault();
           closeDialog();
@@ -244,8 +250,9 @@ export function ActiveImportDialog(props: ActiveImportDialogProps) {
         </h2>
         <p className="ui-dialog__description" id={descriptionId}>
           Its data will immediately stop appearing on the dashboard for this
-          dataset scope. Choose whether to restore another version or leave
-          this dataset without active data.
+          dataset scope. Deactivation preserves this import, its history, and
+          its stored file; it is not permanent deletion. Choose whether to
+          restore another version or leave this dataset without active data.
         </p>
         <ImportIdentityDetails {...props} />
         <ResolutionFields
@@ -262,15 +269,15 @@ export function ActiveImportDialog(props: ActiveImportDialogProps) {
             required
           />
         </label>
-        <div className="ui-dialog__actions">
+        <div className={styles.dialogActions}>
           <button
-            className="ui-button ui-button--secondary"
+            className={styles.secondaryButton}
             onClick={closeDialog}
             type="button"
           >
             Cancel
           </button>
-          <SubmitButton />
+          <SubmitButton className={styles.dangerButton} />
         </div>
       </dialog>
     </form>

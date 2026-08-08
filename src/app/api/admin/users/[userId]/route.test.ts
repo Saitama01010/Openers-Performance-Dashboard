@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
   assertTrustedMutationOrigin: vi.fn(),
+  getAdminUserDetails: vi.fn(),
   moveUserToTeam: vi.fn(),
   permanentlyDeleteUser: vi.fn(),
   revalidatePath: vi.fn(),
   updateUserEmail: vi.fn(),
   updateUserPrimaryDialerName: vi.fn(),
   updateUserShift: vi.fn(),
+  updateAdminUser: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
@@ -21,14 +23,16 @@ vi.mock("@/auth/request-security", () => ({
   assertTrustedMutationOrigin: mocks.assertTrustedMutationOrigin,
 }));
 vi.mock("@/admin/data", () => ({
+  getAdminUserDetails: mocks.getAdminUserDetails,
   moveUserToTeam: mocks.moveUserToTeam,
   permanentlyDeleteUser: mocks.permanentlyDeleteUser,
   updateUserEmail: mocks.updateUserEmail,
   updateUserPrimaryDialerName: mocks.updateUserPrimaryDialerName,
   updateUserShift: mocks.updateUserShift,
+  updateAdminUser: mocks.updateAdminUser,
 }));
 
-import { DELETE, PATCH } from "@/app/api/admin/users/[userId]/route";
+import { DELETE, GET, PATCH } from "@/app/api/admin/users/[userId]/route";
 
 const context = { params: Promise.resolve({ userId: "user-1" }) };
 
@@ -78,6 +82,20 @@ describe("admin user inline API", () => {
       value: "Evening",
       changed: true,
     });
+    mocks.getAdminUserDetails.mockResolvedValue({
+      profile: {
+        id: "user-1",
+        name: "Example User",
+        email: "example@test.local",
+        role: "agent",
+        shift: "Evening",
+      },
+      activeMembership: { teamId: "team-1", teamName: "Team One" },
+      overrides: [
+        { permissionKey: "imports.preview", allowed: true },
+      ],
+    });
+    mocks.updateAdminUser.mockResolvedValue(undefined);
   });
 
   it("allows an administrator to update only the requested email field", async () => {
@@ -175,13 +193,89 @@ describe("admin user inline API", () => {
       context,
     );
     const unsupportedFieldResponse = await PATCH(
-      patchRequest({ field: "role", value: "admin" }),
+      patchRequest({ field: "name", value: "Changed" }),
       context,
     );
 
     expect(extraFieldResponse.status).toBe(400);
     expect(unsupportedFieldResponse.status).toBe(400);
     expect(mocks.updateUserEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns an administrator-only quick preview using trusted user details", async () => {
+    mocks.getAdminUserDetails.mockResolvedValue({
+      profile: {
+        id: "user-1",
+        name: "Example User",
+        email: "example@test.local",
+        role: "agent",
+        shift: "Evening",
+        accountStatus: "active",
+        passwordState: "permanent",
+        createdAt: new Date("2026-08-01T10:00:00Z"),
+        updatedAt: new Date("2026-08-02T10:00:00Z"),
+        lastLoginAt: new Date("2026-08-03T10:00:00Z"),
+      },
+      activeMembership: { teamId: "team-1", teamName: "Team One" },
+      invitationStatus: "accepted",
+      activeSessionCount: 2,
+      mappings: [{ active: true, isPrimary: true, sourceAgentName: "Example" }],
+      overrides: [{ permissionKey: "imports.preview", allowed: true }],
+      audits: [{ id: "audit-1", action: "user_updated", metadata: null, createdAt: new Date("2026-08-03T11:00:00Z") }],
+    });
+
+    const response = await GET(new Request("http://localhost:3000/api/admin/users/user-1"), context);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.getAdminUserDetails).toHaveBeenCalledWith(expect.objectContaining({ role: "admin" }), "user-1");
+    expect(payload.user).toMatchObject({ id: "user-1", americanName: "Example", team: "Team One", activeSessionCount: 2 });
+    expect(payload.overrides).toEqual([{ permissionKey: "imports.preview", allowed: true }]);
+    expect(payload.activity).toHaveLength(1);
+  });
+
+  it("rejects a non-admin quick-preview request before reading user details", async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: "agent-1", role: "agent", teamIds: [] });
+
+    const response = await GET(new Request("http://localhost:3000/api/admin/users/user-1"), context);
+
+    expect(response.status).toBe(403);
+    expect(mocks.getAdminUserDetails).not.toHaveBeenCalled();
+  });
+
+  it("updates the authoritative role while preserving trusted profile and override state", async () => {
+    const response = await PATCH(
+      patchRequest({ field: "role", value: "manager" }),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateAdminUser).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "admin-1", role: "admin" }),
+      {
+        userId: "user-1",
+        name: "Example User",
+        email: "example@test.local",
+        role: "manager",
+        teamId: "team-1",
+        shift: "Evening",
+        permissionOverrides: [
+          { permissionKey: "imports.preview", value: "allow" },
+        ],
+      },
+    );
+  });
+
+  it("rejects an invalid role before updating authorization state", async () => {
+    const response = await PATCH(
+      patchRequest({ field: "role", value: "owner" }),
+      context,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid role." });
+    expect(mocks.updateAdminUser).not.toHaveBeenCalled();
   });
 
   it("permanently deletes without requiring a confirmation email body", async () => {

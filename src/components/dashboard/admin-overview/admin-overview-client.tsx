@@ -15,6 +15,7 @@ import styles from "@/components/dashboard/admin-overview/admin-overview.module.
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import { OverviewDateFilter } from "@/components/dashboard/overview-date-filter";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { DonutChart } from "@/components/ui/donut-chart";
 import {
   createRubricTemplateDialogAction,
   createTargetDialogAction,
@@ -311,14 +312,10 @@ function TalentDistribution({ agents }: { agents: AdminDashboardData["talentDist
     0,
   ));
   const colors = ["#22b879", "#1767f2", "#f28705", "#8055e8", "#8b98aa"];
-  const gradient = buckets.map((bucket, index) => {
-    const start = buckets.slice(0, index).reduce((total, item) => total + item.percentage, 0);
-    return `${colors[index]} ${start}% ${start + bucket.percentage}%`;
-  }).join(", ");
   const selected = buckets[active] ?? buckets[0];
   return (
     <Panel className={styles.talentPanel} description="Active agents grouped by authoritative employment tenure" title="Talent distribution">
-      {agents.length === 0 ? <p className={styles.empty}>No active talent data is available.</p> : <div className={styles.talentBody}><div aria-label={`Talent distribution. ${selected?.label}: ${selected?.count} agents.`} className={styles.donut} role="img" style={{ background: `conic-gradient(${gradient})` }}><div><strong>{selected ? formatPercent(selected.percentage) : "0%"}</strong><span>{selected?.label}</span></div></div><div className={styles.talentLegend}>{buckets.map((bucket, index) => <button aria-pressed={active === index} key={bucket.key} onClick={() => setActive(index)} onFocus={() => setActive(index)} type="button"><span style={{ background: colors[index] }} /><b>{bucket.label}</b><small>{bucket.count} agents · {formatPercent(bucket.percentage)}</small></button>)}</div></div>}
+      {agents.length === 0 ? <p className={styles.empty}>No active talent data is available.</p> : <div className={styles.talentBody}><DonutChart activeSegmentId={selected?.key} ariaLabel={`Talent distribution. ${selected?.label}: ${selected?.count} agents.`} className={styles.donut} data={buckets.map((bucket, index) => ({ id: bucket.key, value: bucket.count, color: colors[index] ?? "#8b98aa", label: bucket.label, accessibleLabel: `${bucket.label}: ${bucket.count} agents, ${formatPercent(bucket.percentage)}` }))} size={132} strokeWidth={24} centerContent={<><strong>{selected ? formatPercent(selected.percentage) : "0%"}</strong><span>{selected?.label}</span></>} /><div className={styles.talentLegend}>{buckets.map((bucket, index) => <button aria-pressed={active === index} key={bucket.key} onClick={() => setActive(index)} onFocus={() => setActive(index)} type="button"><span style={{ background: colors[index] }} /><b>{bucket.label}</b><small>{bucket.count} agents · {formatPercent(bucket.percentage)}</small></button>)}</div></div>}
       {selected ? <p className={styles.chartNote}>{selected.description}</p> : null}
     </Panel>
   );

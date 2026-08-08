@@ -46,7 +46,7 @@
 .panelHeader > svg { color: #8595ae; height: 15px; width: 15px; }
 .donutBody { align-items: center; display: grid; gap: 16px; grid-template-columns: 120px 1fr; min-height: 205px; padding: 6px 15px 16px; }
 .donutWrap { height: 120px; position: relative; width: 120px; }
-.donut { height: 120px; transform: rotate(-90deg); width: 120px; }
+.donut { height: 120px; width: 120px; }
 .donutTrack { stroke: #edf1f6; }
 .donutSegment { cursor: pointer; outline: none; transform-origin: center; transition: opacity 160ms ease, stroke-width 160ms ease; }
 .donutSegment[data-dimmed="true"] { opacity: .25; }

@@ -13,6 +13,7 @@ import {
 
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { DonutChart } from "@/components/ui/donut-chart";
 import { calculatePerformanceDelta, productivityStatePercentage, type PerformanceSeriesPoint } from "@/performance/aggregations";
 import type { PerformancePageData, PerformanceSource } from "@/performance/data";
 import styles from "@/components/dashboard/performance/performance-page.module.css";
@@ -490,19 +491,6 @@ function ProductivityMix({
   const visibleTotal = available.filter((state) => visible[state.key]).reduce((total, state) => total + (data.totals[state.key] ?? 0), 0);
   const active = activityStates.find((state) => state.key === activeState) ?? null;
   const activeSeconds = active ? data.totals[active.key] : null;
-  const gradient = available
-    .filter((state) => visible[state.key] && (data.totals[state.key] ?? 0) > 0)
-    .reduce(
-      (result, state) => {
-        const share = visibleTotal > 0 ? ((data.totals[state.key] ?? 0) / visibleTotal) * 100 : 0;
-        return {
-          offset: result.offset + share,
-          parts: [...result.parts, `${state.color} ${result.offset}% ${result.offset + share}%`],
-        };
-      },
-      { offset: 0, parts: [] as string[] },
-    )
-    .parts.join(", ");
   const visibleAvailableCount = available.filter((state) => visible[state.key]).length;
 
   return (
@@ -513,14 +501,7 @@ function ProductivityMix({
         title="Productivity mix"
       />
       <div className={styles.productivityBody}>
-        <div
-          aria-label={totalRecorded > 0 ? `Productivity mix totaling ${formatDuration(totalRecorded)}` : "Productivity mix unavailable"}
-          className={styles.donut}
-          role="img"
-          style={{ background: gradient ? `conic-gradient(${gradient})` : "#eef2f7" }}
-        >
-          <div><strong>{active ? formatPercent(productivityStatePercentage(data.totals[active.key], totalRecorded)) : totalRecorded > 0 ? "100%" : "N/A"}</strong><span>{active?.shortLabel ?? (totalRecorded > 0 ? "Total" : "No data")}</span></div>
-        </div>
+        <DonutChart activeSegmentId={activeState} ariaLabel={totalRecorded > 0 ? `Productivity mix totaling ${formatDuration(totalRecorded)}` : "Productivity mix unavailable"} centerContent={<><strong>{active ? formatPercent(productivityStatePercentage(data.totals[active.key], totalRecorded)) : totalRecorded > 0 ? "100%" : "N/A"}</strong><span>{active?.shortLabel ?? (totalRecorded > 0 ? "Total" : "No data")}</span></>} className={styles.donut} data={available.filter((state) => visible[state.key]).map((state) => ({ id: state.key, value: data.totals[state.key] ?? 0, color: state.color, label: state.label, accessibleLabel: `${state.label}: ${formatDuration(data.totals[state.key])}, ${formatPercent(productivityStatePercentage(data.totals[state.key], visibleTotal))}` }))} onSegmentHover={(segment) => onActiveState((segment?.id as ActivityKey | undefined) ?? null)} size={200} strokeWidth={32} />
         <div className={styles.productivityLegend}>
           {activityStates.filter((state) => state.key !== "netSeconds").map((state) => {
             const seconds = data.totals[state.key];

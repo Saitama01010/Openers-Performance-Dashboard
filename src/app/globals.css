@@ -2912,9 +2912,6 @@ button.overview-date-filter__option {
   align-items: center;
   display: flex;
   flex-direction: column;
-  inset: 50% auto auto 50%;
-  position: absolute;
-  transform: translate(-50%, -50%);
 }
 
 .productivity-mix__total span {

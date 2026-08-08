@@ -6,6 +6,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { DonutChart } from "@/components/ui/donut-chart";
 import {
   metricValue,
   type TeamPerformanceData,
@@ -136,12 +137,9 @@ function TrendChart({ data }: { data: TeamPerformanceData }) {
 function HealthMix({ data }: { data: TeamPerformanceData }) {
   const total = data.kpis.totalTeams;
   const values = Object.fromEntries(data.healthMix.map((item) => [item.health, item.count])) as Record<string, number>;
-  const healthyEnd = total ? (values.healthy / total) * 360 : 0;
-  const underEnd = total ? healthyEnd + (values["under-target"] / total) * 360 : 0;
-  const noTargetEnd = total ? underEnd + (values["not-configured"] / total) * 360 : 0;
   const classified = values.healthy + values["under-target"];
-  const background = `conic-gradient(#22a65a 0deg ${healthyEnd}deg, #e24a43 ${healthyEnd}deg ${underEnd}deg, #f59e0b ${underEnd}deg ${noTargetEnd}deg, #9aa6ba ${noTargetEnd}deg 360deg)`;
-  return <section className={`${styles.card} ${styles.health}`} aria-labelledby="health-title"><header className={styles.cardHeader}><div><h2 id="health-title">Team health mix</h2><p>Only effective configured targets produce health status</p></div></header><div className={styles.healthBody}><div className={styles.donut} style={{ background }}><span><strong>{classified === 0 ? "N/A" : total}</strong><small>{classified === 0 ? "No targets" : "Total teams"}</small></span></div><ul>{data.healthMix.map((item) => <li data-health={item.health} key={item.health}><i /><span>{item.label}</span><strong>{item.count}</strong><small>{total ? `${((item.count / total) * 100).toFixed(0)}%` : "—"}</small></li>)}</ul></div>{classified === 0 ? <p className={styles.healthNote}>Health is intentionally neutral until an administrator configures an effective target.</p> : null}</section>;
+  const colors = { healthy: "#22a65a", "under-target": "#e24a43", "not-configured": "#f59e0b", unavailable: "#9aa6ba" } as const;
+  return <section className={`${styles.card} ${styles.health}`} aria-labelledby="health-title"><header className={styles.cardHeader}><div><h2 id="health-title">Team health mix</h2><p>Only effective configured targets produce health status</p></div></header><div className={styles.healthBody}><DonutChart ariaLabel={`Team health mix across ${total} teams`} centerClassName={styles.donutCenter} centerContent={<><strong>{classified === 0 ? "N/A" : total}</strong><small>{classified === 0 ? "No targets" : "Total teams"}</small></>} className={styles.donut} data={data.healthMix.map((item) => ({ id: item.health, value: item.count, color: colors[item.health], label: item.label, accessibleLabel: `${item.label}: ${item.count} teams${total ? `, ${((item.count / total) * 100).toFixed(0)}%` : ""}` }))} size={120} strokeWidth={20} totalValue={total} /><ul>{data.healthMix.map((item) => <li data-health={item.health} key={item.health}><i /><span>{item.label}</span><strong>{item.count}</strong><small>{total ? `${((item.count / total) * 100).toFixed(0)}%` : "—"}</small></li>)}</ul></div>{classified === 0 ? <p className={styles.healthNote}>Health is intentionally neutral until an administrator configures an effective target.</p> : null}</section>;
 }
 
 function Empty({ title, detail }: { title: string; detail: string }) {

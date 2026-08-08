@@ -1,0 +1,62 @@
+.root {
+  --donut-size: 200px;
+  aspect-ratio: 1;
+  display: grid;
+  max-width: 100%;
+  place-items: center;
+  position: relative;
+  width: var(--donut-size);
+}
+
+.svg {
+  display: block;
+  height: 100%;
+  overflow: visible;
+  transform: rotate(-90deg);
+  width: 100%;
+}
+
+.segment {
+  outline: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    filter 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    stroke-width 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.segment[data-interactive="true"] {
+  cursor: pointer;
+}
+
+.segment[data-active="true"] {
+  filter: drop-shadow(0 2px 3px color-mix(in srgb, var(--segment-color) 36%, transparent)) brightness(1.04);
+  transform: scale(1.018);
+}
+
+.segment[data-dimmed="true"] {
+  opacity: 0.22 !important;
+}
+
+.segment:focus-visible {
+  filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--segment-color) 48%, transparent)) brightness(1.06);
+  transform: scale(1.018);
+}
+
+.center {
+  align-items: center;
+  display: flex;
+  inset: 25%;
+  justify-content: center;
+  pointer-events: none;
+  position: absolute;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segment {
+    transition: none;
+  }
+}

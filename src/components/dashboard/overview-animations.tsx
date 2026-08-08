@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { DonutChart } from "@/components/ui/donut-chart";
 import {
   formatNumber,
   formatOptionalNumber,
@@ -25,6 +26,16 @@ export type ProductivityMixItem = {
   label: string;
   seconds: number;
   tone: "blue" | "cyan" | "green" | "orange" | "pink" | "slate" | "violet";
+};
+
+const productivityToneColors: Record<ProductivityMixItem["tone"], string> = {
+  blue: "var(--primary)",
+  cyan: "#0f97a5",
+  green: "var(--success)",
+  orange: "#f07b14",
+  pink: "#e83e75",
+  slate: "#718096",
+  violet: "#6d3fe0",
 };
 
 export type ClosedDealsPerformer = {
@@ -133,85 +144,24 @@ export function AnimatedProductivityMix({
 }: {
   items: ProductivityMixItem[];
 }) {
-  const ready = useMotionReady();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const total = useMemo(
     () => items.reduce((sum, item) => sum + item.seconds, 0),
     [items],
   );
-  const segments = useMemo(
-    () =>
-      items.map((item, index) => {
-        const share = total > 0 ? item.seconds / total : 0;
-        const cumulativeShare =
-          total > 0
-            ? items
-                .slice(0, index)
-                .reduce((sum, previous) => sum + previous.seconds, 0) / total
-            : 0;
-
-        return {
-          item,
-          rotation: -90 + cumulativeShare * 360,
-          visibleShare: Math.max(0, share - 0.008),
-        };
-      }),
-    [items, total],
-  );
-
   return (
     <div className="productivity-mix productivity-mix--donut">
       <div className="productivity-mix__content">
-        <figure
-          aria-label={`Recorded activity totals ${compactDuration(total)}`}
+        <DonutChart
+          activeSegmentId={activeIndex === null ? null : items[activeIndex]?.label}
+          ariaLabel={`Recorded activity totals ${compactDuration(total)}`}
+          centerClassName="productivity-mix__total"
+          centerContent={<><span>Total</span><strong><AnimatedMetricValue duration={760} format="duration" value={total} /></strong></>}
           className="productivity-mix__donut"
-        >
-          <svg aria-hidden="true" viewBox="0 0 120 120">
-            <circle
-              className="productivity-mix__donut-track"
-              cx="60"
-              cy="60"
-              pathLength="1"
-              r="46"
-            />
-            {segments.map(({ item, rotation, visibleShare }, index) => {
-              const segmentStyle = {
-                "--mix-delay": `${index * 45}ms`,
-                transform: `rotate(${rotation}deg)`,
-              } as CSSProperties;
-
-              return (
-                <circle
-                  className={`productivity-mix__donut-segment productivity-mix__donut-segment--${item.tone}`}
-                  cx="60"
-                  cy="60"
-                  data-muted={
-                    activeIndex !== null && activeIndex !== index
-                      ? ""
-                      : undefined
-                  }
-                  key={item.label}
-                  pathLength="1"
-                  r="46"
-                  strokeDasharray={
-                    ready ? `${visibleShare} 1` : "0 1"
-                  }
-                  style={segmentStyle}
-                />
-              );
-            })}
-          </svg>
-          <figcaption className="productivity-mix__total">
-            <span>Total</span>
-            <strong>
-              <AnimatedMetricValue
-                duration={760}
-                format="duration"
-                value={total}
-              />
-            </strong>
-          </figcaption>
-        </figure>
+          data={items.map((item) => ({ id: item.label, value: item.seconds, color: productivityToneColors[item.tone], label: item.label, accessibleLabel: `${item.label}: ${compactDuration(item.seconds)}` }))}
+          size={168}
+          strokeWidth={22}
+        />
 
         <div className="productivity-mix__legend" role="list">
           {items.map((item, index) => {

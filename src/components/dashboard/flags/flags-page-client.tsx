@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import styles from "@/components/dashboard/flags/flags-page.module.css";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { DonutChart } from "@/components/ui/donut-chart";
 import type { getPerformanceFlagsData, getTransferFlagsData } from "@/flags/data";
 import { TRANSFER_FLAG_LABELS } from "@/flags/domain";
 import { formatDurationSeconds } from "@/import/format";
@@ -141,22 +142,13 @@ function Donut({
   title: string;
 }) {
   const total = items.reduce((sum, item) => sum + item.count, 0);
-  const segments = items.map((item, index) => ({
-    item,
-    length: (item.count / total) * 270.18,
-    offset: items.slice(0, index).reduce((sum, previous) => sum + (previous.count / total) * 270.18, 0),
-  }));
   return (
     <section className={styles.panel} aria-labelledby={`${title.replaceAll(" ", "-")}-title`}>
       <header className={styles.panelHeader}><div><h2 id={`${title.replaceAll(" ", "-")}-title`}>{title}</h2><p>Distribution across authoritative flag categories</p></div><DashboardIcon name="info" /></header>
       {total === 0 ? <EmptyState title="No composition is available" detail="No triggered flags exist for the selected filters and period." /> : (
         <div className={styles.donutBody}>
           <div className={styles.donutWrap}>
-            <svg aria-label={`${title}. Use Tab to inspect categories.`} className={styles.donut} role="img" viewBox="0 0 120 120">
-              <circle className={styles.donutTrack} cx="60" cy="60" fill="none" r="43" strokeWidth="20" />
-              {segments.map(({ item, length, offset }) => <circle aria-label={`${item.label}: ${item.count}, ${percent(item.count, total)}`} className={styles.donutSegment} cx="60" cy="60" data-dimmed={active && active !== item.key ? "true" : undefined} fill="none" key={item.key} onBlur={() => onActive(null)} onClick={() => onActive(active === item.key ? null : item.key)} onFocus={() => onActive(item.key)} onPointerEnter={() => onActive(item.key)} onPointerLeave={() => onActive(null)} r="43" role="button" stroke={COLORS[item.key]} strokeDasharray={`${length} ${270.18 - length}`} strokeDashoffset={-offset} strokeWidth={active === item.key ? 24 : 20} tabIndex={0}><title>{`${item.label}: ${item.count} flags (${percent(item.count, total)}), ${item.agents} agents`}</title></circle>)}
-            </svg>
-            <span className={styles.donutCenter}><strong>{active ? number(items.find((item) => item.key === active)?.count ?? total) : number(total)}</strong><small>{active ? items.find((item) => item.key === active)?.label : "Total flags"}</small></span>
+            <DonutChart activeSegmentId={active} ariaLabel={`${title}. Use Tab to inspect categories.`} centerClassName={styles.donutCenter} centerContent={<><strong>{active ? number(items.find((item) => item.key === active)?.count ?? total) : number(total)}</strong><small>{active ? items.find((item) => item.key === active)?.label : "Total flags"}</small></>} className={styles.donut} data={items.map((item) => ({ id: item.key, value: item.count, color: COLORS[item.key], label: item.label, accessibleLabel: `${item.label}: ${item.count} flags (${percent(item.count, total)}), ${item.agents} agents` }))} interactiveSegments onSegmentHover={(segment) => onActive((segment?.id as SeriesKey | undefined) ?? null)} onSegmentSelect={(segment) => onActive(active === segment.id ? null : segment.id as SeriesKey)} size={120} strokeWidth={20} />
           </div>
           <ul className={styles.legend}>{items.map((item) => <li key={item.key}><button aria-pressed={active === item.key} onBlur={() => onActive(null)} onClick={() => onActive(active === item.key ? null : item.key)} onFocus={() => onActive(item.key)} onPointerEnter={() => onActive(item.key)} onPointerLeave={() => onActive(null)} type="button"><i style={{ background: COLORS[item.key] }} /><span>{item.label}<small>{item.agents} distinct agents</small></span><strong>{number(item.count)} <small>{percent(item.count, total)}</small></strong></button></li>)}</ul>
         </div>

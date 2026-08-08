@@ -19,6 +19,7 @@ import type {
   CommissionTrendPoint,
 } from "@/commissions/view-model";
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
+import { DonutChart } from "@/components/ui/donut-chart";
 import styles from "@/components/dashboard/commissions/commissions-page.module.css";
 
 type SharedData = {
@@ -303,19 +304,10 @@ function DashboardTrend({ points }: { points: CommissionTrendPoint[] }) {
 function TeamDistribution({ data }: { data: OrganizationCommissionData }) {
   const [active, setActive] = useState<string | null>(null);
   const total = data.summary.totalCommission;
-  const circumference = 270.18;
-  const segments = data.analytics.byTeam.map((team, index) => {
-    const length = team.share * circumference;
-    const segmentOffset = data.analytics.byTeam
-      .slice(0, index)
-      .reduce((total, item) => total + item.share * circumference, 0);
-    return {
-      team,
-      length,
-      offset: segmentOffset,
-      color: TEAM_COLORS[index % TEAM_COLORS.length],
-    };
-  });
+  const segments = data.analytics.byTeam.map((team, index) => ({
+    team,
+    color: TEAM_COLORS[index % TEAM_COLORS.length] ?? "#718096",
+  }));
   const selected = data.analytics.byTeam.find((team) => team.id === active) ?? null;
   return (
     <section className={styles.panel} aria-labelledby="commission-team-title">
@@ -325,11 +317,7 @@ function TeamDistribution({ data }: { data: OrganizationCommissionData }) {
       ) : (
         <div className={styles.donutLayout}>
           <div className={styles.donutWrap}>
-            <svg aria-label="Team commission distribution. Use Tab to inspect teams." className={styles.donut} role="img" viewBox="0 0 120 120">
-              <circle className={styles.donutTrack} cx="60" cy="60" fill="none" r="43" strokeWidth="20" />
-              {segments.map(({ team, length, offset: segmentOffset, color }) => <circle aria-label={`${team.name}: ${egp(team.commission)}, ${percent(team.share)}`} className={styles.donutSegment} cx="60" cy="60" data-dimmed={active && active !== team.id ? "true" : undefined} fill="none" key={team.id} onBlur={() => setActive(null)} onClick={() => setActive(active === team.id ? null : team.id)} onFocus={() => setActive(team.id)} onPointerEnter={() => setActive(team.id)} onPointerLeave={() => setActive(null)} r="43" role="button" stroke={color} strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-segmentOffset} strokeWidth={active === team.id ? 24 : 20} tabIndex={0}><title>{`${team.name}: ${egp(team.commission)} (${percent(team.share)})`}</title></circle>)}
-            </svg>
-            <div className={styles.donutCenter}><strong>{selected ? percent(selected.share) : egp(total)}</strong><span>{selected ? selected.name : "Total commission"}</span></div>
+            <DonutChart activeSegmentId={active} ariaLabel="Team commission distribution. Use Tab to inspect teams." centerClassName={styles.donutCenter} centerContent={<><strong>{selected ? percent(selected.share) : egp(total)}</strong><span>{selected ? selected.name : "Total commission"}</span></>} className={styles.donut} data={segments.map(({ team, color }) => ({ id: team.id, value: team.commission, color, label: team.name, accessibleLabel: `${team.name}: ${egp(team.commission)}, ${percent(team.share)}` }))} interactiveSegments onSegmentHover={(segment) => setActive(segment?.id ?? null)} onSegmentSelect={(segment) => setActive(active === segment.id ? null : segment.id)} size={190} strokeWidth={31} totalValue={total} />
           </div>
           <ul className={styles.distributionList}>{segments.map(({ team, color }) => <li key={team.id}><button aria-pressed={active === team.id} onBlur={() => setActive(null)} onClick={() => setActive(active === team.id ? null : team.id)} onFocus={() => setActive(team.id)} onPointerEnter={() => setActive(team.id)} onPointerLeave={() => setActive(null)} type="button"><i style={{ background: color }} /><span>{team.name}<small>{team.employees} employees · {team.closedDeals} deals</small></span><strong>{egp(team.commission)}<small>{percent(team.share)}</small></strong><em role="tooltip"><b>{team.name}</b><span>Employees {team.employees}</span><span>Closed deals {team.closedDeals}</span><span>Commission {egp(team.commission)}</span><span>Total compensation {egp(team.totalCompensation)}</span></em></button></li>)}</ul>
         </div>

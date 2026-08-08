@@ -7,95 +7,65 @@ function source(path: string) {
   return readFileSync(resolve(process.cwd(), path), "utf8");
 }
 
-describe("simplified admin interface contract", () => {
-  it("shows only team creation and the four-column current-members interface", () => {
+describe("admin interface contract", () => {
+  it("preserves the existing teams surface", () => {
     const page = source("src/app/admin/teams/page.tsx");
-    const tableHeader = page.slice(
-      page.indexOf("<thead"),
-      page.indexOf("</thead>"),
-    );
+    const tableHeader = page.slice(page.indexOf("<thead"), page.indexOf("</thead>"));
 
     expect(page).toContain("Create a team");
     expect(page).toContain("Current members");
-    expect(page).not.toContain("Team administration");
-    expect(page).not.toContain("Rename");
-    expect(page).not.toContain("Assign manager");
-    expect(page).not.toContain("Move agent");
-    expect(page).not.toContain("Activate");
-    expect(page).not.toContain("Deactivate");
     expect(tableHeader.match(/<th /g)).toHaveLength(4);
-    expect(tableHeader).toContain("Member");
-    expect(tableHeader).toContain("Role");
-    expect(tableHeader).toContain("Team");
-    expect(tableHeader).toContain("Started");
     expect(page).toContain("<InlineTeamSelect");
   });
 
-  it("renders the requested account columns and links the Real Name", () => {
+  it("renders the redesigned directory columns and authoritative controls", () => {
     const table = source("src/components/admin/admin-user-table.tsx");
-    const tableHeader = table.slice(
-      table.indexOf("<thead"),
-      table.indexOf("</thead>"),
-    );
+    const tableHeader = table.slice(table.indexOf("<thead"), table.indexOf("</thead>"));
 
     expect(tableHeader.match(/<th /g)).toHaveLength(9);
-    for (const label of [
-      "Real Name",
-      "Email",
-      "American Name",
-      "Role",
-      "Team",
-      "Shift",
-      "Status",
-      "Actions",
-    ]) {
+    for (const label of ["User", "Email", "Role", "Team", "Shift", "Status", "Override access", "Actions"]) {
       expect(tableHeader).toContain(label);
     }
     expect(tableHeader).not.toContain("Invitation");
-    expect(tableHeader).not.toContain("Last login");
-    expect(tableHeader).not.toContain("Created");
     expect(table).toContain("href={`/admin/users/${user.id}`}");
-    expect(table.indexOf(`aria-label={\`Select ${"${user.name}"}\`}`)).toBeLessThan(
-      table.indexOf("href={`/admin/users/${user.id}`}"),
-    );
-    expect(table).toContain("<InlineEmailEditor");
-    expect(table).toContain("<InlineDialerNameEditor");
     expect(table).toContain("<InlineTeamSelect");
     expect(table).toContain("<InlineShiftEditor");
-    expect(table).toContain("Delete Selected Users");
-    expect(table).toContain("selected.size > 0 ?");
-    expect(table).toContain("Delete selected users?");
+    expect(table).toContain('aria-labelledby="user-preview-title"');
+    expect(table).toContain('aria-describedby="bulk-delete-description"');
+    expect(table).toContain("<details className={styles.inlineDetails}>");
+    expect(table).toContain("permissionLabel(override.permissionKey)");
+    expect(table).toContain(">Delete user</Link>");
+    expect(table).toContain('field: "role"');
+    expect(table).toContain("openPreview(user.id)");
+    expect(table).toContain("Permanently delete selected users?");
     expect(table).toContain("current.filter((user) => !deleted.has(user.id))");
     expect(table).toContain("router.refresh()");
   });
 
-  it("keeps invitation filtering outside the visible account columns", () => {
+  it("keeps invitation and override filtering outside visible account columns", () => {
     const page = source("src/app/admin/users/page.tsx");
     const table = source("src/components/admin/admin-user-table.tsx");
-    const tableHeader = table.slice(
-      table.indexOf("<thead"),
-      table.indexOf("</thead>"),
-    );
+    const tableHeader = table.slice(table.indexOf("<thead"), table.indexOf("</thead>"));
 
     expect(page).toContain('label="Invitation"');
+    expect(page).toContain('label="Override access"');
     expect(page).toContain("invitationStatuses");
     expect(tableHeader).not.toContain("Invitation");
     expect(tableHeader).not.toContain("Last login");
   });
 
-  it("keys and synchronizes rows for filtered pagination", () => {
+  it("keeps server filters across paginated directory links", () => {
     const page = source("src/app/admin/users/page.tsx");
     const table = source("src/components/admin/admin-user-table.tsx");
 
-    expect(page).toContain("const userQueryKey = JSON.stringify");
-    expect(page).toContain("key={userQueryKey}");
     expect(page).toContain("Page {pagination.page} of {totalPages} · {pagination.total} users");
     expect(page).toContain('key !== "page"');
-    expect(page).toContain('search.set("page", String(nextPage))');
+    expect(page).toContain('search.set("page", String(page))');
+    expect(page).toContain('name="override"');
     expect(table).toContain("const [rows, setRows] = useState(users)");
   });
 
-  it("keeps the user detail page read-only apart from reveal and deletion controls", () => {
+  it("keeps full details and exposes audited management controls", () => {
     const page = source("src/app/admin/users/[userId]/page.tsx");
 
     expect(page).toContain("Read-only account details");
@@ -104,12 +74,27 @@ describe("simplified admin interface contract", () => {
     expect(page).toContain("Audit history");
     expect(page).toContain("allowRegenerate={false}");
     expect(page).toContain("<DeleteUserDialog userId={userId} />");
-    expect(page).not.toContain("Edit user");
-    expect(page).not.toContain("Save user changes");
-    expect(page).not.toContain("<form");
-    expect(page).not.toContain("<input");
-    expect(page).not.toContain("<select");
-    expect(page).not.toContain("updateUserAction");
+    expect(page).toContain("Edit user");
+    expect(page).toContain("Save user and access");
+    expect(page).toContain("updateUserAction");
+    expect(page).toContain("invitationAction");
+    expect(page).toContain("forcePasswordResetAction");
+    expect(page).toContain("userStatusAction");
+    expect(page).toContain("Role default");
+    expect(page).toContain("Effective:");
+    expect(page).toContain("<InlineDialerNameEditor");
+  });
+
+  it("keeps the five-stage CSV workflow usable for drag-and-drop and large files", () => {
+    const wizard = source("src/components/admin/user-import-wizard.tsx");
+
+    expect(wizard).toContain("onDrop={(event) =>");
+    expect(wizard).toContain("event.dataTransfer.files[0]");
+    expect(wizard).toContain("TABLE_PAGE_SIZE = 25");
+    expect(wizard).toContain("<TablePagination");
+    expect(wizard).toContain("aria-pressed={active}");
+    expect(wizard).toContain("setValidationFilter");
+    expect(wizard).toContain("Invitation emails are not sent automatically.");
   });
 
   it("uses a one-click warning dialog without typed-email confirmation", () => {

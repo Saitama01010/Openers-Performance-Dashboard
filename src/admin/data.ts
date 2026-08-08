@@ -111,6 +111,7 @@ export type AdminUserListFilters = {
   teamId?: string;
   accountStatus?: AccountStatus;
   invitationStatus?: InvitationStatus;
+  overrideAccess?: "with-overrides" | "role-default";
   page: number;
   pageSize: number;
 };
@@ -454,6 +455,18 @@ function listWhere(actor: Actor, filters: AdminUserListFilters) {
     )`);
   }
 
+  if (filters.overrideAccess === "with-overrides") {
+    conditions.push(sql`exists (
+      select 1 from user_permission_overrides overrides
+      where overrides.profile_id = ${profiles.id}
+    )`);
+  } else if (filters.overrideAccess === "role-default") {
+    conditions.push(sql`not exists (
+      select 1 from user_permission_overrides overrides
+      where overrides.profile_id = ${profiles.id}
+    )`);
+  }
+
   if (filters.invitationStatus === "not invited") {
     conditions.push(
       and(
@@ -557,7 +570,7 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
     };
   }
 
-  const [membershipRows, mappingRows, invitationRows] = await Promise.all([
+  const [membershipRows, mappingRows, invitationRows, overrideRows] = await Promise.all([
     getDb()
       .select({
         profileId: teamMemberships.profileId,
@@ -599,6 +612,14 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
       .from(accountInvitationTokens)
       .where(inArray(accountInvitationTokens.profileId, userIds))
       .orderBy(desc(accountInvitationTokens.createdAt)),
+    getDb()
+      .select({
+        profileId: userPermissionOverrides.profileId,
+        permissionKey: userPermissionOverrides.permissionKey,
+        allowed: userPermissionOverrides.allowed,
+      })
+      .from(userPermissionOverrides)
+      .where(inArray(userPermissionOverrides.profileId, userIds)),
   ]);
 
   const membershipByUser = new Map(
@@ -606,11 +627,24 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
   );
   const mappingByUser = new Map(mappingRows.map((row) => [row.profileId, row]));
   const invitationByUser = new Map<string, (typeof invitationRows)[number]>();
+  const overridesByUser = new Map<
+    string,
+    { permissionKey: string; allowed: boolean }[]
+  >();
 
   for (const invitation of invitationRows) {
     if (!invitationByUser.has(invitation.profileId)) {
       invitationByUser.set(invitation.profileId, invitation);
     }
+  }
+
+  for (const override of overrideRows) {
+    const current = overridesByUser.get(override.profileId) ?? [];
+    current.push({
+      permissionKey: override.permissionKey,
+      allowed: override.allowed,
+    });
+    overridesByUser.set(override.profileId, current);
   }
 
   return {
@@ -623,9 +657,46 @@ export async function listAdminUsers(actor: Actor, filters: AdminUserListFilters
         row.passwordState,
         row.passwordChangedAt,
       ),
+      permissionOverrides: overridesByUser.get(row.id) ?? [],
     })),
     teams: teamRows,
     pagination: { page, pageSize, total: totalRows[0]?.total ?? 0 },
+  };
+}
+
+export async function getAdminUserStats(actor: Actor) {
+  assertAdmin(actor);
+
+  const rows = await getDb()
+    .select({
+      role: profiles.role,
+      accountStatus: profiles.accountStatus,
+      total: count(),
+    })
+    .from(profiles)
+    .where(
+      and(
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+        ne(profiles.accountStatus, "deleted"),
+      ),
+    )
+    .groupBy(profiles.role, profiles.accountStatus);
+
+  const totalFor = (role?: Role, activeOnly = false) =>
+    rows.reduce((sum, row) => {
+      if (role && row.role !== role) return sum;
+      if (activeOnly && row.accountStatus !== "active") return sum;
+      return sum + Number(row.total);
+    }, 0);
+
+  return {
+    total: totalFor(),
+    active: totalFor(undefined, true),
+    roles: {
+      admin: { total: totalFor("admin"), active: totalFor("admin", true) },
+      manager: { total: totalFor("manager"), active: totalFor("manager", true) },
+      agent: { total: totalFor("agent"), active: totalFor("agent", true) },
+    },
   };
 }
 
@@ -796,14 +867,15 @@ async function createProvisionedUser(actor: Actor, input: CreateUserInput) {
 
   if (name.length < 2) throw new Error("Full name is required.");
   if (!email.includes("@")) throw new Error("A valid email is required.");
-  if (!input.teamId) throw new Error("Select a team before creating this user.");
   if (input.role === "manager" && !input.teamId) {
     throw new Error("Select a team before changing this user to manager.");
   }
   if (input.role === "agent" && !input.teamId) {
     throw new Error("Select a team before changing this user to agent.");
   }
-  await validateTeamForAssignment(actor, input.teamId);
+  if (input.teamId) {
+    await validateTeamForAssignment(actor, input.teamId);
+  }
   if (!input.dialerName?.trim()) {
     throw new Error("Dialer agent name is required.");
   }
@@ -854,7 +926,7 @@ async function createProvisionedUser(actor: Actor, input: CreateUserInput) {
       employmentStatus: "active",
     });
 
-    if (input.teamId) {
+    if (roleRequiresTeam(input.role) && input.teamId) {
       await tx.insert(teamMemberships).values({
         id: newId(),
         profileId,

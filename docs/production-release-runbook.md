@@ -18,6 +18,25 @@ restorable backup. Never run the demo seed in production.
 7. Record the merge SHA. Build and deploy that SHA, set it as
    `GIT_COMMIT_SHA`, and verify `/health/version` after deployment.
 
+At the final repository review, GitHub reported that `main` was not protected
+and secret scanning/push protection were disabled. A repository owner must do
+the following before merge:
+
+1. Open **Settings → Rules → Rulesets → New branch ruleset** and target the
+   branch name `main`.
+2. Enable restriction of deletions and non-fast-forward/force pushes, require a
+   pull request before merging, require at least one approval, dismiss stale
+   approvals when new commits are pushed, and require conversation resolution.
+3. Require the status checks named `verify` (CI) and
+   `Analyze JavaScript and TypeScript` (CodeQL). Do not allow a bypass for
+   ordinary contributors or direct pushes.
+4. Activate the ruleset and verify its status is **Active**, then confirm PR
+   #12 shows both checks as required rather than merely informational.
+5. Open **Settings → Code security and analysis** and enable secret scanning,
+   push protection, validity checks where available, and Dependabot security
+   updates. If the repository plan does not expose a control, record the plan
+   limitation and use an organization ruleset or equivalent owner control.
+
 ## 2. Production environment
 
 Store sensitive values in Hostinger's secret/environment facility. Do not put

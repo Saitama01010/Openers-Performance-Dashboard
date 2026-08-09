@@ -3,8 +3,12 @@ import { redirect } from "next/navigation";
 
 import { loginAction } from "@/auth/actions";
 import { getCurrentUser } from "@/auth/session";
-import { AuthShell } from "@/components/auth/auth-shell";
-import { SubmitButton } from "@/components/dashboard/action-controls";
+import {
+  LoginSubmitButton,
+  PasswordField,
+} from "@/components/auth/login-controls";
+import { LoginShell } from "@/components/auth/login-shell";
+import styles from "@/components/auth/login.module.css";
 import { StatusBanner } from "@/components/dashboard/dashboard-primitives";
 
 export const dynamic = "force-dynamic";
@@ -20,16 +24,16 @@ export default async function LoginPage({
   if (user) redirect("/dashboard");
 
   return (
-    <AuthShell
-      description="Use your assigned account to open the role-scoped workspace."
-      footer={
-        <Link className="ui-link" href="/forgot-password">
-          Forgot your password?
-        </Link>
-      }
-      title="Sign in"
-    >
-      <div className="auth-card__messages">
+    <LoginShell>
+      <header className={styles.header}>
+        <p className={styles.eyebrow}>Openers workspace</p>
+        <h2 id="login-heading">Sign in</h2>
+        <p className={styles.headerDescription}>
+          Use your assigned account to open the role-scoped workspace.
+        </p>
+      </header>
+
+      <div aria-live="polite" className={styles.messages}>
         {params.error ? (
           <StatusBanner tone="danger">
             The email or password did not match an active account. Check both
@@ -47,34 +51,47 @@ export default async function LoginPage({
           </StatusBanner>
         ) : null}
       </div>
-      <form action={loginAction} className="auth-form">
-        <label className="ui-label">
-          Email
-          <input
-            autoComplete="email"
-            className="ui-input"
-            name="email"
-            required
-            type="email"
-          />
-        </label>
-        <label className="ui-label">
-          Password
-          <input
-            autoComplete="current-password"
-            className="ui-input"
-            name="password"
-            required
-            type="password"
-          />
-        </label>
-        <SubmitButton
-          className="auth-form__submit"
-          pendingLabel="Signing in"
-        >
-          Sign in
-        </SubmitButton>
+
+      <form action={loginAction} className={styles.form}>
+        <div className={styles.fieldGroup}>
+          <label className={styles.fieldLabel} htmlFor="login-email">
+            Email
+          </label>
+          <span className={styles.inputShell}>
+            <svg
+              aria-hidden="true"
+              className={styles.inputIcon}
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <rect height="14" rx="2" width="18" x="3" y="5" />
+              <path d="m4 7 8 6 8-6" />
+            </svg>
+            <input
+              autoComplete="email"
+              className={styles.input}
+              id="login-email"
+              name="email"
+              placeholder="you@company.com"
+              required
+              type="email"
+            />
+          </span>
+        </div>
+        <PasswordField />
+        <LoginSubmitButton>Sign in</LoginSubmitButton>
       </form>
-    </AuthShell>
+
+      <div className={styles.footer} aria-hidden="true">
+        <span className={styles.footerDividerLabel}>or</span>
+      </div>
+      <Link className={styles.forgotLink} href="/forgot-password">
+        <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+          <rect height="10" rx="1.5" width="12" x="6" y="10" />
+          <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10" />
+        </svg>
+        Forgot your password?
+      </Link>
+    </LoginShell>
   );
 }

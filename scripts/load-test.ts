@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { createHash } from "node:crypto";
+import mysql, { type RowDataPacket } from "mysql2/promise";
 
 type Sample = { path: string; durationMs: number; ok: boolean; status: number };
 
@@ -64,8 +65,13 @@ async function user(index: number) {
         redirect: "manual",
         signal: AbortSignal.timeout(10_000),
       });
-      samples.push({ path, durationMs: performance.now() - started, ok: response.status < 500, status: response.status });
       await response.arrayBuffer();
+      samples.push({
+        path,
+        durationMs: performance.now() - started,
+        ok: response.ok,
+        status: response.status,
+      });
     } catch {
       samples.push({ path, durationMs: performance.now() - started, ok: false, status: 0 });
     }
@@ -79,12 +85,15 @@ function percentile(values: number[], ratio: number) {
   return Number(sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)].toFixed(1));
 }
 
-function summary(rows: Sample[]) {
+function summary(rows: Sample[], observedDurationSeconds: number) {
   const durations = rows.map((row) => row.durationMs);
+  const failedRequests = rows.filter((row) => !row.ok).length;
   return {
     requests: rows.length,
-    errors: rows.filter((row) => !row.ok).length,
-    errorRate: rows.length ? Number((rows.filter((row) => !row.ok).length / rows.length).toFixed(4)) : 0,
+    successfulRequests: rows.length - failedRequests,
+    failedRequests,
+    errorRate: rows.length ? Number((failedRequests / rows.length).toFixed(4)) : 0,
+    throughputRps: Number((rows.length / Math.max(observedDurationSeconds, 0.001)).toFixed(2)),
     statuses: Object.fromEntries(
       Array.from(new Set(rows.map((row) => row.status)))
         .sort((left, right) => left - right)
@@ -96,16 +105,52 @@ function summary(rows: Sample[]) {
   };
 }
 
+async function measureDatabasePool() {
+  if (process.env.LOAD_TEST_MEASURE_DB !== "true" || !process.env.DATABASE_URL) {
+    return null;
+  }
+  const databaseUrl = new URL(process.env.DATABASE_URL);
+  if (!["127.0.0.1", "localhost", "::1"].includes(databaseUrl.hostname)) {
+    throw new Error("DB connection sampling is allowed only for a local load rehearsal.");
+  }
+  const connection = await mysql.createConnection(process.env.DATABASE_URL);
+  let peakConnected = 0;
+  let peakRunning = 0;
+  try {
+    while (Date.now() < deadline) {
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected', 'Threads_running')",
+      );
+      const values = new Map(
+        rows.map((row) => [String(row.Variable_name), Number(row.Value)]),
+      );
+      peakConnected = Math.max(peakConnected, values.get("Threads_connected") ?? 0);
+      peakRunning = Math.max(peakRunning, values.get("Threads_running") ?? 0);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  } finally {
+    await connection.end();
+  }
+  return { peakConnected, peakRunning };
+}
+
 async function main() {
-  await Promise.all(Array.from({ length: concurrency }, (_, index) => user(index)));
+  const startedAt = performance.now();
+  const [, databasePool] = await Promise.all([
+    Promise.all(Array.from({ length: concurrency }, (_, index) => user(index))),
+    measureDatabasePool(),
+  ]);
+  const observedDurationSeconds = (performance.now() - startedAt) / 1_000;
   const observedPaths = Array.from(new Set(samples.map((sample) => sample.path))).sort();
   console.info(JSON.stringify({
     baseUrl: url.origin,
     concurrency,
     durationSeconds,
+    observedDurationSeconds: Number(observedDurationSeconds.toFixed(2)),
     thinkTimeMs,
-    overall: summary(samples),
-    paths: Object.fromEntries(observedPaths.map((path) => [path, summary(samples.filter((sample) => sample.path === path))])),
+    databasePool,
+    overall: summary(samples, observedDurationSeconds),
+    paths: Object.fromEntries(observedPaths.map((path) => [path, summary(samples.filter((sample) => sample.path === path), observedDurationSeconds)])),
   }, null, 2));
 }
 

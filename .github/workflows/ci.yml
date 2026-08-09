@@ -67,6 +67,15 @@ jobs:
       - run: npm run db:health
       - run: mysql -h 127.0.0.1 -uroot -proot_password -e "CREATE DATABASE IF NOT EXISTS openers_dashboard_integration_test; GRANT ALL PRIVILEGES ON openers_dashboard_integration_test.* TO 'openers'@'%'; FLUSH PRIVILEGES;"
       - run: NODE_ENV=test npm run db:migrate:test
+      - name: Verify upgrade from the pre-hardening schema
+        env:
+          NODE_ENV: test
+          DATABASE_ENVIRONMENT: test
+          ALLOW_UPGRADE_MIGRATION_TEST: "true"
+          UPGRADE_TEST_DATABASE_URL: mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard_upgrade_test
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot_password -e "CREATE DATABASE IF NOT EXISTS openers_dashboard_upgrade_test; GRANT ALL PRIVILEGES ON openers_dashboard_upgrade_test.* TO 'openers'@'%'; FLUSH PRIVILEGES;"
+          npm run db:migrate:upgrade-test
       - run: npm run test
       - run: npm run worker:imports -- --once
       - run: npm run worker:email -- --once

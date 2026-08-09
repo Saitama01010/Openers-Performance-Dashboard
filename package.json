@@ -17,6 +17,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:migrate:test": "tsx scripts/db-migrate-test.ts",
+    "db:migrate:upgrade-test": "tsx scripts/db-migrate-upgrade-test.ts",
     "db:seed": "tsx scripts/db-seed.ts",
     "db:bootstrap": "tsx scripts/db-bootstrap.ts",
     "db:health": "tsx scripts/db-health.ts",

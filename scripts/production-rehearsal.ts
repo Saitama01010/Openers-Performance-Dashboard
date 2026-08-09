@@ -3,10 +3,25 @@ import { readdir, readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
-function run(command: string) {
+function run(command: string, environment = process.env) {
   console.info(`\n[rehearsal] ${command}`);
-  const result = spawnSync(command, { shell: true, stdio: "inherit", env: process.env });
+  const result = spawnSync(command, { shell: true, stdio: "inherit", env: environment });
   if (result.status !== 0) throw new Error(`Production rehearsal failed: ${command}`);
+}
+
+function productionBuildEnvironment() {
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key !== "NODE_ENV"),
+  ) as NodeJS.ProcessEnv;
+  environment.DATABASE_ENVIRONMENT = "production";
+  environment.DEPLOYMENT_ENVIRONMENT = "production";
+  environment.APP_URL = "https://build.invalid";
+  environment.EMAIL_PROVIDER = "resend";
+  environment.RESEND_API_KEY =
+    environment.RESEND_API_KEY ?? "rehearsal-build-only-not-a-provider-key";
+  environment.EMAIL_FROM_ADDRESS =
+    environment.EMAIL_FROM_ADDRESS ?? "no-reply@build.invalid";
+  return environment;
 }
 
 async function migrationDigest() {
@@ -25,7 +40,9 @@ for (const command of [
   "npm run lint",
   "npm run typecheck",
   "npm run test",
-  "npm run build",
+]) run(command);
+run("npm run build", productionBuildEnvironment());
+for (const command of [
   "npm run db:generate",
   "git diff --exit-code -- drizzle",
   "npm audit --audit-level=high",
@@ -36,13 +53,14 @@ if (before !== after) throw new Error("db:generate changed the migration SQL set
 
 if (process.argv.includes("--with-db")) {
   for (const command of [
+    "npm run db:migrate:upgrade-test",
     "npm run db:migrate:test",
     "npm run db:migrate",
     "npm run db:bootstrap",
     "npm run db:health",
     "npm run worker:imports -- --once",
     "npm run worker:email -- --once",
-    "npm run cleanup:retention",
+    "npm run cleanup:retention -- --dry-run",
   ]) run(command);
 }
 

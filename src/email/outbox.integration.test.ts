@@ -17,6 +17,7 @@ import {
   processNextEmail,
   retryFailedEmail,
 } from "@/email/outbox";
+import type { TransactionalEmail } from "@/email/provider";
 import { newId } from "@/lib/ids";
 
 vi.mock("server-only", () => ({}));
@@ -71,7 +72,7 @@ afterEach(async () => {
 describe("email outbox", () => {
   it("encrypts queued token payloads and deduplicates the email intent", async () => {
     const first = await setup("dedupe-key");
-    await enqueueEmailOutbox(getDb(), {
+    const duplicateId = await enqueueEmailOutbox(getDb(), {
       organizationId: first.organizationId,
       profileId: first.profileId,
       referenceId: first.tokenId,
@@ -82,11 +83,12 @@ describe("email outbox", () => {
     });
     const rows = await getDb().select().from(emailOutbox).where(eq(emailOutbox.idempotencyKey, "dedupe-key"));
     expect(rows).toHaveLength(1);
+    expect(duplicateId).toBe(first.messageId);
     expect(rows[0].encryptedPayload).not.toContain("sensitive-raw-token");
   });
 
   it("claims only once and scrubs encrypted content after successful delivery", async () => {
-    const { messageId } = await setup();
+    const { messageId, idempotencyKey } = await setup();
     const [first, second] = await Promise.all([
       claimNextEmail("email-a", new Date(), messageId),
       claimNextEmail("email-b", new Date(), messageId),
@@ -94,11 +96,16 @@ describe("email outbox", () => {
     expect([first, second].filter(Boolean)).toHaveLength(1);
     const claimed = first ?? second!;
     await getDb().update(emailOutbox).set({ status: "queued", leaseOwner: null, leaseExpiresAt: null, attemptCount: 0 }).where(eq(emailOutbox.id, claimed.id));
+    const deliver = vi.fn(async (message: TransactionalEmail) => {
+      expect(message.idempotencyKey).toBe(idempotencyKey);
+      return { ok: true as const, provider: "resend" as const, acceptedAt: new Date(), providerMessageId: "provider-1" };
+    });
     const result = await processNextEmail("email-worker", {
       messageId,
-      deliver: async () => ({ ok: true, provider: "resend", acceptedAt: new Date(), providerMessageId: "provider-1" }),
+      deliver,
     });
     expect(result).toEqual({ messageId, status: "sent" });
+    expect(deliver).toHaveBeenCalledOnce();
     const [row] = await getDb().select().from(emailOutbox).where(eq(emailOutbox.id, messageId));
     expect(row).toMatchObject({ status: "sent", encryptedPayload: null, providerMessageId: "provider-1" });
   });
@@ -156,6 +163,66 @@ describe("email outbox", () => {
     expect((await processNextEmail("timeout", { messageId, deliver, timeoutMs: 5 }))?.status).toBe("retry");
     const [row] = await getDb().select().from(emailOutbox).where(eq(emailOutbox.id, messageId));
     expect(row).toMatchObject({ status: "retry", failureCode: "transient_provider_failure" });
+  });
+
+  it("does not mutate delivery state after another worker takes the lease", async () => {
+    const success = await setup();
+    const successfulDelivery = await processNextEmail("stale-success", {
+      messageId: success.messageId,
+      deliver: async () => {
+        await getDb()
+          .update(emailOutbox)
+          .set({ leaseOwner: "replacement", leaseExpiresAt: new Date("2100-01-01T00:00:00Z") })
+          .where(eq(emailOutbox.id, success.messageId));
+        return { ok: true, provider: "resend", acceptedAt: new Date(), providerMessageId: "accepted-by-provider" };
+      },
+    });
+    expect(successfulDelivery).toEqual({ messageId: success.messageId, status: "lease_lost" });
+    const [successRow] = await getDb().select().from(emailOutbox).where(eq(emailOutbox.id, success.messageId));
+    expect(successRow).toMatchObject({ status: "processing", leaseOwner: "replacement", providerMessageId: null });
+
+    const failure = await setup();
+    const failedDelivery = await processNextEmail("stale-failure", {
+      messageId: failure.messageId,
+      deliver: async () => {
+        await getDb()
+          .update(emailOutbox)
+          .set({ leaseOwner: "replacement", leaseExpiresAt: new Date("2100-01-01T00:00:00Z") })
+          .where(eq(emailOutbox.id, failure.messageId));
+        return { ok: false, provider: "resend", error: "provider timeout" };
+      },
+    });
+    expect(failedDelivery).toEqual({ messageId: failure.messageId, status: "lease_lost" });
+    const [failureRow] = await getDb().select().from(emailOutbox).where(eq(emailOutbox.id, failure.messageId));
+    expect(failureRow).toMatchObject({ status: "processing", leaseOwner: "replacement", failureCode: null });
+  });
+
+  it("terminally recovers an exhausted stale lease without another send", async () => {
+    const { messageId, tokenId } = await setup();
+    await getDb()
+      .update(emailOutbox)
+      .set({
+        status: "processing",
+        attemptCount: 1,
+        maxAttempts: 1,
+        leaseOwner: "crashed",
+        leaseExpiresAt: new Date("2026-01-01T00:00:00Z"),
+      })
+      .where(eq(emailOutbox.id, messageId));
+
+    expect(await claimNextEmail("replacement", new Date("2026-01-01T00:01:00Z"), messageId)).toBeNull();
+    const [row] = await getDb().select().from(emailOutbox).where(eq(emailOutbox.id, messageId));
+    expect(row).toMatchObject({ status: "failed", attemptCount: 1, failureCode: "retry_exhausted", leaseOwner: null });
+    const attempts = await getDb()
+      .select()
+      .from(emailDeliveryAttempts)
+      .where(eq(emailDeliveryAttempts.tokenId, tokenId));
+    expect(attempts).toContainEqual(
+      expect.objectContaining({
+        status: "failed",
+        errorMessage: "Retry limit exhausted after a stale worker lease.",
+      }),
+    );
   });
 
   it("allows only an administrator from the owning organization to retry a terminal failure", async () => {

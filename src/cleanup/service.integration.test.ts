@@ -54,10 +54,12 @@ async function fixture() {
   const future = new Date("2100-01-01T00:00:00Z");
   const expiredSession = newId();
   const activeSession = newId();
-  ids.sessions.push(expiredSession, activeSession);
+  const boundarySession = newId();
+  ids.sessions.push(expiredSession, activeSession, boundarySession);
   await getDb().insert(sessions).values([
     { id: expiredSession, profileId, expiresAt: old, lastSeenAt: old },
     { id: activeSession, profileId, expiresAt: future, lastSeenAt: new Date() },
+    { id: boundarySession, profileId, expiresAt: new Date("2026-07-10T00:00:00Z"), lastSeenAt: old },
   ]);
   const invitationId = newId();
   const resetId = newId();
@@ -126,7 +128,7 @@ async function fixture() {
     createdAt: old,
     updatedAt: old,
   });
-  return { organizationId, expiredSession, activeSession, failedBatchId, activeBatchId, auditId };
+  return { organizationId, expiredSession, activeSession, boundarySession, failedBatchId, activeBatchId, auditId };
 }
 
 afterEach(async () => {
@@ -162,6 +164,7 @@ describe("bounded retention cleanup", () => {
     await runRetentionCleanup({ dryRun: false, organizationId: data.organizationId, now: new Date("2026-08-09T00:00:00Z"), batchSize: 50 });
     expect(await getDb().select().from(sessions).where(eq(sessions.id, data.expiredSession))).toHaveLength(0);
     expect(await getDb().select().from(sessions).where(eq(sessions.id, data.activeSession))).toHaveLength(1);
+    expect(await getDb().select().from(sessions).where(eq(sessions.id, data.boundarySession))).toHaveLength(1);
     expect(await getDb().select().from(dialerImportBatches).where(eq(dialerImportBatches.id, data.failedBatchId))).toHaveLength(0);
     const [active] = await getDb().select().from(dialerImportBatches).where(eq(dialerImportBatches.id, data.activeBatchId));
     expect(active).toMatchObject({ status: "active", rawFileContent: null });

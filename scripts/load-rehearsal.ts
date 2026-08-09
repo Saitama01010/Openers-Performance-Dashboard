@@ -22,11 +22,24 @@ function runLoadTest(concurrency: number) {
         ...process.env,
         LOAD_TEST_BASE_URL: baseUrl.origin,
         LOAD_TEST_CONCURRENCY: String(concurrency),
+        LOAD_TEST_MEASURE_DB: "true",
       },
       stdio: "inherit",
     });
     child.once("error", reject);
     child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`Load test exited with code ${code}.`)));
+  });
+}
+
+function runImportDuringLoad() {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--conditions=react-server", "--import", "tsx", "scripts/performance-import.ts", "--worker-external"],
+      { cwd: projectRoot, env: process.env, stdio: "inherit" },
+    );
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`Concurrent import rehearsal exited with code ${code}.`)));
   });
 }
 
@@ -77,7 +90,14 @@ async function main() {
       await fetch(new URL(path, baseUrl), { headers: cookie ? { cookie } : undefined, signal: AbortSignal.timeout(15_000) });
     }
     for (const concurrency of [10, 25, 50]) {
-      await runLoadTest(concurrency);
+      const exerciseImportWorker =
+        concurrency === 25 &&
+        process.env.ALLOW_PERFORMANCE_FIXTURE === "true" &&
+        process.env.LOAD_TEST_IMPORT_DURING_REHEARSAL !== "false";
+      await Promise.all([
+        runLoadTest(concurrency),
+        ...(exerciseImportWorker ? [runImportDuringLoad()] : []),
+      ]);
       await new Promise((resolve) => setTimeout(resolve, 2_000));
     }
   } finally {

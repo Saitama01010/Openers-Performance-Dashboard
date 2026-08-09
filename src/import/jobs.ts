@@ -59,19 +59,97 @@ export async function claimNextImportJob(
   );
 
   return getDb().transaction(async (tx) => {
+    const [exhausted] = await tx
+      .select()
+      .from(importJobs)
+      .where(
+        and(
+          eq(importJobs.status, "processing"),
+          lte(importJobs.leaseExpiresAt, now),
+          sql`${importJobs.attemptCount} >= ${importJobs.maxAttempts}`,
+        ),
+      )
+      .orderBy(asc(importJobs.leaseExpiresAt), asc(importJobs.queuedAt))
+      .limit(1)
+      .for("update", { skipLocked: true });
+
+    if (exhausted) {
+      const [batch] = await tx
+        .select({ status: dialerImportBatches.status })
+        .from(dialerImportBatches)
+        .where(eq(dialerImportBatches.id, exhausted.batchId))
+        .limit(1)
+        .for("update");
+      const processingPersisted =
+        batch?.status === "ready_to_publish" ||
+        batch?.status === "validation_failed";
+      await tx
+        .update(importJobs)
+        .set({
+          status: processingPersisted ? "completed" : "failed",
+          completedAt: processingPersisted ? now : null,
+          failedAt: processingPersisted ? null : now,
+          failureCode: processingPersisted ? null : "retry_exhausted",
+          failureReason: processingPersisted
+            ? null
+            : "Import processing stopped after the retry limit.",
+          heartbeatAt: now,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        })
+        .where(eq(importJobs.id, exhausted.id));
+      if (!processingPersisted && batch) {
+        await tx
+          .update(dialerImportBatches)
+          .set({
+            status: "failed",
+            validationErrors: [
+              "Import processing stopped after the retry limit.",
+            ],
+          })
+          .where(
+            and(
+              eq(dialerImportBatches.id, exhausted.batchId),
+              or(
+                eq(dialerImportBatches.status, "uploaded"),
+                eq(dialerImportBatches.status, "processing"),
+              ),
+            ),
+          );
+      }
+      await tx.insert(auditLogs).values({
+        id: newId(),
+        organizationId: exhausted.organizationId,
+        actorProfileId: exhausted.actorProfileId,
+        action: processingPersisted
+          ? "dialer_import.job_recovered_completed"
+          : "dialer_import.job_failed",
+        entityType: "import_job",
+        entityId: exhausted.id,
+        metadata: {
+          batchId: exhausted.batchId,
+          attemptCount: exhausted.attemptCount,
+          failureCode: processingPersisted ? null : "retry_exhausted",
+        },
+      });
+    }
+
     const [job] = await tx
       .select()
       .from(importJobs)
       .where(
-        or(
-          and(
-            eq(importJobs.status, "queued"),
-            lte(importJobs.availableAt, now),
+        and(
+          or(
+            and(
+              eq(importJobs.status, "queued"),
+              lte(importJobs.availableAt, now),
+            ),
+            and(
+              eq(importJobs.status, "processing"),
+              lte(importJobs.leaseExpiresAt, now),
+            ),
           ),
-          and(
-            eq(importJobs.status, "processing"),
-            lte(importJobs.leaseExpiresAt, now),
-          ),
+          sql`${importJobs.attemptCount} < ${importJobs.maxAttempts}`,
         ),
       )
       .orderBy(asc(importJobs.availableAt), asc(importJobs.queuedAt))
@@ -207,9 +285,23 @@ export async function processNextImportJob(
     await (options.processor ?? processDialerBatch)({
       actor,
       batchId: job.batchId,
+      jobLease: { jobId: job.id, workerId },
     });
     const completedAt = new Date();
-    await getDb().transaction(async (tx) => {
+    const completed = await getDb().transaction(async (tx) => {
+      const [owned] = await tx
+        .select({ id: importJobs.id })
+        .from(importJobs)
+        .where(
+          and(
+            eq(importJobs.id, job.id),
+            eq(importJobs.status, "processing"),
+            eq(importJobs.leaseOwner, workerId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!owned) return false;
       await tx
         .update(importJobs)
         .set({
@@ -231,7 +323,18 @@ export async function processNextImportJob(
         entityId: job.id,
         metadata: { batchId: job.batchId, attemptCount: job.attemptCount },
       });
+      return true;
     });
+    if (!completed) {
+      logOperationalEvent({
+        action: "import.lease_lost",
+        organizationId: job.organizationId,
+        actorId: actor.id,
+        entityId: job.id,
+        durationMs: Date.now() - startedAt,
+      });
+      return { jobId: job.id, status: "lease_lost" as const };
+    }
     logOperationalEvent({
       action: "import.succeeded",
       organizationId: job.organizationId,
@@ -248,7 +351,20 @@ export async function processNextImportJob(
     const nextAttemptAt = new Date(
       now.getTime() + Math.min(60_000, 1_000 * 2 ** Math.max(0, job.attemptCount - 1)),
     );
-    await getDb().transaction(async (tx) => {
+    const recorded = await getDb().transaction(async (tx) => {
+      const [owned] = await tx
+        .select({ id: importJobs.id })
+        .from(importJobs)
+        .where(
+          and(
+            eq(importJobs.id, job.id),
+            eq(importJobs.status, "processing"),
+            eq(importJobs.leaseOwner, workerId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!owned) return false;
       await tx
         .update(importJobs)
         .set({
@@ -282,7 +398,18 @@ export async function processNextImportJob(
           failureCode: failure.code,
         },
       });
+      return true;
     });
+    if (!recorded) {
+      logOperationalEvent({
+        action: "import.lease_lost",
+        organizationId: job.organizationId,
+        actorId: actor?.id,
+        entityId: job.id,
+        durationMs: Date.now() - startedAt,
+      });
+      return { jobId: job.id, status: "lease_lost" as const };
+    }
     logServerError({
       action: retry ? "import.retry" : "import.failed",
       actorId: actor?.id,

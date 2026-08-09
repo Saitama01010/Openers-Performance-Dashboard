@@ -9,7 +9,17 @@ Production deployment is blocked until permission, authentication, import, and m
 5. Run `npm run db:migrate` and `npm run db:bootstrap` once during release. `db:seed` is technically blocked in production/preview and must never be used there.
 6. Create or verify the first active admin.
 7. Start the Node.js Web App with `npm run start`.
-8. Start supervised `npm run worker:imports` and `npm run worker:email` processes. If the plan supports only one Node process, create non-overlapping one-minute cron jobs using each command's `-- --once` mode.
+8. Confirm the target Hostinger plan's process model before cutover. Hostinger's
+   managed Node.js Web App documentation confirms the web process, but does not
+   confirm three independently supervised persistent Node processes. On a VPS,
+   supervise `npm run start`, `npm run worker:imports`, and
+   `npm run worker:email` independently with systemd or PM2. On a managed
+   shared/cloud plan, first verify in hPanel or with Hostinger support that a
+   custom cron command can run Node/npm in the deployed working directory, with
+   the production environment and overlap prevention; only then schedule
+   `npm run worker:imports -- --once` and
+   `npm run worker:email -- --once` every minute. This confirmation is a release
+   prerequisite, not an application assumption.
 9. Schedule `npm run cleanup:retention -- --execute` daily only after reviewing a production dry run.
 10. Configure liveness monitoring at `/health/live`, readiness/uptime monitoring at `/health/ready`, and confirm `/health/version` matches the deployed commit.
 11. Confirm `/login`, `/dashboard`, `/admin/users`, `/admin/teams`, and invitation/reset links use the production `APP_URL`.
@@ -39,7 +49,14 @@ cutover.
 The canonical single-tenant, trusted-proxy, security-header, release, and smoke
 test requirements are maintained in `production-hardening.md`.
 The complete process, recovery, retention, performance, and release procedure is
-maintained in `production-readiness.md`.
+maintained in `production-readiness.md`; the operator checklist and exact
+rollback steps are in `production-release-runbook.md`.
+
+Hostinger references used for the process decision:
+
+- <https://www.hostinger.com/support/how-to-deploy-a-nodejs-website-in-hostinger/>
+- <https://www.hostinger.com/support/1583713-can-background-processes-be-executed-via-ssh-in-hostinger/>
+- <https://support.hostinger.com/en/articles/1583465-how-to-set-up-a-cron-job-at-hostinger>
 
 If a Resend API key is exposed:
 

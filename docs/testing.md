@@ -8,6 +8,7 @@ npm run typecheck
 npm run test
 npm run build
 npm run db:generate
+npm run db:migrate:upgrade-test
 npm run db:migrate
 npm run db:health
 npm run security:audit
@@ -26,6 +27,17 @@ absent). Configure preview and production deployments with separate databases
 and explicit `preview` and `production` values respectively.
 
 CI runs the same commands against an isolated MySQL 8.4 service and fails if `db:generate` changes version-controlled migrations.
+
+The release workflow also rehearses the real upgrade path. Set
+`UPGRADE_TEST_DATABASE_URL` to a disposable local/CI schema whose name contains
+standalone `upgrade` and `test` markers, set
+`ALLOW_UPGRADE_MIGRATION_TEST=true`, and run
+`npm run db:migrate:upgrade-test`. The command builds a representative schema at
+migration `0019`, inserts active-version, import, user, team, metric, and audit
+history, upgrades through the current migration, and verifies row counts,
+organization backfills, foreign-key behavior, and the active-version pointer.
+It drops and recreates only the explicitly guarded upgrade-test schema. Never
+point it at development, preview, or production data.
 
 Current coverage includes CSV normalization and reconciliation, authorization,
 authentication policy, invitation/reset consumption and replay, concurrent token
@@ -102,6 +114,7 @@ npm run typecheck
 npm run test
 npm run build
 npm run db:generate
+npm run db:migrate:upgrade-test
 npm run db:migrate
 npm run db:health
 npm run security:audit

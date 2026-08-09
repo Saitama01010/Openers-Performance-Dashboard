@@ -7,6 +7,7 @@ import type { Actor } from "../src/auth/authorization";
 import { closeDatabasePool, getDb } from "../src/db";
 import {
   dialerImportBatches,
+  importJobs,
   organizations,
   profiles,
   sourceUserMappings,
@@ -39,23 +40,41 @@ async function main() {
   const [organization] = await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.name, "Performance Fixture Company")).limit(1);
   if (!organization) throw new Error("Run npm run perf:fixture before the import performance check.");
   const [admin] = await db.select({ id: profiles.id }).from(profiles).where(and(eq(profiles.organizationId, organization.id), eq(profiles.role, "admin"))).limit(1);
-  const [agent] = await db.select({ id: profiles.id, name: profiles.name }).from(profiles).where(and(eq(profiles.organizationId, organization.id), eq(profiles.role, "agent"))).limit(1);
-  if (!admin || !agent) throw new Error("The performance fixture is missing its administrator or agent.");
+  const agents = await db
+    .select({ id: profiles.id, name: profiles.name })
+    .from(profiles)
+    .where(
+      and(
+        eq(profiles.organizationId, organization.id),
+        eq(profiles.role, "agent"),
+      ),
+    )
+    .limit(600);
+  if (!admin || agents.length === 0) {
+    throw new Error("The performance fixture is missing its administrator or agents.");
+  }
 
-  const normalizedName = agent.name.trim().toLowerCase();
-  await db.insert(sourceUserMappings).values({
-    id: fixedId("mapping"),
-    source: "dialer",
-    sourceAgentName: agent.name,
-    normalizedAgentName: normalizedName,
-    activeMappingKey: `dialer:${normalizedName}`,
-    primaryMappingKey: `dialer:${agent.id}`,
-    profileId: agent.id,
-    active: true,
-    isPrimary: true,
-    approvedById: admin.id,
-    approvedAt: new Date(),
-  }).onDuplicateKeyUpdate({ set: { active: true, sourceAgentName: agent.name, normalizedAgentName: normalizedName } });
+  await db
+    .insert(sourceUserMappings)
+    .values(
+      agents.map((agent) => {
+        const normalizedName = agent.name.trim().toLowerCase();
+        return {
+          id: fixedId(`mapping:${agent.id}`),
+          source: "dialer" as const,
+          sourceAgentName: agent.name,
+          normalizedAgentName: normalizedName,
+          activeMappingKey: `dialer:${normalizedName}`,
+          primaryMappingKey: `dialer:${agent.id}`,
+          profileId: agent.id,
+          active: true,
+          isPrimary: true,
+          approvedById: admin.id,
+          approvedAt: new Date(),
+        };
+      }),
+    )
+    .onDuplicateKeyUpdate({ set: { active: true } });
 
   const actor: Actor = { id: admin.id, role: "admin", teamIds: [], organizationId: organization.id };
   const cleanupBatch = async (batchId: string) => {
@@ -79,7 +98,14 @@ async function main() {
   for (const stale of staleBatches) await cleanupBatch(stale.id);
 
   const reportingDate = "2099-01-01";
-  const csv = `Agent,Date,Hour,Logged In (sec),Ready (sec),Talk (sec),Ringing (sec),Wrap (sec),Paused (sec),Idle (sec),Untracked (sec),Calls\n${agent.name},${reportingDate},1,3600,600,1200,120,180,300,1200,0,24\n`;
+  const csv = [
+    "Agent,Date,Hour,Logged In (sec),Ready (sec),Talk (sec),Ringing (sec),Wrap (sec),Paused (sec),Idle (sec),Untracked (sec),Calls",
+    ...agents.map(
+      (agent, index) =>
+        `${agent.name},${reportingDate},${index % 24},3600,600,1200,120,180,300,1200,0,24`,
+    ),
+    "",
+  ].join("\n");
   let batchId: string | undefined;
 
   try {
@@ -94,15 +120,53 @@ async function main() {
     const queueMs = performance.now() - queueStarted;
     batchId = queued.batchId;
     const workerStarted = performance.now();
-    const result = await processNextImportJob(`performance-${process.pid}`);
+    const externalWorker = process.argv.includes("--worker-external");
+    let result: Awaited<ReturnType<typeof processNextImportJob>> = null;
+    if (externalWorker) {
+      const deadline = Date.now() + 30_000;
+      do {
+        const [job] = await db
+          .select({ id: importJobs.id, status: importJobs.status })
+          .from(importJobs)
+          .where(eq(importJobs.batchId, batchId))
+          .limit(1);
+        if (job?.status === "completed") {
+          result = { jobId: job.id, status: "completed" };
+          break;
+        }
+        if (job?.status === "failed" || job?.status === "cancelled") {
+          throw new Error(`The external import worker finished with ${job.status}.`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      } while (Date.now() < deadline);
+    } else {
+      result = await processNextImportJob(`performance-${process.pid}`);
+    }
     const processingMs = performance.now() - workerStarted;
     if (!result || result.status !== "completed") throw new Error("The background import performance job did not complete.");
+    // Existing MySQL DATETIME columns have one-second precision, so they cannot
+    // produce an honest sub-second worker duration. Inline execution uses this
+    // process's precise timer; external-worker duration is emitted by that
+    // worker's structured import.succeeded log.
+    const backgroundProcessingMs = externalWorker ? null : processingMs;
 
     console.info(JSON.stringify({
       action: "performance_import.complete",
       queueSubmissionMs: Number(queueMs.toFixed(2)),
-      backgroundProcessingMs: Number(processingMs.toFixed(2)),
-      rows: 1,
+      queueWaitAndProcessingMs: Number(processingMs.toFixed(2)),
+      backgroundProcessingMs:
+        backgroundProcessingMs === null
+          ? null
+          : Number(backgroundProcessingMs.toFixed(2)),
+      workerMode: externalWorker ? "external" : "inline",
+      backgroundThroughputRowsPerSecond:
+        backgroundProcessingMs === null
+          ? null
+          : Number(((agents.length * 1_000) / backgroundProcessingMs).toFixed(2)),
+      observedEndToEndThroughputRowsPerSecond: Number(
+        ((agents.length * 1_000) / processingMs).toFixed(2),
+      ),
+      rows: agents.length,
       status: result.status,
     }));
   } finally {

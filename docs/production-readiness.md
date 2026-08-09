@@ -38,14 +38,26 @@ Set the Tier 1 variables in `production-hardening.md` plus:
 - the `CLEANUP_*` and retention values documented below.
 - `APP_VERSION` and `GIT_COMMIT_SHA`, set by the reviewed deployment artifact.
 
-The pool default is deliberately modest. Web traffic and both workers share the
-database server, so increase it only after observing acquisition waits and the
-server's `max_connections`; 600 registered employees does not imply 600 open
-database connections. The local 50-user rehearsal below used a measured
-`DATABASE_POOL_CONNECTION_LIMIT=20`; start production at 10 and move to 20 only
-after confirming Hostinger/MySQL connection headroom and reproducing the load
-result. Keep the outbox key stable while queued email exists.
-Rotating it requires draining the queue or a planned re-encryption migration.
+The pool default is deliberately modest. Each Node process creates its own
+pool, so one web process plus one import worker plus one email worker has a
+configured ceiling of 30 connections at the default limit of 10. Migrations,
+monitoring, and operator connections need additional headroom. Keep the default
+at 10 unless measurements justify a change and verify production MySQL has at
+least 50 available connections for this three-process topology. Setting the
+shared limit to 20 would raise the application ceiling to 60 and is not the
+recommended starting configuration. The final 50-user rehearsal below used the
+default limit of 10; 600 registered employees does not imply 600 open database
+connections.
+
+Keep `OUTBOX_ENCRYPTION_KEY` stable across every web and worker deployment. It
+must be standard base64 encoding of exactly 32 random bytes. The current `v1`
+payload envelope versions the ciphertext format, not the key, and there is no
+multi-key rotation reader. Losing or changing the key while any row retains an
+encrypted payload makes that queued message unreadable. Before rotation, stop
+new email enqueueing, drain or explicitly resolve every pending/retryable
+encrypted message, retain the old secret in the deployment backup, install the
+new key in all processes atomically, and restart them. Never rotate by silently
+discarding pending messages.
 
 ## Durable imports
 
@@ -54,7 +66,11 @@ CSV payload, creates a `dialer_import_batches` record and one `import_jobs` row,
 then returns the batch ID immediately. The worker uses `SELECT ... FOR UPDATE
 SKIP LOCKED`, bounded concurrency, expiring leases, periodic heartbeats, three
 bounded attempts, safe failure codes, and exponential retry for transient
-database failures. A crashed worker's expired lease can be reclaimed.
+database failures. A crashed worker's expired lease can be reclaimed. Every
+post-claim persistence transaction fences on the current lease owner; a stale
+worker cannot overwrite the batch, audit, or job after takeover. An exhausted
+stale lease is terminally failed instead of being claimed forever, while a
+crash after a fully persisted preview is reconciled to completed idempotently.
 
 Parsing and validation results are persisted on the batch, so opening a preview
 does not parse the raw CSV again. Publication, rollback, restoration,
@@ -85,9 +101,13 @@ scrubbed after provider acceptance. Passwords, session values, provider keys,
 and plaintext secrets are never stored in the outbox or logs.
 
 The email worker uses atomic claims, leases, a provider timeout, five attempts,
-bounded exponential backoff, permanent-failure classification, and the stable
-provider idempotency key. A crash after provider acceptance is safe because a
-retry uses that same provider key. Run `npm run worker:email` continuously, or
+bounded exponential backoff, permanent-failure classification, lease-owner
+fencing, and the stable provider idempotency key. The configured lease must be
+at least five seconds longer than the provider timeout. A crash after provider
+acceptance but before the local acknowledgement can produce an at-least-once
+retry; every retry supplies the same durable outbox idempotency key to Resend to
+minimize duplicate delivery, but exactly-once behavior ultimately depends on
+the provider honoring that key. Run `npm run worker:email` continuously, or
 schedule `npm run worker:email -- --once` every minute without overlapping runs.
 Terminal invitation-delivery failure is reflected on the invitation. An
 administrator can request an audited, organization-scoped retry through
@@ -205,28 +225,42 @@ with `LOAD_TEST_PATHS`, `LOAD_TEST_DURATION_SECONDS`,
 non-local targets unless the operator explicitly opts in.
 
 Measured on the disposable 600-user/20-team/365-day fixture with 211,335 active
-metric rows, five baseline repetitions produced these p95 query timings:
-session lookup 6.03 ms, initial dashboard 204.97 ms, team dashboard 112.42 ms,
-agent dashboard 115.96 ms, 90-day filtering 256.51 ms, leaderboard 124.01 ms,
-flags 165.78 ms, import history 2.40 ms, admin users 3.47 ms, and audit history
-1.90 ms. Queue depth queries were under 1.5 ms p95. A real one-row durable CSV
-rehearsal queued in 9.14 ms and completed parsing, mapping, comparison, staging,
-and persisted preview work in 50.19 ms before safe fixture cleanup.
+metric rows, five repeated database baselines produced these p95 timings:
+session lookup 5.40 ms, initial dashboard 281.63 ms, team dashboard 117.14 ms,
+agent dashboard 113.95 ms, date filtering 253.25 ms, leaderboard 112.25 ms,
+flags 115.73 ms, import history 2.43 ms, admin users 3.24 ms, audit history 4.44
+ms, import queue 1.48 ms, and email queue 1.53 ms. The normalized active-version
+queries remain below the one-second target, so materialized aggregates are not
+justified for this deployment.
 
-The warmed production-server rehearsal used 500 ms think time and a measured
-20-connection candidate. Results were: 10 users, 112 requests, zero errors,
-p50 28.7 ms/p95 119.4 ms/p99 263.6 ms; 25 users, 272 requests, zero errors,
-p50 47.4 ms/p95 165.2 ms/p99 233.3 ms; and 50 users, 496 requests, zero errors,
-p50 102.9 ms/p95 299.1 ms/p99 458.2 ms. These results include the real import
-worker polling concurrently. A deliberately unrealistic workload in
-which every virtual user shared the administrator session saturated the pool;
-the retained role-distributed scenario models the application's actual employee
-population and still exercises each admin list with the fixture administrator.
+The final warmed production-server rehearsal used 500 ms think time and the
+default per-process pool limit of 10. Results were: 10 users,
+184/184 successful requests in 17.12 seconds, 10.75 requests/second, zero
+errors, p50 242.1 ms/p95 770.3 ms/p99 3477.0 ms, and a sampled database peak of
+24 connected/12 running threads; 25 users, 351/351 in 16.63 seconds, 21.10
+requests/second, zero errors, p50 455.7 ms/p95 1576.6 ms/p99 2286.0 ms, and a
+peak of 25/14 while the real import worker processed a newly queued 579-row
+import; and 50 users, 637/637 in 16.81 seconds, 37.89 requests/second, zero
+errors, p50 544.4 ms/p95 2082.7 ms/p99 2299.0 ms, and a peak of 23/12. Timings
+include complete response-body consumption and treat every non-2xx response as
+an error. The 579-row import queued in 28.11 ms, executed in 2.385 seconds
+(242.77 rows/second from the worker's structured duration), and completed
+end-to-end in 4.062 seconds while
+HTTP load remained error-free. The connection sample counts
+all local MySQL clients, including web/worker pools and the sampler; it is not a
+per-pool active-count metric. The role-distributed fixture exercises login and
+session resolution, dashboard/team/agent reads, leaderboard, flags, imports,
+admin users, and audit history without giving every virtual user an unrealistic
+administrator session.
 
-Initial acceptance is zero sustained 5xx/error rate, no pool exhaustion, and
-p95 below approximately one second for normal dashboard reads. Heavy reports
-may exceed that target. Record real results; never treat a health-only run as a
-dashboard performance result.
+The 10-user normal-load p95 meets the approximate one-second target. The 25- and
+50-user burst p95 values exceed that aspirational target even though there was
+no error, timeout, or pool exhaustion. Treat them as the capacity baseline, not
+as internet-scale failure: verify the same scenarios on the selected Hostinger
+plan before opening access, alert on sustained latency, and profile render/body
+cost before changing the pool. Heavy dashboard/report responses may reasonably
+take longer. Record real results; never treat a health-only or headers-only run
+as a dashboard performance result.
 
 ## Release rehearsal and deployment
 
@@ -241,8 +275,9 @@ The rehearsal runs lint, typecheck, all tests, production build, migration
 generation plus tracked-drift verification, high-severity dependency audit, and
 `git diff --check`. Against disposable local MySQL only, configure the isolated
 URLs and run `npm run production:rehearsal -- --with-db`; it additionally runs
-test/application migrations, bootstrap, health, both workers once, and retention
-dry-run. It never creates or selects a production URL itself.
+the guarded pre-hardening upgrade rehearsal, test/application migrations,
+bootstrap, health, both workers once, and retention dry-run. It never creates or
+selects a production URL itself.
 
 Deployment sequence:
 
@@ -267,9 +302,15 @@ leases recover automatically after the compatible worker restarts.
 
 Hostinger must supply process/cron supervision, TLS and trusted-proxy header
 behavior, MySQL TLS capability, backups, secret storage, log retention, and
-uptime alerts. GitHub rulesets, required review/checks, secret scanning, and
-force-push protection remain repository-owner settings. Resend DNS/domain and
-API-key configuration remain provider actions.
+uptime alerts. Hostinger's published managed Node.js documentation describes a
+single web application process; its shared/cloud background-process guidance
+uses hPanel cron jobs, while persistent custom process supervision is a VPS
+capability. The target plan's ability to execute non-overlapping Node/npm cron
+commands from the deployed working directory must be confirmed in hPanel or
+with Hostinger support before release. See `production-release-runbook.md`.
+GitHub rulesets, required review/checks, secret scanning, and force-push
+protection remain repository-owner settings. Resend DNS/domain and API-key
+configuration remain provider actions.
 
 This is a single-company, normally single-Node deployment. It does not provide
 multi-region failover, SSO, Redis, a message broker, device management,

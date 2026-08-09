@@ -166,6 +166,11 @@ type DbTransaction = Parameters<
   Parameters<ReturnType<typeof getDb>["transaction"]>[0]
 >[0];
 
+type ImportJobLease = {
+  jobId: string;
+  workerId: string;
+};
+
 type DraftScopeGroup = {
   scope: DatasetScope;
   scopeKey: string;
@@ -177,6 +182,49 @@ const REPROCESSABLE_STATUSES = [
   "validation_failed",
   "ready_to_publish",
 ] as const;
+
+async function ownsImportJobLease(
+  tx: DbTransaction,
+  batchId: string,
+  lease: ImportJobLease,
+) {
+  const [job] = await tx
+    .select({ id: importJobs.id })
+    .from(importJobs)
+    .where(
+      and(
+        eq(importJobs.id, lease.jobId),
+        eq(importJobs.batchId, batchId),
+        eq(importJobs.status, "processing"),
+        eq(importJobs.leaseOwner, lease.workerId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  return Boolean(job);
+}
+
+export function safeImportProcessingFailure(error: unknown) {
+  if (
+    error instanceof ImportConfirmationError &&
+    error.code === "raw_file_unavailable"
+  ) {
+    return {
+      code: error.code,
+      message: "The retained raw CSV is no longer available.",
+    };
+  }
+  if (error instanceof ImportConfirmationError) {
+    return {
+      code: error.code.slice(0, 80),
+      message: "The import input or state is invalid.",
+    };
+  }
+  return {
+    code: "processing_failure",
+    message: "The import could not be processed. Review the file and try again.",
+  };
+}
 
 function assertCanAccessBatch(
   actor: Actor,
@@ -470,10 +518,20 @@ async function persistProcessedBatch(input: {
   duplicateImports: DuplicateImportReference[];
   groups: DraftScopeGroup[];
   revalidation: boolean;
+  jobLease?: ImportJobLease;
 }) {
   const db = getDb();
 
   return db.transaction(async (tx) => {
+    if (
+      input.jobLease &&
+      !(await ownsImportJobLease(tx, input.batchId, input.jobLease))
+    ) {
+      throw new ImportConfirmationError(
+        "The import worker lease is no longer owned.",
+        "worker_interrupted",
+      );
+    }
     const [lockedBatch] = await tx
       .select()
       .from(dialerImportBatches)
@@ -852,6 +910,7 @@ export async function processDialerBatch(input: {
   batchId: string;
   selectedReportingDate?: string | null;
   revalidation?: boolean;
+  jobLease?: ImportJobLease;
 }) {
   const [batch] = await getDb()
     .select()
@@ -876,10 +935,25 @@ export async function processDialerBatch(input: {
     );
   }
 
-  await getDb()
-    .update(dialerImportBatches)
-    .set({ status: "processing" })
-    .where(eq(dialerImportBatches.id, batch.id));
+  if (input.jobLease) {
+    await getDb().transaction(async (tx) => {
+      if (!(await ownsImportJobLease(tx, batch.id, input.jobLease!))) {
+        throw new ImportConfirmationError(
+          "The import worker lease is no longer owned.",
+          "worker_interrupted",
+        );
+      }
+      await tx
+        .update(dialerImportBatches)
+        .set({ status: "processing" })
+        .where(eq(dialerImportBatches.id, batch.id));
+    });
+  } else {
+    await getDb()
+      .update(dialerImportBatches)
+      .set({ status: "processing" })
+      .where(eq(dialerImportBatches.id, batch.id));
+  }
 
   try {
     if (batch.rawFileContent === null) {
@@ -967,32 +1041,34 @@ export async function processDialerBatch(input: {
       duplicateImports: scopedDuplicateImports,
       groups,
       revalidation: input.revalidation ?? false,
+      jobLease: input.jobLease,
     });
   } catch (error) {
+    const safeFailure = safeImportProcessingFailure(error);
     await getDb().transaction(async (tx) => {
+      if (
+        input.jobLease &&
+        !(await ownsImportJobLease(tx, batch.id, input.jobLease))
+      ) {
+        return;
+      }
       await tx
         .update(dialerImportBatches)
         .set({
           status: "failed",
-          validationErrors: [
-            error instanceof Error
-              ? error.message
-              : "Unexpected import processing failure.",
-          ],
+          validationErrors: [safeFailure.message],
         })
         .where(eq(dialerImportBatches.id, batch.id));
       await tx.insert(auditLogs).values({
         id: newId(),
+        organizationId: actorOrganizationId(input.actor),
         actorProfileId: input.actor.id,
         action: "dialer_import.failed",
         entityType: "dialer_import_batch",
         entityId: batch.id,
         metadata: {
           stage: "processing",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Unexpected import processing failure.",
+          failureCode: safeFailure.code,
         },
       });
     });

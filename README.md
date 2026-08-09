@@ -105,3 +105,5 @@ The production security and release runbook is
 [`docs/production-hardening.md`](docs/production-hardening.md).
 The combined runtime, worker, retention, performance, and handover runbook is
 [`docs/production-readiness.md`](docs/production-readiness.md).
+The final GitHub, Hostinger, database cutover, smoke-test, and rollback checklist
+is [`docs/production-release-runbook.md`](docs/production-release-runbook.md).

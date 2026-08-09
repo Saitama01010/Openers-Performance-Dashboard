@@ -228,6 +228,18 @@ const envSchema = z
     }
 
     if (
+      env.EMAIL_WORKER_LEASE_SECONDS * 1_000 <
+      env.EMAIL_PROVIDER_TIMEOUT_MS + 5_000
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["EMAIL_WORKER_LEASE_SECONDS"],
+        message:
+          "EMAIL_WORKER_LEASE_SECONDS must exceed EMAIL_PROVIDER_TIMEOUT_MS by at least 5 seconds.",
+      });
+    }
+
+    if (
       Boolean(env.GOOGLE_TRANSFERS_APPS_SCRIPT_URL) !==
       Boolean(env.LEADERBOARD_API_SECRET)
     ) {

@@ -75,6 +75,25 @@ describe("environment validation", () => {
     ).toThrow(/Invalid email address/);
   });
 
+  it("keeps the email lease safely beyond the provider timeout", async () => {
+    const { parseEnv } = await import("@/env");
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        EMAIL_WORKER_LEASE_SECONDS: "15",
+        EMAIL_PROVIDER_TIMEOUT_MS: "15000",
+      }),
+    ).toThrow(/must exceed EMAIL_PROVIDER_TIMEOUT_MS/);
+
+    expect(
+      parseEnv({
+        ...baseEnv,
+        EMAIL_WORKER_LEASE_SECONDS: "20",
+        EMAIL_PROVIDER_TIMEOUT_MS: "15000",
+      }).EMAIL_WORKER_LEASE_SECONDS,
+    ).toBe(20);
+  });
+
   it("requires a valid temporary-password encryption key in production", async () => {
     const { parseEnv } = await import("@/env");
     expect(() =>

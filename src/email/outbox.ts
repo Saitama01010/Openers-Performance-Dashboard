@@ -29,8 +29,8 @@ import { logOperationalEvent, logServerError } from "@/lib/logging";
 import { actorOrganizationId } from "@/teams/visibility";
 
 const payloadSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("account_invitation"), name: z.string().max(255), token: z.string(), tokenId: z.string().uuid(), resent: z.boolean() }).strict(),
-  z.object({ kind: z.literal("password_reset"), name: z.string().max(255), token: z.string(), tokenId: z.string().uuid() }).strict(),
+  z.object({ kind: z.literal("account_invitation"), name: z.string().max(255), token: z.string().min(1).max(512), tokenId: z.string().uuid(), resent: z.boolean() }).strict(),
+  z.object({ kind: z.literal("password_reset"), name: z.string().max(255), token: z.string().min(1).max(512), tokenId: z.string().uuid() }).strict(),
   z.object({ kind: z.literal("password_changed"), name: z.string().max(255) }).strict(),
   z.object({ kind: z.literal("access_revoked"), name: z.string().max(255) }).strict(),
 ]);
@@ -70,14 +70,22 @@ export async function enqueueEmailOutbox(
     .onDuplicateKeyUpdate({
       set: { idempotencyKey: sql`${emailOutbox.idempotencyKey}` },
     });
+  const [persisted] = await database
+    .select({ id: emailOutbox.id })
+    .from(emailOutbox)
+    .where(eq(emailOutbox.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+  if (!persisted) {
+    throw new Error("Queued email intent could not be resolved.");
+  }
   logOperationalEvent({
     action: "email.queued",
     organizationId: input.organizationId,
     actorId: input.profileId,
-    entityId: id,
+    entityId: persisted.id,
     details: { messageType: input.messageType },
   });
-  return id;
+  return persisted.id;
 }
 
 class PermanentOutboxError extends Error {}
@@ -122,6 +130,58 @@ export async function claimNextEmail(
     now.getTime() + getEnv().EMAIL_WORKER_LEASE_SECONDS * 1_000,
   );
   return getDb().transaction(async (tx) => {
+    const [exhausted] = await tx
+      .select()
+      .from(emailOutbox)
+      .where(
+        and(
+          eq(emailOutbox.status, "processing"),
+          lte(emailOutbox.leaseExpiresAt, now),
+          sql`${emailOutbox.attemptCount} >= ${emailOutbox.maxAttempts}`,
+          messageId ? eq(emailOutbox.id, messageId) : undefined,
+        ),
+      )
+      .orderBy(asc(emailOutbox.leaseExpiresAt), asc(emailOutbox.createdAt))
+      .limit(1)
+      .for("update", { skipLocked: true });
+    if (exhausted) {
+      await tx
+        .update(emailOutbox)
+        .set({
+          status: "failed",
+          failedAt: now,
+          failureCode: "retry_exhausted",
+          failureReason: "Email delivery stopped after the retry limit.",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        })
+        .where(eq(emailOutbox.id, exhausted.id));
+      await tx.insert(emailDeliveryAttempts).values({
+        id: newId(),
+        profileId: exhausted.profileId,
+        tokenId: exhausted.referenceId,
+        messageType: exhausted.messageType,
+        provider: getEnv().EMAIL_PROVIDER,
+        recipientEmail: exhausted.recipientEmail,
+        status: "failed",
+        errorMessage: "Retry limit exhausted after a stale worker lease.",
+      });
+      if (
+        exhausted.messageType === "account_invitation" &&
+        exhausted.referenceId
+      ) {
+        await tx
+          .update(accountInvitationTokens)
+          .set({ deliveryStatus: "delivery_failed" })
+          .where(
+            and(
+              eq(accountInvitationTokens.id, exhausted.referenceId),
+              isNull(accountInvitationTokens.usedAt),
+              isNull(accountInvitationTokens.revokedAt),
+            ),
+          );
+      }
+    }
     const available = or(
       and(
         or(eq(emailOutbox.status, "queued"), eq(emailOutbox.status, "retry")),
@@ -132,7 +192,13 @@ export async function claimNextEmail(
     const [message] = await tx
       .select()
       .from(emailOutbox)
-      .where(messageId ? and(eq(emailOutbox.id, messageId), available) : available)
+      .where(
+        and(
+          messageId ? eq(emailOutbox.id, messageId) : undefined,
+          available,
+          sql`${emailOutbox.attemptCount} < ${emailOutbox.maxAttempts}`,
+        ),
+      )
       .orderBy(asc(emailOutbox.nextAttemptAt), asc(emailOutbox.createdAt))
       .limit(1)
       .for("update", { skipLocked: true });
@@ -206,11 +272,24 @@ export async function processNextEmail(
   try {
     const result = await deliverWithTimeout(
       options.deliver ?? deliverEmail,
-      messageFor(row),
+      { ...messageFor(row), idempotencyKey: row.idempotencyKey },
       options.timeoutMs ?? getEnv().EMAIL_PROVIDER_TIMEOUT_MS,
     );
     if (!result.ok) throw new Error(result.error);
-    await getDb().transaction(async (tx) => {
+    const recorded = await getDb().transaction(async (tx) => {
+      const [owned] = await tx
+        .select({ id: emailOutbox.id })
+        .from(emailOutbox)
+        .where(
+          and(
+            eq(emailOutbox.id, row.id),
+            eq(emailOutbox.status, "processing"),
+            eq(emailOutbox.leaseOwner, workerId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!owned) return false;
       await tx
         .update(emailOutbox)
         .set({
@@ -234,7 +313,18 @@ export async function processNextEmail(
         providerMessageId: result.providerMessageId,
         acceptedAt: result.acceptedAt,
       });
+      return true;
     });
+    if (!recorded) {
+      logOperationalEvent({
+        action: "email.lease_lost",
+        organizationId: row.organizationId,
+        actorId: row.profileId,
+        entityId: row.id,
+        durationMs: Date.now() - startedAt,
+      });
+      return { messageId: row.id, status: "lease_lost" as const };
+    }
     logOperationalEvent({
       action: "email.sent",
       organizationId: row.organizationId,
@@ -252,7 +342,20 @@ export async function processNextEmail(
     const nextAttemptAt = new Date(
       now.getTime() + Math.min(60 * 60_000, 30_000 * 2 ** Math.max(0, row.attemptCount - 1)),
     );
-    await getDb().transaction(async (tx) => {
+    const recorded = await getDb().transaction(async (tx) => {
+      const [owned] = await tx
+        .select({ id: emailOutbox.id })
+        .from(emailOutbox)
+        .where(
+          and(
+            eq(emailOutbox.id, row.id),
+            eq(emailOutbox.status, "processing"),
+            eq(emailOutbox.leaseOwner, workerId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!owned) return false;
       await tx
         .update(emailOutbox)
         .set({
@@ -293,7 +396,18 @@ export async function processNextEmail(
             ),
           );
       }
+      return true;
     });
+    if (!recorded) {
+      logOperationalEvent({
+        action: "email.lease_lost",
+        organizationId: row.organizationId,
+        actorId: row.profileId,
+        entityId: row.id,
+        durationMs: Date.now() - startedAt,
+      });
+      return { messageId: row.id, status: "lease_lost" as const };
+    }
     logServerError({
       action: retry ? "email.retry" : "email.failed",
       actorId: row.profileId,

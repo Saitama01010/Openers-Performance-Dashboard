@@ -18,6 +18,12 @@ describe("dashboard navigation active state", () => {
     expect(
       isNavigationItemActive("/commissions/history", "/commissions"),
     ).toBe(true);
+    expect(
+      isNavigationItemActive("/admin/teams/team-1", "/admin/teams"),
+    ).toBe(true);
+    expect(
+      isNavigationItemActive("/admin/imports/batch-1", "/admin/imports"),
+    ).toBe(true);
   });
 
   it("does not match a route with a similar prefix", () => {

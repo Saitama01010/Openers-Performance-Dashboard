@@ -1,4 +1,4 @@
-# Tier-1 Production Hardening Runbook
+# Tier 1 security hardening runbook
 
 ## Deployment invariant
 
@@ -18,6 +18,7 @@ foreign UUIDs cannot read or mutate data.
 - `DATABASE_URL` for a least-privilege MySQL 8 application user
 - `SESSION_SECRET`, at least 32 random characters
 - `TEMP_PASSWORD_ENCRYPTION_KEY`, a base64-encoded random 32-byte key
+- `OUTBOX_ENCRYPTION_KEY`, a different base64-encoded random 32-byte key
 - `APP_URL`, the exact public HTTPS origin with no path or credentials
 - `TRUSTED_PROXY_HEADERS=true|false` according to the proxy contract below
 - `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, and
@@ -142,7 +143,8 @@ npm run security:audit
 
 `db:generate` must produce no unexplained migration changes. Review and back up
 the production database, deploy the reviewed revision, run migrations and
-bootstrap once, then start with `npm run start`.
+bootstrap once, then start the web process and both workers as documented in
+`production-readiness.md`.
 
 ## Admin recovery
 
@@ -176,6 +178,10 @@ protection or insert a shared plaintext/demo credential.
    temporary password, reset/invitation token, cookie, or API key.
 10. Inspect structured error logs for request ID, safe actor/entity IDs, category,
     and redaction; verify backups can be restored.
+11. Queue an import and verify the HTTP response returns before parsing, the
+    worker completes it, and `/health/ready` stays healthy.
+12. Queue an invitation/reset email, verify worker delivery, then run retention
+    cleanup in dry-run mode and inspect its bounded counts.
 
 ## Known non-enterprise limitations
 

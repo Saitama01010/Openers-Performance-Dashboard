@@ -6,13 +6,12 @@ import { getDb } from "@/db";
 import {
   accountInvitationTokens,
   auditLogs,
-  emailDeliveryAttempts,
   passwordResetTokens,
   profiles,
   sessions,
 } from "@/db/schema";
 import { getEnv } from "@/env";
-import { sendInvitationEmail, sendPasswordChangedEmail, sendPasswordResetEmail } from "@/email/provider";
+import { enqueueEmailOutbox } from "@/email/outbox";
 import { newId } from "@/lib/ids";
 import {
   DUMMY_PASSWORD_HASH,
@@ -49,31 +48,6 @@ export type TokenInspectionStatus =
 
 function isExpired(expiresAt: Date, now = new Date()) {
   return expiresAt.getTime() <= now.getTime();
-}
-
-async function recordEmailAttempt(input: {
-  profileId?: string;
-  tokenId?: string;
-  messageType: string;
-  recipientEmail: string;
-  provider: string;
-  ok: boolean;
-  acceptedAt?: Date | null;
-  providerMessageId?: string | null;
-  error?: string;
-}) {
-  await getDb().insert(emailDeliveryAttempts).values({
-    id: newId(),
-    profileId: input.profileId,
-    tokenId: input.tokenId,
-    messageType: input.messageType,
-    provider: input.provider,
-    recipientEmail: input.recipientEmail,
-    status: input.ok ? "accepted" : "failed",
-    providerMessageId: input.providerMessageId,
-    acceptedAt: input.acceptedAt,
-    errorMessage: input.error,
-  });
 }
 
 export async function authenticateCredentials(email: string, password: string) {
@@ -253,51 +227,25 @@ export async function issueInvitation(input: {
       entityId: profile.id,
       metadata: { expiresAt: expiresAt.toISOString() },
     });
-  });
-
-  try {
-    const result = await sendInvitationEmail({
-      email: recipientEmail,
-      name: profile.name,
-      token,
-      tokenId,
-      resent: pendingInvitations.length > 0,
-    });
-    await recordEmailAttempt({
+    await enqueueEmailOutbox(tx, {
+      organizationId: actorOrganizationId(input.actor),
       profileId: profile.id,
-      tokenId,
+      referenceId: tokenId,
+      recipientEmail,
       messageType:
         pendingInvitations.length > 0
           ? "account_invitation_resent"
           : "account_invitation",
-      recipientEmail,
-      provider: result.provider,
-      ok: true,
-      acceptedAt: result.acceptedAt,
-      providerMessageId: result.providerMessageId,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Email delivery failed.";
-    await getDb().transaction(async (tx) => {
-      await tx
-        .update(accountInvitationTokens)
-        .set({ deliveryStatus: "delivery_failed" })
-        .where(eq(accountInvitationTokens.id, tokenId));
-      await tx.insert(emailDeliveryAttempts).values({
-        id: newId(),
-        profileId: profile.id,
+      idempotencyKey: `account_invitation:${tokenId}`,
+      payload: {
+        kind: "account_invitation",
+        name: profile.name,
+        token,
         tokenId,
-        messageType:
-          pendingInvitations.length > 0
-            ? "account_invitation_resent"
-            : "account_invitation",
-        provider: getEnv().EMAIL_PROVIDER,
-        recipientEmail,
-        status: "failed",
-        errorMessage: message,
-      });
+        resent: pendingInvitations.length > 0,
+      },
     });
-  }
+  });
 
   return { expiresAt };
 }
@@ -532,6 +480,7 @@ export async function requestPasswordReset(email: string) {
   ) {
     return;
   }
+  const recipientEmail = profile.email;
 
   const now = new Date();
   const token = createOpaqueToken();
@@ -565,36 +514,21 @@ export async function requestPasswordReset(email: string) {
       entityId: profile.id,
       metadata: { expiresAt: expiresAt.toISOString() },
     });
+    await enqueueEmailOutbox(tx, {
+      organizationId: profile.organizationId,
+      profileId: profile.id,
+      referenceId: tokenId,
+      recipientEmail,
+      messageType: "password_reset",
+      idempotencyKey: `password_reset:${tokenId}`,
+      payload: {
+        kind: "password_reset",
+        name: profile.name,
+        token,
+        tokenId,
+      },
+    });
   });
-
-  try {
-    const result = await sendPasswordResetEmail({
-      email: profile.email,
-      name: profile.name,
-      token,
-      tokenId,
-    });
-    await recordEmailAttempt({
-      profileId: profile.id,
-      tokenId,
-      messageType: "password_reset",
-      recipientEmail: profile.email,
-      provider: result.provider,
-      ok: true,
-      acceptedAt: result.acceptedAt,
-      providerMessageId: result.providerMessageId,
-    });
-  } catch (error) {
-    await recordEmailAttempt({
-      profileId: profile.id,
-      tokenId,
-      messageType: "password_reset",
-      recipientEmail: profile.email,
-      provider: getEnv().EMAIL_PROVIDER,
-      ok: false,
-      error: error instanceof Error ? error.message : "Email delivery failed.",
-    });
-  }
 }
 
 export async function inspectPasswordResetToken(
@@ -782,7 +716,16 @@ export async function resetPassword(input: {
       entityType: "profile",
       entityId: currentProfile.id,
     });
-    return { ...currentProfile, email: currentProfile.email };
+    await enqueueEmailOutbox(tx, {
+      organizationId: currentProfile.organizationId,
+      profileId: currentProfile.id,
+      referenceId: currentProfile.id,
+      recipientEmail: currentProfile.email,
+      messageType: "password_changed",
+      idempotencyKey: `password_changed:${currentProfile.id}:${now.toISOString()}`,
+      payload: { kind: "password_changed", name: currentProfile.name },
+    });
+    return "success";
   });
 
   if (profile === "password_reused") {
@@ -795,29 +738,5 @@ export async function resetPassword(input: {
     return { ok: false, error: RESET_ALREADY_USED } as const;
   }
 
-  try {
-    const result = await sendPasswordChangedEmail({
-      email: profile.email,
-      name: profile.name,
-    });
-    await recordEmailAttempt({
-      profileId: profile.id,
-      messageType: "password_changed",
-      recipientEmail: profile.email,
-      provider: result.provider,
-      ok: true,
-      acceptedAt: result.acceptedAt,
-      providerMessageId: result.providerMessageId,
-    });
-  } catch (error) {
-    await recordEmailAttempt({
-      profileId: profile.id,
-      messageType: "password_changed",
-      recipientEmail: profile.email,
-      provider: getEnv().EMAIL_PROVIDER,
-      ok: false,
-      error: error instanceof Error ? error.message : "Email delivery failed.",
-    });
-  }
   return { ok: true } as const;
 }

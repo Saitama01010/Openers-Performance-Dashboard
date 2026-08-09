@@ -43,6 +43,21 @@ export const emailDeliveryStatusEnum = mysqlEnum("email_delivery_status", [
   "delivered",
   "failed",
 ]);
+export const backgroundJobStatusEnum = mysqlEnum("background_job_status", [
+  "queued",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+export const emailOutboxStatusEnum = mysqlEnum("email_outbox_status", [
+  "queued",
+  "processing",
+  "retry",
+  "sent",
+  "failed",
+  "cancelled",
+]);
 export const membershipRoleEnum = mysqlEnum("membership_role", [
   "admin",
   "manager",
@@ -177,6 +192,12 @@ export const profiles = mysqlTable(
     unique("profiles_email_unique").on(table.email),
     index("profiles_name_idx").on(table.name),
     index("profiles_organization_idx").on(table.organizationId),
+    index("profiles_organization_access_idx").on(
+      table.organizationId,
+      table.role,
+      table.accountStatus,
+      table.active,
+    ),
     index("profiles_role_idx").on(table.role),
     index("profiles_account_status_idx").on(table.accountStatus),
     index("profiles_created_at_idx").on(table.createdAt),
@@ -201,6 +222,16 @@ export const userImportBatches = mysqlTable(
     rawFileContent: text("raw_file_content").notNull(),
     rowCount: int("row_count").notNull().default(0),
     expiresAt: datetime("expires_at").notNull(),
+    processingStartedAt: datetime("processing_started_at"),
+    confirmationHash: varchar("confirmation_hash", { length: 64 }),
+    resultSummary: json("result_summary").$type<{
+      outcomes: Array<{
+        rowNumber: number;
+        userId?: string;
+        status: "created" | "skipped" | "failed";
+        reason?: string;
+      }>;
+    }>(),
     confirmedAt: datetime("confirmed_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -213,6 +244,7 @@ export const userImportBatches = mysqlTable(
     index("user_import_uploaded_by_idx").on(table.uploadedById),
     index("user_import_expires_at_idx").on(table.expiresAt),
     index("user_import_file_hash_idx").on(table.fileHash),
+    index("user_import_processing_idx").on(table.status, table.processingStartedAt),
   ],
 );
 
@@ -349,12 +381,16 @@ export const dialerImportBatches = mysqlTable(
       mode: "string",
     }),
     previewSummary: json("preview_summary").$type<Record<string, unknown>>(),
+    processedPreview: json("processed_preview").$type<Record<string, unknown>>(),
+    processedValidation: json("processed_validation").$type<Record<string, unknown>>(),
     validationErrors: json("validation_errors").$type<string[]>(),
     validationWarnings: json("validation_warnings").$type<string[]>(),
     validationNotices: json("validation_notices").$type<string[]>(),
     detectedHeaders: json("detected_headers").$type<string[]>(),
     missingRequiredHeaders: json("missing_required_headers").$type<string[]>(),
-    rawFileContent: longtext("raw_file_content").notNull(),
+    rawFileContent: longtext("raw_file_content"),
+    rawFileRetainUntil: datetime("raw_file_retain_until"),
+    rawFilePurgedAt: datetime("raw_file_purged_at"),
     expiresAt: datetime("expires_at"),
     parsedAt: datetime("parsed_at"),
     publishedById: varchar("published_by_id", { length: 36 }).references(
@@ -417,6 +453,53 @@ export const dialerImportBatches = mysqlTable(
   ],
 );
 
+export const importJobs = mysqlTable(
+  "import_jobs",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    actorProfileId: varchar("actor_profile_id", { length: 36 }).references(
+      () => profiles.id,
+      { onDelete: "set null" },
+    ),
+    importType: varchar("import_type", { length: 64 }).notNull(),
+    batchId: varchar("batch_id", { length: 36 })
+      .notNull()
+      .references(() => dialerImportBatches.id, { onDelete: "cascade" }),
+    status: backgroundJobStatusEnum.notNull().default("queued"),
+    attemptCount: int("attempt_count").notNull().default(0),
+    maxAttempts: int("max_attempts").notNull().default(3),
+    availableAt: datetime("available_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    queuedAt: datetime("queued_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    processingStartedAt: datetime("processing_started_at"),
+    heartbeatAt: datetime("heartbeat_at"),
+    leaseOwner: varchar("lease_owner", { length: 120 }),
+    leaseExpiresAt: datetime("lease_expires_at"),
+    completedAt: datetime("completed_at"),
+    failedAt: datetime("failed_at"),
+    failureCode: varchar("failure_code", { length: 80 }),
+    failureReason: varchar("failure_reason", { length: 500 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    unique("import_jobs_batch_unique").on(table.batchId),
+    index("import_jobs_available_claim_idx").on(
+      table.status,
+      table.availableAt,
+      table.queuedAt,
+    ),
+    index("import_jobs_stale_lease_idx").on(table.status, table.leaseExpiresAt),
+    index("import_jobs_organization_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    index("import_jobs_actor_idx").on(table.actorProfileId),
+  ],
+);
+
 export const dialerDatasetVersions = mysqlTable(
   "dialer_dataset_versions",
   {
@@ -467,6 +550,11 @@ export const dialerDatasetVersions = mysqlTable(
       table.reportingDate,
       table.teamId,
       table.dialerId,
+    ),
+    index("dialer_dataset_scope_status_version_idx").on(
+      table.scopeKey,
+      table.status,
+      table.versionNumber,
     ),
   ],
 );
@@ -556,6 +644,15 @@ export const dialerAgentHourlyMetrics = mysqlTable(
       table.agentProfileId,
       table.metricDate,
     ),
+    index("dialer_hourly_date_version_idx").on(
+      table.metricDate,
+      table.versionId,
+    ),
+    index("dialer_hourly_team_date_version_idx").on(
+      table.teamIdSnapshot,
+      table.metricDate,
+      table.versionId,
+    ),
     index("dialer_hourly_version_idx").on(table.versionId),
     index("dialer_hourly_batch_idx").on(table.batchId),
   ],
@@ -616,17 +713,24 @@ export const dialerImportRows = mysqlTable(
   ],
 );
 
-export const importErrors = mysqlTable("import_errors", {
-  id: varchar("id", { length: 36 }).primaryKey(),
-  batchId: varchar("batch_id", { length: 36 })
-    .notNull()
-    .references(() => dialerImportBatches.id, { onDelete: "cascade" }),
-  rowNumber: int("row_number").notNull(),
-  status: importRowStatusEnum.notNull(),
-  message: text("message").notNull(),
-  rawRow: json("raw_row").$type<Record<string, string>>(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const importErrors = mysqlTable(
+  "import_errors",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    batchId: varchar("batch_id", { length: 36 })
+      .notNull()
+      .references(() => dialerImportBatches.id, { onDelete: "cascade" }),
+    rowNumber: int("row_number").notNull(),
+    status: importRowStatusEnum.notNull(),
+    message: text("message").notNull(),
+    rawRow: json("raw_row").$type<Record<string, string>>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("import_errors_batch_row_idx").on(table.batchId, table.rowNumber),
+    index("import_errors_batch_status_idx").on(table.batchId, table.status),
+  ],
+);
 
 export const coachingSessions = mysqlTable(
   "coaching_sessions",
@@ -1072,6 +1176,12 @@ export const auditLogs = mysqlTable(
       table.entityId,
       table.createdAt,
     ),
+    index("audit_logs_organization_action_created_idx").on(
+      table.organizationId,
+      table.action,
+      table.createdAt,
+    ),
+    index("audit_logs_created_idx").on(table.createdAt),
   ],
 );
 
@@ -1090,6 +1200,8 @@ export const sessions = mysqlTable(
   (table) => [
     index("sessions_profile_idx").on(table.profileId),
     index("sessions_expires_at_idx").on(table.expiresAt),
+    index("sessions_cleanup_idx").on(table.revokedAt, table.expiresAt),
+    index("sessions_last_seen_idx").on(table.lastSeenAt),
   ],
 );
 
@@ -1165,8 +1277,61 @@ export const emailDeliveryAttempts = mysqlTable(
     index("email_delivery_profile_idx").on(table.profileId),
     index("email_delivery_token_idx").on(table.tokenId),
     index("email_delivery_status_idx").on(table.status),
+    index("email_delivery_status_created_idx").on(table.status, table.createdAt),
     index("email_delivery_provider_message_idx").on(table.providerMessageId),
     index("email_delivery_message_idx").on(table.messageType, table.createdAt),
+  ],
+);
+
+export const emailOutbox = mysqlTable(
+  "email_outbox",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 }).references(
+      () => organizations.id,
+      { onDelete: "cascade" },
+    ),
+    profileId: varchar("profile_id", { length: 36 }).references(
+      () => profiles.id,
+      { onDelete: "set null" },
+    ),
+    referenceId: varchar("reference_id", { length: 36 }),
+    messageType: varchar("message_type", { length: 80 }).notNull(),
+    recipientEmail: varchar("recipient_email", { length: 255 }).notNull(),
+    encryptedPayload: longtext("encrypted_payload"),
+    idempotencyKey: varchar("idempotency_key", { length: 190 }).notNull(),
+    status: emailOutboxStatusEnum.notNull().default("queued"),
+    attemptCount: int("attempt_count").notNull().default(0),
+    maxAttempts: int("max_attempts").notNull().default(5),
+    nextAttemptAt: datetime("next_attempt_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    processingStartedAt: datetime("processing_started_at"),
+    leaseOwner: varchar("lease_owner", { length: 120 }),
+    leaseExpiresAt: datetime("lease_expires_at"),
+    sentAt: datetime("sent_at"),
+    failedAt: datetime("failed_at"),
+    provider: varchar("provider", { length: 40 }),
+    providerMessageId: varchar("provider_message_id", { length: 255 }),
+    failureCode: varchar("failure_code", { length: 80 }),
+    failureReason: varchar("failure_reason", { length: 500 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    unique("email_outbox_idempotency_unique").on(table.idempotencyKey),
+    index("email_outbox_available_claim_idx").on(
+      table.status,
+      table.nextAttemptAt,
+      table.createdAt,
+    ),
+    index("email_outbox_stale_lease_idx").on(table.status, table.leaseExpiresAt),
+    index("email_outbox_cleanup_idx").on(table.status, table.updatedAt),
+    index("email_outbox_organization_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    index("email_outbox_profile_idx").on(table.profileId),
+    index("email_outbox_reference_idx").on(table.referenceId),
+    index("email_outbox_provider_message_idx").on(table.providerMessageId),
   ],
 );
 

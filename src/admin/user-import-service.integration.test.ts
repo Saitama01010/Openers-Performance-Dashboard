@@ -137,6 +137,31 @@ describe("user CSV import integration", () => {
     const createdId = result.outcomes[0].userId!;
     profileIds.push(createdId);
 
+    const replay = await confirmUserImport({
+      actor: actor(adminId),
+      batchId: draft.batchId!,
+      assignments: [
+        { rowNumber: 2, selected: true, role: "agent", teamId },
+      ],
+    });
+    expect(replay.outcomes).toEqual(result.outcomes);
+
+    await getDb()
+      .update(userImportBatches)
+      .set({
+        status: "processing",
+        processingStartedAt: new Date(Date.now() - 11 * 60 * 1000),
+      })
+      .where(eq(userImportBatches.id, draft.batchId!));
+    const recovered = await confirmUserImport({
+      actor: actor(adminId),
+      batchId: draft.batchId!,
+      assignments: [
+        { rowNumber: 2, selected: true, role: "agent", teamId },
+      ],
+    });
+    expect(recovered.outcomes).toEqual(result.outcomes);
+
     const [created] = await getDb()
       .select()
       .from(profiles)

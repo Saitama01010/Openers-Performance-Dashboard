@@ -75,12 +75,7 @@ import {
   userPermissionOverrides,
 } from "@/db/schema";
 import { getEnv } from "@/env";
-import {
-  accessRevokedEmail,
-  deliverEmail,
-  invitationEmail,
-  passwordResetEmail,
-} from "@/email/provider";
+import { enqueueEmailOutbox } from "@/email/outbox";
 import { newId } from "@/lib/ids";
 import { redactSecrets } from "@/lib/redaction";
 import {
@@ -291,132 +286,6 @@ async function getActiveAdminCountForUpdate(
     .for("update");
 
   return rows.length;
-}
-
-async function recordEmailAttempt(input: {
-  profileId?: string;
-  tokenId?: string;
-  messageType: string;
-  recipientEmail: string;
-  provider: string;
-  ok: boolean;
-  acceptedAt?: Date | null;
-  providerMessageId?: string | null;
-  error?: string;
-}) {
-  await getDb().insert(emailDeliveryAttempts).values({
-    id: newId(),
-    profileId: input.profileId,
-    tokenId: input.tokenId,
-    messageType: input.messageType,
-    provider: input.provider,
-    recipientEmail: input.recipientEmail,
-    status: input.ok ? "accepted" : "failed",
-    providerMessageId: input.providerMessageId,
-    acceptedAt: input.acceptedAt,
-    errorMessage: input.error,
-  });
-}
-
-async function deliverInvitationAfterCommit(input: {
-  actorId: string;
-  profileId: string;
-  tokenId: string;
-  email: string;
-  name: string;
-  token: string;
-  resent: boolean;
-}) {
-  const result = await deliverEmail(
-    invitationEmail({
-      email: input.email,
-      name: input.name,
-      token: input.token,
-      tokenId: input.tokenId,
-      resent: input.resent,
-    }),
-  );
-
-  await recordEmailAttempt({
-    profileId: input.profileId,
-    tokenId: input.tokenId,
-    messageType: input.resent ? "account_invitation_resent" : "account_invitation",
-    recipientEmail: input.email,
-    provider: result.provider,
-    ok: result.ok,
-    acceptedAt: result.ok ? result.acceptedAt : null,
-    providerMessageId: result.ok ? result.providerMessageId : null,
-    error: result.ok ? undefined : result.error,
-  });
-
-  if (!result.ok) {
-    await getDb()
-      .update(accountInvitationTokens)
-      .set({ deliveryStatus: "delivery_failed" })
-      .where(eq(accountInvitationTokens.id, input.tokenId));
-    await writeAudit({
-      actorId: input.actorId,
-      action: "user.invitation_email_failed",
-      entityType: "profile",
-      entityId: input.profileId,
-    });
-  }
-
-  return result;
-}
-
-async function deliverPasswordResetAfterCommit(input: {
-  profileId: string;
-  tokenId: string;
-  email: string;
-  name: string;
-  token: string;
-}) {
-  const result = await deliverEmail(
-    passwordResetEmail({
-      email: input.email,
-      name: input.name,
-      token: input.token,
-      tokenId: input.tokenId,
-    }),
-  );
-
-  await recordEmailAttempt({
-    profileId: input.profileId,
-    tokenId: input.tokenId,
-    messageType: "password_reset",
-    recipientEmail: input.email,
-    provider: result.provider,
-    ok: result.ok,
-    acceptedAt: result.ok ? result.acceptedAt : null,
-    providerMessageId: result.ok ? result.providerMessageId : null,
-    error: result.ok ? undefined : result.error,
-  });
-
-  return result;
-}
-
-async function sendAccessRevokedNotice(input: {
-  profileId: string;
-  email: string;
-  name: string;
-}) {
-  const result = await deliverEmail(
-    accessRevokedEmail({ email: input.email, name: input.name }),
-  );
-
-  await recordEmailAttempt({
-    profileId: input.profileId,
-    messageType: "access_revoked",
-    recipientEmail: input.email,
-    provider: result.provider,
-    ok: result.ok,
-    acceptedAt: result.ok ? result.acceptedAt : null,
-    providerMessageId: result.ok ? result.providerMessageId : null,
-    error: result.ok ? undefined : result.error,
-  });
-
-  return result;
 }
 
 function listWhere(actor: Actor, filters: AdminUserListFilters) {
@@ -787,6 +656,10 @@ async function hasActiveDialerMapping(
 async function createInvitationRecord(input: {
   profileId: string;
   createdById: string;
+  organizationId: string;
+  email: string;
+  name: string;
+  resent: boolean;
 }) {
   const token = createOpaqueToken();
   const tokenId = newId();
@@ -795,23 +668,40 @@ async function createInvitationRecord(input: {
     now.getTime() + getEnv().INVITATION_TTL_HOURS * 60 * 60 * 1000,
   );
 
-  await getDb()
-    .update(accountInvitationTokens)
-    .set({ revokedAt: now, deliveryStatus: "revoked" })
-    .where(
-      and(
-        eq(accountInvitationTokens.profileId, input.profileId),
-        isNull(accountInvitationTokens.usedAt),
-        isNull(accountInvitationTokens.revokedAt),
-      ),
-    );
-  await getDb().insert(accountInvitationTokens).values({
-    id: tokenId,
-    profileId: input.profileId,
-    tokenHash: hashOpaqueToken(token),
-    createdById: input.createdById,
-    deliveryStatus: "pending",
-    expiresAt,
+  await getDb().transaction(async (tx) => {
+    await tx
+      .update(accountInvitationTokens)
+      .set({ revokedAt: now, deliveryStatus: "revoked" })
+      .where(
+        and(
+          eq(accountInvitationTokens.profileId, input.profileId),
+          isNull(accountInvitationTokens.usedAt),
+          isNull(accountInvitationTokens.revokedAt),
+        ),
+      );
+    await tx.insert(accountInvitationTokens).values({
+      id: tokenId,
+      profileId: input.profileId,
+      tokenHash: hashOpaqueToken(token),
+      createdById: input.createdById,
+      deliveryStatus: "pending",
+      expiresAt,
+    });
+    await enqueueEmailOutbox(tx, {
+      organizationId: input.organizationId,
+      profileId: input.profileId,
+      referenceId: tokenId,
+      recipientEmail: input.email,
+      messageType: input.resent ? "account_invitation_resent" : "account_invitation",
+      idempotencyKey: `account_invitation:${tokenId}`,
+      payload: {
+        kind: "account_invitation",
+        name: input.name,
+        token,
+        tokenId,
+        resent: input.resent,
+      },
+    });
   });
 
   return { token, tokenId, expiresAt };
@@ -1028,6 +918,10 @@ export async function createTeamAgent(actor: Actor, input: {
   const invitation = await createInvitationRecord({
     profileId: created.profileId,
     createdById: actor.id,
+    organizationId: actorOrganizationId(actor),
+    email: normalizeEmail(input.email),
+    name: trimText(input.name),
+    resent: false,
   });
   await writeAudit({
     actorId: actor.id,
@@ -1036,16 +930,7 @@ export async function createTeamAgent(actor: Actor, input: {
     entityId: created.profileId,
     metadata: { expiresAt: invitation.expiresAt.toISOString() },
   });
-  const delivery = await deliverInvitationAfterCommit({
-    actorId: actor.id,
-    profileId: created.profileId,
-    tokenId: invitation.tokenId,
-    email: normalizeEmail(input.email),
-    name: trimText(input.name),
-    token: invitation.token,
-    resent: false,
-  });
-  return { ...created, invitationDelivered: delivery.ok };
+  return { ...created, invitationDelivered: true };
 }
 
 export async function revealTemporaryPassword(actor: Actor, userId: string) {
@@ -2443,6 +2328,10 @@ export async function sendOrResendInvitation(actor: Actor, userId: string) {
   const invitation = await createInvitationRecord({
     profileId: userId,
     createdById: actor.id,
+    organizationId: actorOrganizationId(actor),
+    email: recipientEmail,
+    name: profile.name,
+    resent: previousRows.length > 0,
   });
 
   await writeAudit({
@@ -2453,15 +2342,7 @@ export async function sendOrResendInvitation(actor: Actor, userId: string) {
     metadata: { expiresAt: invitation.expiresAt.toISOString() },
   });
 
-  return deliverInvitationAfterCommit({
-    actorId: actor.id,
-    profileId: userId,
-    tokenId: invitation.tokenId,
-    email: recipientEmail,
-    name: profile.name,
-    token: invitation.token,
-    resent: previousRows.length > 0,
-  });
+  return { ok: true as const, queued: true as const };
 }
 
 export async function revokeInvitation(actor: Actor, userId: string) {
@@ -2507,7 +2388,7 @@ export async function forcePasswordReset(actor: Actor, input: {
   const token = createOpaqueToken();
   const tokenId = newId();
 
-  const profile = await getDb().transaction(async (tx) => {
+  await getDb().transaction(async (tx) => {
     const rows = await tx
       .select()
       .from(profiles)
@@ -2569,17 +2450,23 @@ export async function forcePasswordReset(actor: Actor, input: {
       entityId: input.userId,
       metadata: { sessionsRevoked: input.revokeSessions },
     });
-
-    return resetProfile;
+    await enqueueEmailOutbox(tx, {
+      organizationId: actorOrganizationId(actor),
+      profileId: resetProfile.id,
+      referenceId: tokenId,
+      recipientEmail: resetProfile.email,
+      messageType: "password_reset",
+      idempotencyKey: `password_reset:${tokenId}`,
+      payload: {
+        kind: "password_reset",
+        name: resetProfile.name,
+        token,
+        tokenId,
+      },
+    });
   });
 
-  return deliverPasswordResetAfterCommit({
-    profileId: profile.id,
-    tokenId,
-    email: profile.email,
-    name: profile.name,
-    token,
-  });
+  return { ok: true as const, queued: true as const };
 }
 
 export async function setUserAccountStatus(actor: Actor, input: {
@@ -2587,8 +2474,6 @@ export async function setUserAccountStatus(actor: Actor, input: {
   status: "active" | "deactivated" | "revoked";
 }) {
   assertAdmin(actor);
-
-  let revokedNotice: { profileId: string; email: string; name: string } | null = null;
 
   await getDb().transaction(async (tx) => {
     const rows = await tx
@@ -2666,7 +2551,15 @@ export async function setUserAccountStatus(actor: Actor, input: {
           ),
         );
       if (profile.email) {
-        revokedNotice = { profileId: profile.id, email: profile.email, name: profile.name };
+        await enqueueEmailOutbox(tx, {
+          organizationId: actorOrganizationId(actor),
+          profileId: profile.id,
+          referenceId: profile.id,
+          recipientEmail: profile.email,
+          messageType: "access_revoked",
+          idempotencyKey: `access_revoked:${profile.id}:${now.toISOString()}`,
+          payload: { kind: "access_revoked", name: profile.name },
+        });
       }
     }
 
@@ -2685,9 +2578,6 @@ export async function setUserAccountStatus(actor: Actor, input: {
     });
   });
 
-  if (revokedNotice) {
-    await sendAccessRevokedNotice(revokedNotice);
-  }
 }
 
 export async function revokeUserSessions(actor: Actor, input: {

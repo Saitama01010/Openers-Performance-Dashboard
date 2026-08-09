@@ -22,36 +22,42 @@ export async function consumeRateLimit(input: {
   const identifierHash = hashOpaqueToken(input.identifier);
   const db = getDb();
 
-  await db
-    .insert(rateLimitRecords)
-    .values({
-      id: newId(),
-      scope: input.scope,
-      identifierHash,
-      windowStartedAt,
-      expiresAt,
-    })
-    .onDuplicateKeyUpdate({
-      set: {
-        requestCount: sql`${rateLimitRecords.requestCount} + 1`,
+  const requestCount = await db.transaction(async (tx) => {
+    // The unique-key upsert acquires the row lock and the transaction retains
+    // it through the read. Each concurrent caller therefore observes the
+    // count produced by its own increment instead of a later caller's count.
+    await tx
+      .insert(rateLimitRecords)
+      .values({
+        id: newId(),
+        scope: input.scope,
+        identifierHash,
+        windowStartedAt,
         expiresAt,
-      },
-    });
+      })
+      .onDuplicateKeyUpdate({
+        set: {
+          requestCount: sql`${rateLimitRecords.requestCount} + 1`,
+          expiresAt,
+        },
+      });
 
-  const rows = await db
-    .select({ requestCount: rateLimitRecords.requestCount })
-    .from(rateLimitRecords)
-    .where(
-      and(
-        eq(rateLimitRecords.scope, input.scope),
-        eq(rateLimitRecords.identifierHash, identifierHash),
-        eq(rateLimitRecords.windowStartedAt, windowStartedAt),
-      ),
-    )
-    .limit(1);
+    const [row] = await tx
+      .select({ requestCount: rateLimitRecords.requestCount })
+      .from(rateLimitRecords)
+      .where(
+        and(
+          eq(rateLimitRecords.scope, input.scope),
+          eq(rateLimitRecords.identifierHash, identifierHash),
+          eq(rateLimitRecords.windowStartedAt, windowStartedAt),
+        ),
+      )
+      .limit(1);
+    return row?.requestCount ?? input.limit + 1;
+  });
 
   return {
-    allowed: (rows[0]?.requestCount ?? input.limit + 1) <= input.limit,
+    allowed: requestCount <= input.limit,
     retryAfterSeconds: Math.max(
       1,
       Math.ceil((windowStartedAt.getTime() + input.windowMs - now.getTime()) / 1000),

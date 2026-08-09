@@ -8,7 +8,7 @@ import { logServerError } from "@/lib/logging";
 import { assertPermission } from "@/auth/permissions";
 import {
   confirmDialerImportBatch,
-  createDialerPreviewBatch,
+  enqueueDialerPreviewBatch,
   ImportConfirmationError,
   listImportHistory,
   rejectDialerImportBatch,
@@ -74,7 +74,7 @@ export async function previewImportAction(formData: FormData) {
   let batchId: string;
 
   try {
-    const created = await createDialerPreviewBatch({
+    const created = await enqueueDialerPreviewBatch({
       actor: user,
       source: "dialer",
       fileName: file.name,

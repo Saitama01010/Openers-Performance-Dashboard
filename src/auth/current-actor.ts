@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
@@ -10,7 +11,9 @@ declare const currentActorBrand: unique symbol;
 
 export type CurrentActor = Actor & { readonly [currentActorBrand]: true };
 
-export async function resolveCurrentActor(actor: Actor): Promise<CurrentActor> {
+const resolveCurrentActorByIdentity = cache(async (
+  actorId: string,
+): Promise<CurrentActor> => {
   const [profile] = await getDb()
     .select({
       id: profiles.id,
@@ -20,7 +23,7 @@ export async function resolveCurrentActor(actor: Actor): Promise<CurrentActor> {
     .from(profiles)
     .where(
       and(
-        eq(profiles.id, actor.id),
+        eq(profiles.id, actorId),
         eq(profiles.active, true),
         eq(profiles.accountStatus, "active"),
         isNull(profiles.deletedAt),
@@ -58,4 +61,8 @@ export async function resolveCurrentActor(actor: Actor): Promise<CurrentActor> {
     organizationId: profile.organizationId,
     teamIds: Array.from(new Set(memberships.map((membership) => membership.teamId))),
   } as CurrentActor;
+});
+
+export async function resolveCurrentActor(actor: Actor): Promise<CurrentActor> {
+  return resolveCurrentActorByIdentity(actor.id);
 }

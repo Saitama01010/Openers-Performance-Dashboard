@@ -14,6 +14,8 @@ Self-hosted Next.js dashboard for secure dialer imports and role-scoped opener p
 - Invitation and password-reset account setup
 - Admin Users & Access and Teams administration
 - Console and Resend transactional email providers
+- MySQL-backed import and email workers with leases and bounded retries
+- Bounded retention cleanup and live/ready/version endpoints
 - Versioned GitHub Actions verification with MySQL 8
 
 ## Local Setup
@@ -28,6 +30,9 @@ npm run db:bootstrap
 # Optional destructive development demo data requires explicit env opt-in.
 npm run db:seed
 npm run dev
+# In separate terminals, or use the documented scheduled --once mode:
+npm run worker:imports
+npm run worker:email
 ```
 
 `db:bootstrap` initializes required organization, role, and permission reference
@@ -47,13 +52,15 @@ npm run db:generate
 npm run db:migrate
 npm run db:health
 npm run security:audit
+npm run production:rehearsal
 ```
 
 `fixtures/dialer-sample.csv` is an anonymized dialer fixture that uses the exact production CSV headers.
 
 Architecture, permissions, authentication, import, testing, Google Apps Script
 transfer and closed-deal ingestion, and Hostinger deployment notes are
-maintained in `docs/`. Commissions and metric flags remain planned phases.
+maintained in `docs/`. Commissions, metric flags, role dashboards, coaching,
+durable workers, and production cleanup are implemented vertical slices.
 
 ## Transactional Email
 
@@ -73,6 +80,7 @@ Required production email variables:
 - `APP_URL`
 - `INVITATION_TTL_HOURS`
 - `PASSWORD_RESET_TTL_MINUTES`
+- `OUTBOX_ENCRYPTION_KEY`
 
 Optional:
 
@@ -95,3 +103,5 @@ complete invitation/reset-based password setup.
 
 The production security and release runbook is
 [`docs/production-hardening.md`](docs/production-hardening.md).
+The combined runtime, worker, retention, performance, and handover runbook is
+[`docs/production-readiness.md`](docs/production-readiness.md).

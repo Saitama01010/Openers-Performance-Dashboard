@@ -16,6 +16,7 @@ import {
 import type { Actor } from "@/auth/authorization";
 import { assertPermission } from "@/auth/permissions";
 import { getDb } from "@/db";
+import { getEnv } from "@/env";
 import {
   auditLogs,
   dialerAgentHourlyMetrics,
@@ -24,6 +25,7 @@ import {
   dialerImportBatches,
   dialerImportRows,
   importErrors,
+  importJobs,
   profiles,
   sourceUserMappings,
   teamMemberships,
@@ -792,6 +794,8 @@ async function persistProcessedBatch(input: {
           duplicateImports: input.duplicateImports,
           scopeKeys,
         }),
+        processedPreview: input.preview as unknown as Record<string, unknown>,
+        processedValidation: input.validation as unknown as Record<string, unknown>,
         validationErrors: input.validation.errors,
         validationWarnings: input.validation.warnings,
         validationNotices: input.validation.notices,
@@ -843,7 +847,7 @@ async function persistProcessedBatch(input: {
   });
 }
 
-async function processDialerBatch(input: {
+export async function processDialerBatch(input: {
   actor: Actor;
   batchId: string;
   selectedReportingDate?: string | null;
@@ -878,9 +882,14 @@ async function processDialerBatch(input: {
     .where(eq(dialerImportBatches.id, batch.id));
 
   try {
-    const [mappings, activeMetrics, duplicateImports, parsingActor] = await Promise.all([
+    if (batch.rawFileContent === null) {
+      throw new ImportConfirmationError(
+        "The retained raw CSV is no longer available.",
+        "raw_file_unavailable",
+      );
+    }
+    const [mappings, duplicateImports, parsingActor] = await Promise.all([
       getMappings(batch.source, input.actor),
-      listActiveDialerMetrics(),
       getDuplicateImports({
         batchId: batch.id,
         organizationId: actorOrganizationId(input.actor),
@@ -893,6 +902,24 @@ async function processDialerBatch(input: {
     const selectedReportingDate =
       input.selectedReportingDate ??
       selectedReportingDateFromBatch(batch);
+    const preliminaryPreview = previewDialerCsv({
+      actor: parsingActor,
+      source: batch.source,
+      fileName: batch.fileName,
+      fileContent: batch.rawFileContent,
+      selectedReportingDate,
+      existingFileHashes: new Set(duplicateImports.map(() => batch.fileHash)),
+      mappings,
+      existingMetrics: [],
+    });
+    const preliminaryGroups = groupDraftScopes(
+      preliminaryPreview,
+      batch.importType,
+      batch.dialerId,
+    );
+    const activeMetrics = await listActiveDialerMetrics(
+      preliminaryGroups.map((group) => group.scopeKey),
+    );
     const preview = previewDialerCsv({
       actor: parsingActor,
       source: batch.source,
@@ -982,6 +1009,42 @@ export async function createDialerPreviewBatch(input: {
   importType?: string;
   dialerId?: string | null;
   selectedReportingDate?: string | null;
+  }) {
+    const queued = await enqueueDialerPreviewBatch(input);
+    try {
+      const processed = await processDialerBatch({
+        actor: input.actor,
+        batchId: queued.batchId,
+        selectedReportingDate: input.selectedReportingDate,
+      });
+      await getDb()
+        .update(importJobs)
+        .set({ status: "completed", completedAt: new Date(), attemptCount: 1 })
+        .where(eq(importJobs.batchId, queued.batchId));
+      return processed;
+    } catch (error) {
+      await getDb()
+        .update(importJobs)
+        .set({
+          status: "failed",
+          attemptCount: 1,
+          failedAt: new Date(),
+          failureCode: "synchronous_processing_failed",
+          failureReason: "The import could not be processed.",
+        })
+        .where(eq(importJobs.batchId, queued.batchId));
+      throw error;
+    }
+  }
+
+export async function enqueueDialerPreviewBatch(input: {
+  actor: Actor;
+  source: string;
+  fileName: string;
+  fileContent: string | Buffer;
+  importType?: string;
+  dialerId?: string | null;
+  selectedReportingDate?: string | null;
 }) {
   if (input.actor.role === "agent") {
     throw new ImportConfirmationError("Agents cannot upload imports.", "forbidden");
@@ -1043,12 +1106,23 @@ export async function createDialerPreviewBatch(input: {
       uploadedById: input.actor.id,
       selectedReportingDate,
       rawFileContent: fileContent,
+      rawFileRetainUntil: new Date(
+        Date.now() + getEnv().RAW_CSV_RETENTION_DAYS * 24 * 60 * 60 * 1_000,
+      ),
       previewSummary: { selectedReportingDate },
+    });
+    await tx.insert(importJobs).values({
+      id: newId(),
+      organizationId: actorOrganizationId(input.actor),
+      actorProfileId: input.actor.id,
+      importType,
+      batchId,
+      status: "queued",
     });
     await tx.insert(auditLogs).values({
       id: newId(),
       actorProfileId: input.actor.id,
-      action: "dialer_import.uploaded",
+      action: "dialer_import.queued",
       entityType: "dialer_import_batch",
       entityId: batchId,
       metadata: {
@@ -1065,11 +1139,7 @@ export async function createDialerPreviewBatch(input: {
     });
   });
 
-  return processDialerBatch({
-    actor: input.actor,
-    batchId,
-    selectedReportingDate,
-  });
+  return { batchId, status: "queued" as const };
 }
 
 export async function getStoredImportPreview(input: {
@@ -1082,6 +1152,10 @@ export async function getStoredImportPreview(input: {
       organizationId: dialerImportBatches.organizationId,
       status: dialerImportBatches.status,
       uploadedById: dialerImportBatches.uploadedById,
+      fileName: dialerImportBatches.fileName,
+      createdAt: dialerImportBatches.createdAt,
+      processedPreview: dialerImportBatches.processedPreview,
+      processedValidation: dialerImportBatches.processedValidation,
     })
     .from(dialerImportBatches)
     .where(and(
@@ -1100,17 +1174,52 @@ export async function getStoredImportPreview(input: {
     return null;
   }
 
-  if (!REPROCESSABLE_STATUSES.includes(
-    batch.status as (typeof REPROCESSABLE_STATUSES)[number],
-  )) {
+  if (
+    !REPROCESSABLE_STATUSES.includes(
+      batch.status as (typeof REPROCESSABLE_STATUSES)[number],
+    ) ||
+    !batch.processedPreview ||
+    !batch.processedValidation
+  ) {
     return null;
   }
 
-  return processDialerBatch({
-    actor: input.actor,
-    batchId: input.batchId,
-    revalidation: true,
-  });
+  return {
+    batchId: batch.id,
+    fileName: batch.fileName,
+    createdAt: batch.createdAt,
+    preview: batch.processedPreview as unknown as ImportPreview,
+    validation: batch.processedValidation as unknown as ImportValidationResult,
+    status: batch.status as StoredImportPreview["status"],
+  } satisfies StoredImportPreview;
+}
+
+export async function getImportProcessingStatus(input: {
+  actor: Actor;
+  batchId: string;
+}) {
+  const [row] = await getDb()
+    .select({
+      batchId: importJobs.batchId,
+      status: importJobs.status,
+      attemptCount: importJobs.attemptCount,
+      failureCode: importJobs.failureCode,
+      failureReason: importJobs.failureReason,
+    })
+    .from(importJobs)
+    .innerJoin(dialerImportBatches, eq(dialerImportBatches.id, importJobs.batchId))
+    .where(
+      and(
+        eq(importJobs.batchId, input.batchId),
+        eq(importJobs.organizationId, actorOrganizationId(input.actor)),
+        eq(dialerImportBatches.organizationId, actorOrganizationId(input.actor)),
+        input.actor.role === "admin"
+          ? sql`true`
+          : eq(dialerImportBatches.uploadedById, input.actor.id),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 async function updateBatchVisibilityStatus(

@@ -310,12 +310,20 @@ async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: Overv
   const week = resolveWeekWindow(today);
   const month = resolveOverviewDateRange({ range: "this-month" }, now, timeZone);
   const lastMonth = resolveOverviewDateRange({ range: "last-month" }, now, timeZone);
-  const [scopedAgents, companyAgents, outcomeSource, configuration, dialer, coachingReports, shadowing, manualFlags, transferFlags, performanceFlags] = await Promise.all([
+  // Keep each request's database fan-out below the bounded pool queue. These
+  // groups are independent within the group, while the later dashboard and
+  // operational reads depend only on the resolved actor/scope metadata.
+  const [scopedAgents, companyAgents, outcomeSource, configuration] = await Promise.all([
     listScopedActiveAgents(actor),
     listScopedActiveAgents(orgActor),
     loadRoleDashboardOutcomeSource(orgActor),
     listPerformanceConfigurationForCurrentActor(actor),
-    getDashboardData(actor, { dateRange: selectedRange, showAgentsWithNoData: true }),
+  ]);
+  const dialer = await getDashboardData(actor, {
+    dateRange: selectedRange,
+    showAgentsWithNoData: true,
+  });
+  const [coachingReports, shadowing, manualFlags, transferFlags, performanceFlags, coachingByTeam] = await Promise.all([
     listCoachingReportsForCurrentActor(actor),
     listShadowingSessionsForCurrentActor(actor),
     listManualFlagCasesForCurrentActor(actor),
@@ -327,8 +335,8 @@ async function sharedInputs(actor: CurrentActor, now: Date, selectedRange: Overv
       dateRange: { from: month.from, to: month.to },
       flaggedOnly: true,
     }),
+    coachingTeamCompletion(orgActor, week.start, week.end),
   ]);
-  const [coachingByTeam] = await Promise.all([coachingTeamCompletion(orgActor, week.start, week.end)]);
   const weekly = outcomeSnapshot(outcomeSource, {
     kind: "date",
     window: { from: week.start, to: week.end },

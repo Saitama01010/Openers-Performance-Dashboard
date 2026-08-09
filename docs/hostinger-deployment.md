@@ -3,13 +3,16 @@
 Production deployment is blocked until permission, authentication, import, and migration checks pass and a production email provider is configured.
 
 1. Create a Hostinger MySQL 8 database and a least-privilege application user.
-2. Configure required secrets: `DATABASE_URL`, `DATABASE_ENVIRONMENT=production`, `DEPLOYMENT_ENVIRONMENT=production`, a random 32+ character `SESSION_SECRET`, a base64-encoded 32-byte `TEMP_PASSWORD_ENCRYPTION_KEY`, canonical public HTTPS `APP_URL`, `TRUSTED_PROXY_HEADERS`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `INVITATION_TTL_HOURS`, `PASSWORD_RESET_TTL_MINUTES`, `GOOGLE_TRANSFERS_APPS_SCRIPT_URL`, `LEADERBOARD_API_SECRET`, `GOOGLE_SHEETS_TIMEZONE`, and `NODE_ENV=production`.
+2. Configure required secrets: `DATABASE_URL`, `DATABASE_ENVIRONMENT=production`, `DEPLOYMENT_ENVIRONMENT=production`, a random 32+ character `SESSION_SECRET`, separate base64-encoded 32-byte `TEMP_PASSWORD_ENCRYPTION_KEY` and `OUTBOX_ENCRYPTION_KEY`, canonical public HTTPS `APP_URL`, `TRUSTED_PROXY_HEADERS`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `INVITATION_TTL_HOURS`, `PASSWORD_RESET_TTL_MINUTES`, `GOOGLE_TRANSFERS_APPS_SCRIPT_URL`, `LEADERBOARD_API_SECRET`, `GOOGLE_SHEETS_TIMEZONE`, and `NODE_ENV=production`. Configure the pool, worker, session, retention, version, and optional database TLS variables from `.env.example`.
 3. Configure exactly one production email provider. Do not use `EMAIL_PROVIDER=console` in production.
 4. Build with `npm ci && npm run build`.
 5. Run `npm run db:migrate` and `npm run db:bootstrap` once during release. `db:seed` is technically blocked in production/preview and must never be used there.
 6. Create or verify the first active admin.
 7. Start the Node.js Web App with `npm run start`.
-8. Confirm `/login`, `/dashboard`, `/admin/users`, `/admin/teams`, and invitation/reset links use the production `APP_URL`.
+8. Start supervised `npm run worker:imports` and `npm run worker:email` processes. If the plan supports only one Node process, create non-overlapping one-minute cron jobs using each command's `-- --once` mode.
+9. Schedule `npm run cleanup:retention -- --execute` daily only after reviewing a production dry run.
+10. Configure liveness monitoring at `/health/live`, readiness/uptime monitoring at `/health/ready`, and confirm `/health/version` matches the deployed commit.
+11. Confirm `/login`, `/dashboard`, `/admin/users`, `/admin/teams`, and invitation/reset links use the production `APP_URL`.
 
 Resend production settings:
 
@@ -35,6 +38,8 @@ cutover.
 
 The canonical single-tenant, trusted-proxy, security-header, release, and smoke
 test requirements are maintained in `production-hardening.md`.
+The complete process, recovery, retention, performance, and release procedure is
+maintained in `production-readiness.md`.
 
 If a Resend API key is exposed:
 

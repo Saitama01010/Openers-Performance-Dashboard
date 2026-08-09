@@ -3,6 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { getEnv } from "@/env";
+import { logOperationalEvent, logServerError } from "@/lib/logging";
 import {
   matchClosedDealsToUsers,
   matchTransfersToUsers,
@@ -15,6 +16,7 @@ import {
 } from "@/sheets/transfers";
 
 const SOURCE_CACHE_TTL_MS = 3 * 60 * 1000;
+const SOURCE_CACHE_MAX_ENTRIES = 8;
 
 type CachedSources = {
   sources: AppsScriptLeaderboardSources;
@@ -39,7 +41,17 @@ function sourceCacheKey(config: TransferSheetConfig) {
 function cacheEntry(config: TransferSheetConfig) {
   const key = sourceCacheKey(config);
   const existing = sourceCache.get(key);
-  if (existing) return existing;
+  if (existing) {
+    sourceCache.delete(key);
+    sourceCache.set(key, existing);
+    return existing;
+  }
+  if (sourceCache.size >= SOURCE_CACHE_MAX_ENTRIES) {
+    const evictable = Array.from(sourceCache.entries()).find(
+      ([, entry]) => entry.inFlight === null,
+    );
+    if (evictable) sourceCache.delete(evictable[0]);
+  }
   const created: SourceCacheEntry = {
     current: null,
     lastFullyReady: null,
@@ -56,6 +68,7 @@ async function fetchSources(
   if (entry.inFlight) return entry.inFlight;
 
   const provider = new GoogleAppsScriptTransfersProvider(config);
+  const startedAt = Date.now();
   entry.inFlight = provider
     .listSources()
     .then((sources) => {
@@ -69,7 +82,23 @@ async function fetchSources(
       if (sources.closed.status === "ready") {
         entry.lastFullyReady = cached;
       }
+      logOperationalEvent({
+        action: "sheets.refresh_completed",
+        durationMs: Date.now() - startedAt,
+        details: {
+          transferRows: sources.transfers.records.length,
+          closedStatus: sources.closed.status,
+        },
+      });
       return cached;
+    })
+    .catch((error) => {
+      logServerError({
+        action: "sheets.refresh_failed",
+        category: "upstream_failure",
+        error,
+      });
+      throw error;
     })
     .finally(() => {
       entry.inFlight = null;
@@ -96,6 +125,10 @@ export async function loadLeaderboardSources(
     return { ...fresh, stale: false as const };
   } catch (error) {
     if (entry.lastFullyReady) {
+      logOperationalEvent({
+        action: "sheets.stale_fallback",
+        details: { cachedAt: entry.lastFullyReady.fetchedAt },
+      });
       return {
         ...entry.lastFullyReady,
         stale: true as const,

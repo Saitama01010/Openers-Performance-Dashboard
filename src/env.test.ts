@@ -164,6 +164,7 @@ describe("environment validation", () => {
         EMAIL_PROVIDER: "resend",
         RESEND_API_KEY: "re_preview_test",
         TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+        OUTBOX_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString("base64"),
       }),
     ).toThrow(/DATABASE_ENVIRONMENT must match/);
 
@@ -175,6 +176,7 @@ describe("environment validation", () => {
       EMAIL_PROVIDER: "resend",
       RESEND_API_KEY: "re_preview_test",
       TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+      OUTBOX_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString("base64"),
     });
     expect(preview.DATABASE_ENVIRONMENT).toBe("preview");
   });

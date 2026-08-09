@@ -24,4 +24,12 @@ describe("secret redaction", () => {
     expect(result).not.toContain("abc.def");
     expect(result).not.toContain("raw-value");
   });
+
+  it("preserves numeric and boolean operational counters with sensitive nouns", () => {
+    expect(redactSecrets({ sessions: 4, resetTokens: 2, hasSession: false })).toEqual({
+      sessions: 4,
+      resetTokens: 2,
+      hasSession: false,
+    });
+  });
 });

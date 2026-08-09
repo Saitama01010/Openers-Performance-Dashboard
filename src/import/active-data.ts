@@ -16,7 +16,8 @@ export type ActiveDialerMetric = ComparableMetric & {
   scopeKey: string;
 };
 
-export async function listActiveDialerMetrics() {
+export async function listActiveDialerMetrics(scopeKeys?: string[]) {
+  if (scopeKeys && scopeKeys.length === 0) return [];
   const rows = await getDb()
     .select({
       scopeKey: dialerDatasetScopes.scopeKey,
@@ -54,7 +55,13 @@ export async function listActiveDialerMetrics() {
       profiles,
       eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
     )
-    .where(and(activeProfileWhere(), eq(profiles.role, "agent")));
+    .where(
+      and(
+        activeProfileWhere(),
+        eq(profiles.role, "agent"),
+        scopeKeys ? inArray(dialerDatasetScopes.scopeKey, scopeKeys) : undefined,
+      ),
+    );
 
   return rows.map((row) => ({
     ...row,

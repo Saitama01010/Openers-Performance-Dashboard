@@ -11,6 +11,7 @@ npm run db:generate
 npm run db:migrate
 npm run db:health
 npm run security:audit
+npm run production:rehearsal
 ```
 
 Database-backed tests fail before test discovery unless the database is
@@ -30,7 +31,10 @@ Current coverage includes CSV normalization and reconciliation, authorization,
 authentication policy, invitation/reset consumption and replay, concurrent token
 consumption, durable rate-limit races, admin account management,
 cross-organization rejection, session revocation, email delivery, and import
-lifecycle behavior.
+lifecycle behavior. Tier 2 adds atomic import/email claims, stale-lease recovery,
+bounded retries, duplicate execution, encrypted outbox tamper handling, provider
+timeouts, retention dry-run/execution, session expiry, health/readiness/version,
+request IDs, pagination bounds, and bulk-import replay/recovery.
 
 Versioned import integration coverage includes permanent draft creation, invalid
 headers, active-data isolation, first publish, superseding, latest rollback,
@@ -90,7 +94,7 @@ Manual Resend verification:
 8. Trigger forgot-password and confirm the reset email opens `/reset-password?token=...`.
 9. Trigger a repeated forgot-password submission before the token expires and confirm it does not send a duplicate email.
 
-The complete verification target remains:
+The complete repository verification target is:
 
 ```bash
 npm run lint
@@ -101,6 +105,7 @@ npm run db:generate
 npm run db:migrate
 npm run db:health
 npm run security:audit
+npm run production:rehearsal
 ```
 
 On Windows PowerShell, use `npm.cmd run ...` when script execution policy blocks `npm.ps1`.
@@ -113,7 +118,7 @@ development database.
 Required environment variables:
 
 ```txt
-DATABASE_URL=mysql://user:password@127.0.0.1:3306/openers_dashboard
+DATABASE_URL=mysql://user:password@127.0.0.1:3306/openers_dashboard_runtime_test
 TEST_DATABASE_URL=mysql://user:password@127.0.0.1:3306/openers_dashboard_test
 ALLOW_INTEGRATION_TEST_DATABASE=true
 NODE_ENV=test
@@ -129,14 +134,32 @@ The integration guard in `src/test/integration-env.ts` refuses to run when:
 - the target database name does not include `test`
 - the target looks production-like
 
-Create and migrate the local test database before running integration tests:
+Both URLs must be disposable local databases with `test` in their names and
+must be migrated. Vitest's process-level safety setup can initialize the runtime
+pool before a test file switches to `TEST_DATABASE_URL`; leaving the auxiliary
+`DATABASE_URL` at an older schema produces misleading missing-column failures.
+Never point either URL at the development or production schema.
+
+Create and migrate both local test databases before running integration tests:
 
 ```powershell
 $env:NODE_ENV = "test"
 $env:ALLOW_INTEGRATION_TEST_DATABASE = "true"
+$env:DATABASE_URL = "mysql://user:password@127.0.0.1:3306/openers_dashboard_runtime_test"
 $env:TEST_DATABASE_URL = "mysql://user:password@127.0.0.1:3306/openers_dashboard_test"
 npm run db:migrate:test
+$runtime = $env:DATABASE_URL
+$env:DATABASE_URL = $env:TEST_DATABASE_URL
+$env:TEST_DATABASE_URL = $runtime
+npm run db:migrate:test
+$runtime = $env:DATABASE_URL
+$env:DATABASE_URL = $env:TEST_DATABASE_URL
+$env:TEST_DATABASE_URL = $runtime
 npm run test:integration
 ```
+
+For production-like performance validation, follow the guarded disposable
+fixture and load commands in `production-readiness.md`. Performance data is
+never part of `db:seed` or `db:bootstrap`.
 
 Do not commit real database URLs or local `.env*` files.

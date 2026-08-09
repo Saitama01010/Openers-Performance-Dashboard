@@ -20,7 +20,16 @@
     "db:seed": "tsx scripts/db-seed.ts",
     "db:bootstrap": "tsx scripts/db-bootstrap.ts",
     "db:health": "tsx scripts/db-health.ts",
-    "teams:cleanup": "tsx scripts/team-cleanup.ts",
+    "worker:imports": "node --conditions=react-server --import tsx scripts/import-worker.ts",
+    "worker:email": "node --conditions=react-server --import tsx scripts/email-worker.ts",
+    "cleanup:retention": "node --conditions=react-server --import tsx scripts/retention-cleanup.ts",
+    "load:test": "tsx scripts/load-test.ts",
+    "load:rehearsal": "tsx scripts/load-rehearsal.ts",
+    "perf:fixture": "tsx scripts/performance-fixture.ts",
+    "perf:baseline": "tsx scripts/performance-baseline.ts",
+    "perf:import": "node --conditions=react-server --import tsx scripts/performance-import.ts",
+    "production:rehearsal": "tsx scripts/production-rehearsal.ts",
+    "teams:cleanup": "node --conditions=react-server --import tsx scripts/team-cleanup.ts",
     "users:purge-legacy-deleted": "tsx scripts/purge-legacy-deleted-users.ts"
   },
   "dependencies": {

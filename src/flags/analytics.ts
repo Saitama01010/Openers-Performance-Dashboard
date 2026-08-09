@@ -33,7 +33,7 @@ export function paginateRows<T>(
   requestedPageSize?: number,
 ) {
   const pageSize = requestedPageSize === undefined
-    ? Math.max(1, rows.length)
+    ? 50
     : Math.min(100, Math.max(1, requestedPageSize));
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const page = Math.min(totalPages, Math.max(1, requestedPage ?? 1));

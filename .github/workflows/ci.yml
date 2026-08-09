@@ -52,7 +52,7 @@ jobs:
       - name: Generate disposable CI security secrets
         shell: bash
         run: |
-          node -e "const {randomBytes}=require('node:crypto');const fs=require('node:fs');fs.appendFileSync(process.env.GITHUB_ENV,'TEMP_PASSWORD_ENCRYPTION_KEY='+randomBytes(32).toString('base64')+'\nDEMO_SEED_PASSWORD=CI-'+randomBytes(24).toString('base64url')+'!42\n')"
+          node -e "const {randomBytes}=require('node:crypto');const fs=require('node:fs');fs.appendFileSync(process.env.GITHUB_ENV,'TEMP_PASSWORD_ENCRYPTION_KEY='+randomBytes(32).toString('base64')+'\nOUTBOX_ENCRYPTION_KEY='+randomBytes(32).toString('base64')+'\nDEMO_SEED_PASSWORD=CI-'+randomBytes(24).toString('base64url')+'!42\n')"
       - run: npm ci
       - run: npm run security:audit
       - name: Allow triggers in the disposable test database
@@ -68,4 +68,7 @@ jobs:
       - run: mysql -h 127.0.0.1 -uroot -proot_password -e "CREATE DATABASE IF NOT EXISTS openers_dashboard_integration_test; GRANT ALL PRIVILEGES ON openers_dashboard_integration_test.* TO 'openers'@'%'; FLUSH PRIVILEGES;"
       - run: NODE_ENV=test npm run db:migrate:test
       - run: npm run test
+      - run: npm run worker:imports -- --once
+      - run: npm run worker:email -- --once
+      - run: npm run cleanup:retention
       - run: npm run build

@@ -16,9 +16,14 @@ export function redactSecrets(value: unknown, seen = new WeakSet<object>()): unk
   if (Array.isArray(value)) return value.map((entry) => redactSecrets(entry, seen));
 
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-      key,
-      SECRET_KEY.test(key) ? "[REDACTED]" : redactSecrets(entry, seen),
-    ]),
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+      const scalarDiagnostic = entry === null || typeof entry === "number" || typeof entry === "boolean";
+      return [
+        key,
+        SECRET_KEY.test(key) && !scalarDiagnostic
+          ? "[REDACTED]"
+          : redactSecrets(entry, seen),
+      ];
+    }),
   );
 }

@@ -1,3 +1,5 @@
+# LOCAL DEVELOPMENT ONLY. These published ports and credentials must never be
+# copied into Hostinger or any production database configuration.
 services:
   mysql:
     image: mysql:8.4

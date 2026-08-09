@@ -2,6 +2,7 @@ import {
   createCipheriv,
   createDecipheriv,
   randomBytes,
+  randomInt,
 } from "node:crypto";
 
 const VERSION = "v1";
@@ -40,16 +41,17 @@ export function generateTemporaryPassword(length = 20) {
     throw new Error("Temporary passwords must be at least 16 characters.");
   }
 
-  const bytes = randomBytes(length);
-  const generated = Array.from(
-    bytes,
-    (byte) => PASSWORD_ALPHABET[byte % PASSWORD_ALPHABET.length],
-  );
-
-  generated[0] = "A";
-  generated[1] = "a";
-  generated[2] = "7";
-  generated[3] = "!";
+  const generated = ["A", "a", "7", "!"];
+  while (generated.length < length) {
+    generated.push(PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)]);
+  }
+  for (let index = generated.length - 1; index > 0; index -= 1) {
+    const swapWith = randomInt(index + 1);
+    [generated[index], generated[swapWith]] = [
+      generated[swapWith],
+      generated[index],
+    ];
+  }
   return generated.join("");
 }
 

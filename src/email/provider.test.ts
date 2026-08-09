@@ -26,6 +26,7 @@ function setBaseEnv(overrides: Partial<NodeJS.ProcessEnv> = {}) {
     INVITATION_TTL_HOURS: "48",
     PASSWORD_RESET_TTL_MINUTES: "30",
     TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
+    OUTBOX_ENCRYPTION_KEY: Buffer.alloc(32, 2).toString("base64"),
     NODE_ENV: "development",
     ...overrides,
   };

@@ -1,29 +1,20 @@
 import "dotenv/config";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { getDb, getPool } from "../src/db";
 import {
-  ALL_PERMISSION_KEYS,
-  PERMISSION_DESCRIPTIONS,
-  ROLE_DEFAULT_PERMISSIONS,
   activeMappingKey,
   primaryMappingKey,
 } from "../src/admin/policy";
 import {
-  permissions,
   profiles,
-  organizations,
-  rolePermissions,
-  roles,
   sourceUserMappings,
   teamMemberships,
   teams,
 } from "../src/db/schema";
 import { hashPassword } from "../src/auth/password";
-import {
-  DEFAULT_ORGANIZATION_ID,
-  DEFAULT_ORGANIZATION_NAME,
-} from "../src/tenancy/constants";
+import { assertDemoSeedAllowed } from "../src/db/demo-seed-safety";
+import { initializeReferenceData } from "./db-reference-data";
 
 const ids = {
   admin: "00000000-0000-4000-8000-000000000001",
@@ -42,7 +33,7 @@ async function upsertProfile(
   name: string,
   role: "admin" | "manager" | "agent",
 ) {
-  const passwordHash = await hashPassword("Password123!");
+  const passwordHash = await hashPassword(process.env.DEMO_SEED_PASSWORD!);
   await getDb()
     .insert(profiles)
     .values({
@@ -97,51 +88,8 @@ async function upsertMembership(input: {
 }
 
 async function main() {
-  await getDb()
-    .insert(organizations)
-    .values({
-      id: DEFAULT_ORGANIZATION_ID,
-      name: DEFAULT_ORGANIZATION_NAME,
-      active: true,
-    })
-    .onDuplicateKeyUpdate({
-      set: { name: DEFAULT_ORGANIZATION_NAME, active: true },
-    });
-
-  await getDb()
-    .insert(roles)
-    .values([
-      { id: "admin", name: "Administrator", description: "Company-wide administration" },
-      { id: "manager", name: "Manager", description: "Assigned-team operations" },
-      { id: "agent", name: "Agent", description: "Personal performance access" },
-    ])
-    .onDuplicateKeyUpdate({ set: { name: sql`values(name)` } });
-
-  const permissionRows = ALL_PERMISSION_KEYS.map((key) => ({
-    key,
-    description: PERMISSION_DESCRIPTIONS[key],
-  }));
-  await getDb()
-    .insert(permissions)
-    .values(permissionRows)
-    .onDuplicateKeyUpdate({ set: { description: sql`values(description)` } });
-  await getDb()
-    .insert(rolePermissions)
-    .values([
-      ...ROLE_DEFAULT_PERMISSIONS.admin.map((permissionKey) => ({
-        roleId: "admin",
-        permissionKey,
-      })),
-      ...ROLE_DEFAULT_PERMISSIONS.manager.map((permissionKey) => ({
-        roleId: "manager",
-        permissionKey,
-      })),
-      ...ROLE_DEFAULT_PERMISSIONS.agent.map((permissionKey) => ({
-        roleId: "agent",
-        permissionKey,
-      })),
-    ])
-    .onDuplicateKeyUpdate({ set: { permissionKey: sql`values(permission_key)` } });
+  assertDemoSeedAllowed(process.env);
+  await initializeReferenceData();
 
   await getDb()
     .insert(teams)
@@ -225,10 +173,10 @@ async function main() {
     });
 
   await getPool().end();
-  console.log("Seed complete. Password for all users: Password123!");
+  console.log("Development demo data seed complete. Credentials were not logged.");
 }
 
 main().catch((error) => {
-  console.error(error);
+  console.error(error instanceof Error ? error.message : "Demo seed failed.");
   process.exit(1);
 });

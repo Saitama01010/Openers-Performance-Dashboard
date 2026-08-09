@@ -4,12 +4,13 @@ Local verification:
 
 ```bash
 npm run lint
+npm run typecheck
 npm run test
 npm run build
 npm run db:generate
 npm run db:migrate
-npm run db:seed
 npm run db:health
+npm run security:audit
 ```
 
 Database-backed tests fail before test discovery unless the database is
@@ -25,7 +26,11 @@ and explicit `preview` and `production` values respectively.
 
 CI runs the same commands against an isolated MySQL 8.4 service and fails if `db:generate` changes version-controlled migrations.
 
-Current unit coverage includes CSV header normalization, duplicate and corrected rows, aggregate reconciliation, duration formatting, mapping/scope outcomes, authentication security policy, token lifecycle policy, fail-closed authorization, Resend env validation, transactional email rendering, provider selection, reply-to handling, provider message IDs, and duplicate password-reset suppression. Database-backed end-to-end tests for invitation/reset consumption and admin account management remain required before production.
+Current coverage includes CSV normalization and reconciliation, authorization,
+authentication policy, invitation/reset consumption and replay, concurrent token
+consumption, durable rate-limit races, admin account management,
+cross-organization rejection, session revocation, email delivery, and import
+lifecycle behavior.
 
 Versioned import integration coverage includes permanent draft creation, invalid
 headers, active-data isolation, first publish, superseding, latest rollback,
@@ -48,7 +53,7 @@ zero-reference metric removal; stored-file success, missing-file, and
 cleanup-pending behavior; durable audits; concurrent deletion; concurrent
 activation; database transaction rollback; and targeted history revalidation.
 
-Provisioning coverage also includes authenticated temporary-password encryption and tamper detection, strict user-CSV header mapping and validation, formula-injection blocking, plain-English audit formatting and secret removal, immediate temporary-password authentication, regeneration invalidation, no automatic invitation, and transactional physical deletion of authentication and user-owned application data.
+Provisioning coverage also includes temporary-password encryption and tamper detection, one-time reveal, required first-login password change, strict user-CSV header mapping and validation, formula-injection blocking, plain-English audit formatting and secret removal, regeneration invalidation, no automatic invitation, and transactional physical deletion while retaining security audit evidence.
 
 Phase 2 adds unit coverage for:
 
@@ -64,7 +69,7 @@ Manual acceptance flow:
 2. Create Team Alpha.
 3. Create a manager and an agent assigned to Team Alpha.
 4. Add the agent's dialer name and send the invitation.
-5. Open the console invitation link and let the agent set their password.
+5. Open the invitation delivered to a controlled test inbox and let the agent set their password.
 6. Confirm the agent is redirected away from admin routes and sees only self-scoped data.
 7. Confirm the manager cannot access `/admin/users` and sees only Team Alpha data.
 8. Upload a CSV containing the agent's dialer name.
@@ -89,12 +94,13 @@ The complete verification target remains:
 
 ```bash
 npm run lint
+npm run typecheck
 npm run test
 npm run build
 npm run db:generate
 npm run db:migrate
-npm run db:seed
 npm run db:health
+npm run security:audit
 ```
 
 On Windows PowerShell, use `npm.cmd run ...` when script execution policy blocks `npm.ps1`.

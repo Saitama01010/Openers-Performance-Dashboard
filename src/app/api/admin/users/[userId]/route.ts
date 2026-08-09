@@ -13,13 +13,19 @@ import { assertValidRole } from "@/admin/policy";
 import { formatAuditEvent } from "@/admin/audit-format";
 import { assertTrustedMutationOrigin } from "@/auth/request-security";
 import { getCurrentUser } from "@/auth/session";
+import { parseJsonBody, uuidSchema } from "@/http/input";
+import { z } from "zod";
 
 const HEADERS = {
   "Cache-Control": "no-store, max-age=0",
   Pragma: "no-cache",
 } as const;
 
-const SUPPORTED_FIELDS = new Set(["email", "dialerName", "teamId", "shift", "role"]);
+const paramsSchema = z.object({ userId: uuidSchema }).strict();
+const patchSchema = z.object({
+  field: z.enum(["email", "dialerName", "teamId", "shift", "role"]),
+  value: z.string().max(500),
+}).strict();
 const SAFE_ERRORS = new Set([
   "Another user already owns this dialer name.",
   "Another user already owns this email address.",
@@ -60,34 +66,6 @@ function errorResponse(error: unknown, fallback: string) {
   return Response.json({ error: message }, { status, headers: HEADERS });
 }
 
-function parsePatchBody(body: unknown): {
-  field: InlineField;
-  value: string;
-} {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new Error("Send one supported field and value.");
-  }
-
-  const record = body as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-
-  if (
-    keys.length !== 2 ||
-    keys[0] !== "field" ||
-    keys[1] !== "value" ||
-    typeof record.field !== "string" ||
-    !SUPPORTED_FIELDS.has(record.field) ||
-    typeof record.value !== "string"
-  ) {
-    throw new Error("Send one supported field and value.");
-  }
-
-  return {
-    field: record.field as InlineField,
-    value: record.value,
-  };
-}
-
 function revalidateAdminUserPaths(userId: string) {
   revalidatePath("/admin/users");
   revalidatePath("/admin/teams");
@@ -117,7 +95,11 @@ export async function GET(
     );
   }
 
-  const { userId } = await context.params;
+  const parsedParams = paramsSchema.safeParse(await context.params);
+  if (!parsedParams.success) {
+    return Response.json({ error: "Invalid user ID." }, { status: 400, headers: HEADERS });
+  }
+  const { userId } = parsedParams.data;
   const details = await getAdminUserDetails(actor, userId);
   if (!details) {
     return Response.json(
@@ -182,8 +164,11 @@ export async function PATCH(
 
   try {
     assertTrustedMutationOrigin(request);
-    const { userId } = await context.params;
-    const { field, value } = parsePatchBody(await request.json());
+    const { userId } = paramsSchema.parse(await context.params);
+    const { field, value } = await parseJsonBody(request, patchSchema, 2_048) as {
+      field: InlineField;
+      value: string;
+    };
     const result =
       field === "email"
         ? await updateUserEmail(actor, { userId, email: value })
@@ -205,11 +190,11 @@ export async function PATCH(
     return Response.json(result, { headers: HEADERS });
   } catch (error) {
     if (
-      error instanceof Error &&
-      error.message === "Send one supported field and value."
+      error instanceof z.ZodError ||
+      (error instanceof Error && ["Invalid JSON body.", "Request body is too large."].includes(error.message))
     ) {
       return Response.json(
-        { error: error.message },
+        { error: "Send one supported field and value." },
         { status: 400, headers: HEADERS },
       );
     }
@@ -262,7 +247,7 @@ export async function DELETE(
 
   try {
     assertTrustedMutationOrigin(request);
-    const { userId } = await context.params;
+    const { userId } = paramsSchema.parse(await context.params);
     await permanentlyDeleteUser(actor, { userId });
     revalidateAdminUserPaths(userId);
     return Response.json({ ok: true }, { headers: HEADERS });

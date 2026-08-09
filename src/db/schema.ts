@@ -188,6 +188,10 @@ export const userImportBatches = mysqlTable(
   "user_import_batches",
   {
     id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .default(DEFAULT_ORGANIZATION_ID)
+      .references(() => organizations.id),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     fileHash: varchar("file_hash", { length: 64 }).notNull(),
     status: userImportStatusEnum.notNull().default("previewed"),
@@ -201,6 +205,11 @@ export const userImportBatches = mysqlTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
+    index("user_import_organization_status_idx").on(
+      table.organizationId,
+      table.status,
+      table.createdAt,
+    ),
     index("user_import_uploaded_by_idx").on(table.uploadedById),
     index("user_import_expires_at_idx").on(table.expiresAt),
     index("user_import_file_hash_idx").on(table.fileHash),
@@ -307,6 +316,10 @@ export const dialerImportBatches = mysqlTable(
   "dialer_import_batches",
   {
     id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 })
+      .notNull()
+      .default(DEFAULT_ORGANIZATION_ID)
+      .references(() => organizations.id),
     source: varchar("source", { length: 64 }).notNull(),
     importType: varchar("import_type", { length: 64 })
       .notNull()
@@ -375,6 +388,11 @@ export const dialerImportBatches = mysqlTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
+    index("dialer_import_organization_status_idx").on(
+      table.organizationId,
+      table.status,
+      table.createdAt,
+    ),
     foreignKey({
       columns: [table.previousImportId],
       foreignColumns: [table.id],
@@ -1027,16 +1045,34 @@ export const auditLogs = mysqlTable(
   "audit_logs",
   {
     id: varchar("id", { length: 36 }).primaryKey(),
+    organizationId: varchar("organization_id", { length: 36 }).references(
+      () => organizations.id,
+      { onDelete: "restrict" },
+    ),
     actorProfileId: varchar("actor_profile_id", { length: 36 }).references(
       () => profiles.id,
+      { onDelete: "set null" },
     ),
+    actorDisplayName: varchar("actor_display_name", { length: 255 }),
     action: varchar("action", { length: 120 }).notNull(),
     entityType: varchar("entity_type", { length: 120 }).notNull(),
     entityId: varchar("entity_id", { length: 120 }),
     metadata: json("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [index("audit_logs_actor_idx").on(table.actorProfileId)],
+  (table) => [
+    index("audit_logs_actor_idx").on(table.actorProfileId),
+    index("audit_logs_organization_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    index("audit_logs_entity_history_idx").on(
+      table.organizationId,
+      table.entityType,
+      table.entityId,
+      table.createdAt,
+    ),
+  ],
 );
 
 export const sessions = mysqlTable(

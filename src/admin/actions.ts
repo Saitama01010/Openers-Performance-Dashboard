@@ -31,9 +31,28 @@ import {
 import type { AdminErrorCode } from "@/admin/messages";
 import type { Role } from "@/auth/authorization";
 import { getCurrentUser } from "@/auth/session";
+import { logServerError } from "@/lib/logging";
 
 function formString(formData: FormData, key: string) {
-  return String(formData.get(key) ?? "");
+  const value = String(formData.get(key) ?? "");
+  if (value.length > 5_000) throw new Error(`${key} is too long.`);
+  return value;
+}
+
+function uuid(value: string, field = "ID") {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new Error(`${field} is invalid.`);
+  }
+  return value;
+}
+
+function formUuid(formData: FormData, key: string) {
+  return uuid(formString(formData, key), key);
+}
+
+function optionalFormUuid(formData: FormData, key: string) {
+  const value = formString(formData, key);
+  return value ? uuid(value, key) : undefined;
 }
 
 function boolField(formData: FormData, key: string) {
@@ -75,31 +94,11 @@ async function requireAdmin() {
   return user;
 }
 
-function redactErrorDetail(value: string) {
-  const resendKey = process.env.RESEND_API_KEY;
-  let redacted = resendKey ? value.replaceAll(resendKey, "[redacted]") : value;
-
-  redacted = redacted.replace(
-    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
-    "[redacted-email]",
-  );
-  redacted = redacted.replace(
-    /\b(token|password|secret|api[_-]?key)\b\s*[:=]\s*['"]?[^'"\s,;)]+/gi,
-    "$1=[redacted]",
-  );
-
-  return redacted;
-}
-
 function logAdminActionError(code: AdminErrorCode, error: unknown) {
-  const message =
-    error instanceof Error ? error.message : "Admin action failed.";
-  const stack = error instanceof Error ? error.stack : undefined;
-
-  console.error("[admin action failed]", {
-    code,
-    message: redactErrorDetail(message),
-    stack: stack ? redactErrorDetail(stack) : undefined,
+  logServerError({
+    action: "admin.server_action",
+    category: code,
+    error,
   });
 }
 
@@ -137,7 +136,7 @@ export async function createUserAction(formData: FormData) {
       name: formString(formData, "name"),
       email: formString(formData, "email"),
       role: readRole(formData),
-      teamId: formString(formData, "teamId") || undefined,
+      teamId: optionalFormUuid(formData, "teamId"),
       dialerName: formString(formData, "dialerName"),
       shift: formString(formData, "shift"),
       dialerAliases: splitAliases(formString(formData, "dialerAliases")),
@@ -154,6 +153,7 @@ export async function createUserAction(formData: FormData) {
 
 export async function updateUserAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
 
   try {
     await updateAdminUser(actor, {
@@ -161,7 +161,7 @@ export async function updateUserAction(userId: string, formData: FormData) {
       name: formString(formData, "name"),
       email: formString(formData, "email"),
       role: readRole(formData),
-      teamId: formString(formData, "teamId") || undefined,
+      teamId: optionalFormUuid(formData, "teamId"),
       shift: formString(formData, "shift"),
       permissionOverrides: readPermissionOverrides(formData),
     });
@@ -175,6 +175,7 @@ export async function updateUserAction(userId: string, formData: FormData) {
 
 export async function userStatusAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
   const status = formString(formData, "status");
 
   if (!["active", "deactivated", "revoked"].includes(status)) {
@@ -200,6 +201,7 @@ export async function userStatusAction(userId: string, formData: FormData) {
 
 export async function invitationAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
   const action = formString(formData, "invitationAction");
 
   try {
@@ -218,6 +220,7 @@ export async function invitationAction(userId: string, formData: FormData) {
 
 export async function forcePasswordResetAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
   let warning = "";
 
   try {
@@ -236,6 +239,7 @@ export async function forcePasswordResetAction(userId: string, formData: FormDat
 
 export async function revokeSessionsAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
 
   try {
     await revokeUserSessions(actor, {
@@ -252,6 +256,7 @@ export async function revokeSessionsAction(userId: string, formData: FormData) {
 
 export async function addDialerMappingAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
 
   try {
     await addDialerMapping(actor, {
@@ -269,7 +274,7 @@ export async function addDialerMappingAction(userId: string, formData: FormData)
 
 export async function mapUnknownDialerNameAction(formData: FormData) {
   const actor = await requireAdmin();
-  const userId = formString(formData, "userId");
+  const userId = formUuid(formData, "userId");
 
   try {
     await addDialerMapping(actor, {
@@ -303,9 +308,10 @@ export async function ignoreUnknownDialerNameAction(formData: FormData) {
 
 export async function deactivateDialerMappingAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
 
   try {
-    await deactivateDialerMapping(actor, formString(formData, "mappingId"));
+    await deactivateDialerMapping(actor, formUuid(formData, "mappingId"));
     revalidatePath(`/admin/users/${userId}`);
   } catch (error) {
     fail(`/admin/users/${userId}`, error, "mapping-update");
@@ -316,10 +322,11 @@ export async function deactivateDialerMappingAction(userId: string, formData: Fo
 
 export async function editDialerMappingAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
 
   try {
     await editDialerMapping(actor, {
-      mappingId: formString(formData, "mappingId"),
+      mappingId: formUuid(formData, "mappingId"),
       sourceAgentName: formString(formData, "sourceAgentName"),
     });
     revalidatePath(`/admin/users/${userId}`);
@@ -332,9 +339,10 @@ export async function editDialerMappingAction(userId: string, formData: FormData
 
 export async function setPrimaryDialerMappingAction(userId: string, formData: FormData) {
   const actor = await requireAdmin();
+  userId = uuid(userId, "userId");
 
   try {
-    await setPrimaryDialerMapping(actor, formString(formData, "mappingId"));
+    await setPrimaryDialerMapping(actor, formUuid(formData, "mappingId"));
     revalidatePath(`/admin/users/${userId}`);
   } catch (error) {
     fail(`/admin/users/${userId}`, error, "mapping-update");
@@ -361,7 +369,7 @@ export async function renameTeamAction(formData: FormData) {
 
   try {
     await renameTeam(actor, {
-      teamId: formString(formData, "teamId"),
+      teamId: formUuid(formData, "teamId"),
       name: formString(formData, "name"),
     });
     revalidatePath("/admin/teams");
@@ -381,7 +389,7 @@ export async function setTeamStatusAction(formData: FormData) {
 
   try {
     await setTeamStatus(actor, {
-      teamId: formString(formData, "teamId"),
+      teamId: formUuid(formData, "teamId"),
       active: formString(formData, "active") === "true",
     });
     revalidatePath("/admin/teams");
@@ -397,8 +405,8 @@ export async function assignTeamManagerAction(formData: FormData) {
 
   try {
     await assignTeamManager(actor, {
-      teamId: formString(formData, "teamId"),
-      managerId: formString(formData, "managerId"),
+      teamId: formUuid(formData, "teamId"),
+      managerId: formUuid(formData, "managerId"),
     });
     revalidatePath("/admin/teams");
   } catch (error) {
@@ -413,8 +421,8 @@ export async function moveAgentToTeamAction(formData: FormData) {
 
   try {
     await moveAgentToTeam(actor, {
-      teamId: formString(formData, "teamId"),
-      agentId: formString(formData, "agentId"),
+      teamId: formUuid(formData, "teamId"),
+      agentId: formUuid(formData, "agentId"),
     });
     revalidatePath("/admin/teams");
   } catch (error) {
@@ -428,7 +436,7 @@ export async function removeTeamMembershipAction(formData: FormData) {
   const actor = await requireAdmin();
 
   try {
-    await removeTeamMembership(actor, formString(formData, "membershipId"));
+    await removeTeamMembership(actor, formUuid(formData, "membershipId"));
     revalidatePath("/admin/teams");
   } catch (error) {
     fail("/admin/teams", error, "membership-removal");

@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 
 import { acceptInvitationAction } from "@/auth/actions";
-import { inspectInvitationToken } from "@/auth/service";
+import { inspectTokenForRequest } from "@/auth/token-inspection";
 import {
   AuthShell,
   PasswordRequirements,
@@ -25,7 +26,11 @@ export default async function AcceptInvitationPage({
   const params = await searchParams;
   const error = errorMessage(params.error);
   const inspection = params.token
-    ? await inspectInvitationToken(params.token)
+    ? await inspectTokenForRequest({
+        kind: "invitation",
+        token: params.token,
+        headers: await headers(),
+      })
     : { status: "invalid" as const };
   const canShowForm = Boolean(params.token && inspection.status === "valid");
 
@@ -50,6 +55,7 @@ export default async function AcceptInvitationPage({
               aria-describedby="password-requirements"
               autoComplete="new-password"
               className="ui-input"
+              maxLength={256}
               minLength={12}
               name="password"
               required
@@ -62,6 +68,7 @@ export default async function AcceptInvitationPage({
               aria-describedby="password-requirements"
               autoComplete="new-password"
               className="ui-input"
+              maxLength={256}
               minLength={12}
               name="confirmation"
               required

@@ -161,20 +161,20 @@ describe("transactional email provider", () => {
     expect(result.error).not.toContain("re_secret_value");
   });
 
-  it("keeps console delivery available for local testing", async () => {
+  it("keeps console delivery metadata available without logging token-bearing bodies", async () => {
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { deliverEmail } = await import("@/email/provider");
 
     const result = await deliverEmail({
       to: "agent@example.com",
       subject: "Subject",
-      text: "Local invitation link",
-      html: "<p>Local invitation link</p>",
+      text: "Local invitation link token=raw-secret-token",
+      html: "<p>Local invitation link token=raw-secret-token</p>",
     });
 
     expect(result).toMatchObject({ ok: true, provider: "console" });
-    expect(infoSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Local invitation link"),
-    );
+    const logged = String(infoSpy.mock.calls[0]?.[0]);
+    expect(logged).toContain("body=[redacted]");
+    expect(logged).not.toContain("raw-secret-token");
   });
 });

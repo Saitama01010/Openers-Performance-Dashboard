@@ -38,6 +38,21 @@ const optionalAppsScriptUrl = z.preprocess((value) => {
   }, "GOOGLE_TRANSFERS_APPS_SCRIPT_URL must be an HTTPS Google Apps Script /exec URL.")
   .optional());
 
+const canonicalAppUrl = z.string().url().default("http://localhost:3000").refine(
+  (value) => {
+    const url = new URL(value);
+    return (
+      !url.username &&
+      !url.password &&
+      url.pathname === "/" &&
+      !url.search &&
+      !url.hash &&
+      value === url.origin
+    );
+  },
+  "APP_URL must be a canonical origin without credentials, path, query, hash, or trailing slash.",
+);
+
 const timezone = z
   .string()
   .trim()
@@ -62,7 +77,11 @@ const envSchema = z
       .enum(["development", "test", "preview", "production"])
       .optional(),
     SESSION_SECRET: z.string().min(32),
-    APP_URL: z.string().url().default("http://localhost:3000"),
+    APP_URL: canonicalAppUrl,
+    TRUSTED_PROXY_HEADERS: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
     EMAIL_PROVIDER: z.enum(["console", "resend"]).default("console"),
     EMAIL_FROM_NAME: z.string().trim().min(1).default("DialExpert"),
     EMAIL_FROM_ADDRESS: z
@@ -80,9 +99,21 @@ const envSchema = z
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    ALLOW_DESTRUCTIVE_DEMO_SEED: z.enum(["true", "false"]).optional(),
+    DEMO_SEED_PASSWORD: optionalTrimmedString,
   })
   .superRefine((env, ctx) => {
     const deploymentEnvironment = env.DEPLOYMENT_ENVIRONMENT ?? env.NODE_ENV;
+    if (
+      (deploymentEnvironment === "production" || deploymentEnvironment === "preview") &&
+      new URL(env.APP_URL).protocol !== "https:"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["APP_URL"],
+        message: "APP_URL must use HTTPS in preview and production.",
+      });
+    }
     if (env.DATABASE_ENVIRONMENT !== deploymentEnvironment) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

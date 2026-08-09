@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/auth/session";
+import { logServerError } from "@/lib/logging";
 import { assertPermission } from "@/auth/permissions";
 import {
   confirmDialerImportBatch,
@@ -15,6 +16,7 @@ import {
   rollbackDialerImportBatch,
 } from "@/import/service";
 import { MAX_DIALER_CSV_BYTES } from "@/import/config";
+import { validateCsvContent, validateCsvUploadMetadata } from "@/import/file-safety";
 import {
   deleteDialerImportBatch,
   ImportDeletionError,
@@ -25,12 +27,13 @@ import {
   deactivateDialerImportBatch,
 } from "@/import/active-lifecycle";
 
-const ALLOWED_CSV_TYPES = new Set([
-  "",
-  "text/csv",
-  "text/plain",
-  "application/vnd.ms-excel",
-]);
+function validId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function validReason(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length >= 8 && value.length <= 500;
+}
 
 export async function previewImportAction(formData: FormData) {
   const user = await getCurrentUser();
@@ -50,13 +53,9 @@ export async function previewImportAction(formData: FormData) {
     redirect("/import?error=file");
   }
 
-  if (
-    file.size === 0 ||
-    file.size > MAX_DIALER_CSV_BYTES ||
-    file.name.length > 255 ||
-    !file.name.toLowerCase().endsWith(".csv") ||
-    !ALLOWED_CSV_TYPES.has(file.type.toLowerCase())
-  ) {
+  try {
+    validateCsvUploadMetadata(file, MAX_DIALER_CSV_BYTES);
+  } catch {
     redirect("/import?error=file");
   }
 
@@ -67,6 +66,11 @@ export async function previewImportAction(formData: FormData) {
   }
 
   const content = Buffer.from(await file.arrayBuffer());
+  try {
+    validateCsvContent(content);
+  } catch {
+    redirect("/import?error=file");
+  }
   let batchId: string;
 
   try {
@@ -106,7 +110,7 @@ export async function confirmImportAction(formData: FormData) {
 
   const batchId = formData.get("batchId");
 
-  if (typeof batchId !== "string" || batchId.length === 0) {
+  if (!validId(batchId)) {
     redirect("/import?error=preview");
   }
 
@@ -121,11 +125,12 @@ export async function confirmImportAction(formData: FormData) {
         ? error.code
         : "confirm_failed";
 
-    console.error("[dialer import confirmation failed]", {
+    logServerError({
+      action: "import.confirm",
       actorId: user.id,
-      batchId,
-      code: confirmError,
-      message: error instanceof Error ? error.message : "Unknown import error.",
+      entityId: batchId,
+      category: confirmError,
+      error,
     });
 
     redirect(`/import?preview=${batchId}&confirmError=${confirmError}`);
@@ -152,7 +157,7 @@ export async function rejectImportAction(formData: FormData) {
   const batchId = formData.get("batchId");
   const reason = formData.get("reason");
 
-  if (typeof batchId !== "string" || typeof reason !== "string") {
+  if (!validId(batchId) || !validReason(reason)) {
     redirect("/import?error=preview");
   }
 
@@ -270,11 +275,12 @@ function importResolutionFromForm(
   if (!["previous", "selected", "none"].includes(String(mode))) {
     return null;
   }
+  if (mode === "selected" && !validId(fallbackBatchId)) return null;
 
   return {
     mode: mode as ActiveImportResolution["mode"],
     fallbackBatchId:
-      typeof fallbackBatchId === "string" ? fallbackBatchId : null,
+      validId(fallbackBatchId) ? fallbackBatchId : null,
   };
 }
 
@@ -287,8 +293,8 @@ export async function deactivateImportAction(formData: FormData) {
   const resolution = importResolutionFromForm(formData);
 
   if (
-    typeof batchId !== "string" ||
-    typeof reason !== "string" ||
+    !validId(batchId) ||
+    !validReason(reason) ||
     !resolution
   ) {
     redirect(
@@ -338,7 +344,7 @@ export async function rollbackImportAction(formData: FormData) {
   const batchId = formData.get("batchId");
   const reason = formData.get("reason");
 
-  if (typeof batchId !== "string" || typeof reason !== "string") {
+  if (!validId(batchId) || !validReason(reason)) {
     redirect("/admin/imports?error=rollback");
   }
 
@@ -362,7 +368,7 @@ export async function restoreImportAction(formData: FormData) {
   const batchId = formData.get("batchId");
   const reason = formData.get("reason");
 
-  if (typeof batchId !== "string" || typeof reason !== "string") {
+  if (!validId(batchId) || !validReason(reason)) {
     redirect(
       returnQuery
         ? importHistoryQueryHref(returnQuery, { error: "restore_input_invalid" })
@@ -401,9 +407,9 @@ export async function deleteImportAction(formData: FormData) {
   const reason = formData.get("reason");
 
   if (
-    typeof batchId !== "string" ||
+    !validId(batchId) ||
     typeof confirmation !== "string" ||
-    typeof reason !== "string"
+    !validReason(reason)
   ) {
     redirect(
       returnQuery
@@ -426,12 +432,12 @@ export async function deleteImportAction(formData: FormData) {
     const code =
       error instanceof ImportDeletionError ? error.code : "delete_failed";
 
-    console.error("[dialer import deletion failed]", {
+    logServerError({
+      action: "import.delete",
       actorId: user.id,
-      batchId,
-      code,
-      message:
-        error instanceof Error ? error.message : "Unknown deletion error.",
+      entityId: batchId,
+      category: code,
+      error,
     });
 
     if (returnQuery) {

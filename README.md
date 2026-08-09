@@ -24,28 +24,29 @@ copy .env.example .env
 docker compose up -d mysql
 npm run db:health
 npm run db:migrate
+npm run db:bootstrap
+# Optional destructive development demo data requires explicit env opt-in.
 npm run db:seed
 npm run dev
 ```
 
-Seeded users all use `Password123!`.
-
-- `admin@example.com`
-- `morgan.manager@example.com`
-- `casey.manager@example.com`
-- `ava.agent@example.com`
-- `noah.agent@example.com`
-- `mia.agent@example.com`
+`db:bootstrap` initializes required organization, role, and permission reference
+data without demo users. `db:seed` is development/test-only, refuses
+production-like or remote databases, requires
+`ALLOW_DESTRUCTIVE_DEMO_SEED=true` plus a private `DEMO_SEED_PASSWORD`, and
+never prints that password.
 
 ## Checks
 
 ```bash
 npm run lint
+npm run typecheck
 npm run test
 npm run build
 npm run db:generate
 npm run db:migrate
-npm run db:seed
+npm run db:health
+npm run security:audit
 ```
 
 `fixtures/dialer-sample.csv` is an anonymized dialer fixture that uses the exact production CSV headers.
@@ -56,7 +57,8 @@ maintained in `docs/`. Commissions and metric flags remain planned phases.
 
 ## Transactional Email
 
-Local development uses `EMAIL_PROVIDER=console`, which prints invitation and reset links in the server terminal and is rejected in production.
+Local development may use `EMAIL_PROVIDER=console`, which records delivery
+metadata but redacts token-bearing message bodies. It is rejected in production.
 
 Production uses Resend with the verified domain `updates.dialexpert.com` and the sender:
 
@@ -86,4 +88,10 @@ Admins manage access at `/admin/users` and teams at `/admin/teams`.
 4. The user accepts the invitation and creates their password.
 5. Admins can later move teams, add aliases, override permissions, force password resets, revoke sessions, deactivate accounts, or revoke access.
 
-Seeded local admin: `admin@example.com` / `Password123!`. For production, create the first admin by running a one-time seed or insert script against `profiles` with role `admin`, `account_status='active'`, and a hashed password, then immediately rotate to an invitation/reset based password.
+Never run `db:seed` in production or preview. Initialize production reference
+data with `npm run db:bootstrap`; provision the first administrator through the
+one-time recovery procedure in `docs/production-hardening.md`, then immediately
+complete invitation/reset-based password setup.
+
+The production security and release runbook is
+[`docs/production-hardening.md`](docs/production-hardening.md).

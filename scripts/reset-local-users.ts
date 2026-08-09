@@ -5,9 +5,9 @@ import path from "node:path";
 import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise";
 
 import { hashPassword } from "../src/auth/password";
+import { validatePassword } from "../src/auth/security";
 import {
   encryptTemporaryPassword,
-  generateTemporaryPassword,
 } from "../src/auth/temporary-password-core";
 import { newId } from "../src/lib/ids";
 
@@ -116,6 +116,12 @@ function assertSafeDevelopmentDatabase(identity: DatabaseIdentity) {
   if (!process.env.TEMP_PASSWORD_ENCRYPTION_KEY) {
     throw new Error(
       "TEMP_PASSWORD_ENCRYPTION_KEY is required to create a recoverable temporary admin password.",
+    );
+  }
+  const resetPassword = process.env.LOCAL_RESET_ADMIN_PASSWORD ?? "";
+  if (validatePassword(resetPassword).length > 0 || resetPassword.length > 256) {
+    throw new Error(
+      "LOCAL_RESET_ADMIN_PASSWORD must be a private valid password no longer than 256 characters.",
     );
   }
 }
@@ -255,7 +261,7 @@ async function deleteAll(connection: mysql.Connection, tableName: string) {
 
 async function executeReset(connection: mysql.Connection) {
   const adminId = newId();
-  const temporaryPassword = generateTemporaryPassword();
+  const temporaryPassword = process.env.LOCAL_RESET_ADMIN_PASSWORD!;
   const passwordHash = await hashPassword(temporaryPassword);
   const encryptedTemporaryPassword =
     encryptTemporaryPassword(temporaryPassword);
@@ -347,7 +353,7 @@ async function executeReset(connection: mysql.Connection) {
         account_status,
         must_reset_password,
         password_changed_at
-      ) values (?, ?, ?, null, 'admin', ?, 'temporary', ?, true, 'active', false, null)`,
+      ) values (?, ?, ?, null, 'admin', ?, 'temporary', ?, true, 'active', true, null)`,
       [
         adminId,
         ADMIN_EMAIL,
@@ -393,7 +399,6 @@ async function executeReset(connection: mysql.Connection) {
       adminId,
       adminEmail: ADMIN_EMAIL,
       adminName: ADMIN_NAME,
-      temporaryPassword,
       oldProfileCount: oldUserIds.length,
       deleted,
       membershipsEnded,
@@ -509,8 +514,7 @@ async function main() {
     console.log(`Final visible user rows: ${after.visibleUsers}`);
     console.log(`Replacement admin id: ${result.adminId}`);
     console.log(`Replacement admin email: ${result.adminEmail}`);
-    console.log("Temporary admin password (displayed once):");
-    console.log(result.temporaryPassword);
+    console.log("The replacement admin must change the caller-supplied temporary password on first login.");
   } finally {
     await connection.end();
   }

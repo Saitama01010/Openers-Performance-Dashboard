@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import { rateLimitRecords } from "@/db/schema";
@@ -57,4 +57,10 @@ export async function consumeRateLimit(input: {
       Math.ceil((windowStartedAt.getTime() + input.windowMs - now.getTime()) / 1000),
     ),
   };
+}
+
+export async function cleanupExpiredRateLimits(now = new Date()) {
+  await getDb()
+    .delete(rateLimitRecords)
+    .where(lt(rateLimitRecords.expiresAt, now));
 }

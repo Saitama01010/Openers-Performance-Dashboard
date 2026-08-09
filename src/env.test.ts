@@ -6,6 +6,7 @@ const baseEnv = {
   DATABASE_URL: "mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard",
   DATABASE_ENVIRONMENT: "development",
   SESSION_SECRET: "12345678901234567890123456789012",
+  APP_URL: "https://dashboard.example.test",
   NODE_ENV: "development",
 } satisfies NodeJS.ProcessEnv;
 
@@ -21,6 +22,20 @@ describe("environment validation", () => {
     expect(env.EMAIL_PROVIDER).toBe("console");
     expect(env.EMAIL_FROM_NAME).toBe("DialExpert");
     expect(env.EMAIL_FROM_ADDRESS).toBe("no-reply@updates.dialexpert.com");
+  });
+
+  it("requires a canonical application origin and production HTTPS", async () => {
+    const { parseEnv } = await import("@/env");
+    expect(() => parseEnv({ ...baseEnv, APP_URL: "https://dashboard.example.test/path" })).toThrow(/canonical origin/);
+    expect(() => parseEnv({
+      ...baseEnv,
+      NODE_ENV: "production",
+      DATABASE_ENVIRONMENT: "production",
+      APP_URL: "http://dashboard.example.test",
+      EMAIL_PROVIDER: "resend",
+      RESEND_API_KEY: "re_test_123",
+      TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+    })).toThrow(/must use HTTPS/);
   });
 
   it("rejects console email in production", async () => {

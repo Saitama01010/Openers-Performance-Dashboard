@@ -294,4 +294,25 @@ describe("auth token lifecycle integration", () => {
     expect((await inspectPasswordResetToken(revoked.token)).status).toBe("revoked");
     expect((await inspectPasswordResetToken(expired.token)).status).toBe("expired");
   });
+
+  it("allows exactly one concurrent reset-token consumer", async () => {
+    const profileId = await createProfile({
+      accountStatus: "active",
+      password: strongPassword("concurrent-current"),
+    });
+    const reset = await createReset(profileId);
+
+    const results = await Promise.all([
+      resetPassword({ token: reset.token, password: strongPassword("concurrent-a") }),
+      resetPassword({ token: reset.token, password: strongPassword("concurrent-b") }),
+    ]);
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok)).toEqual([
+      {
+        ok: false,
+        error: "This reset link is invalid or has already been used.",
+      },
+    ]);
+  }, 10000);
 });

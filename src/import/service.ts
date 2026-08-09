@@ -178,8 +178,11 @@ const REPROCESSABLE_STATUSES = [
 
 function assertCanAccessBatch(
   actor: Actor,
-  batch: { uploadedById: string },
+  batch: { uploadedById: string; organizationId: string },
 ) {
+  if (batch.organizationId !== actorOrganizationId(actor)) {
+    throw new ImportConfirmationError("Import batch was not found.", "forbidden");
+  }
   if (actor.role === "agent") {
     throw new ImportConfirmationError("Agents cannot access imports.", "forbidden");
   }
@@ -274,7 +277,7 @@ async function getMappings(source: string, actor: Actor) {
 
 async function resolveParsingActor(
   viewer: Actor,
-  batch: { uploadedById: string },
+  batch: { uploadedById: string; organizationId: string },
 ) {
   if (viewer.id === batch.uploadedById) {
     return viewer;
@@ -287,7 +290,10 @@ async function resolveParsingActor(
       organizationId: profiles.organizationId,
     })
     .from(profiles)
-    .where(eq(profiles.id, batch.uploadedById))
+    .where(and(
+      eq(profiles.id, batch.uploadedById),
+      eq(profiles.organizationId, actorOrganizationId(viewer)),
+    ))
     .limit(1);
 
   if (!uploader) {
@@ -322,6 +328,7 @@ async function resolveParsingActor(
 
 async function getDuplicateImports(input: {
   batchId: string;
+  organizationId: string;
   source: string;
   importType: string;
   fileHash: string;
@@ -338,6 +345,7 @@ async function getDuplicateImports(input: {
     .where(
       and(
         ne(dialerImportBatches.id, input.batchId),
+        eq(dialerImportBatches.organizationId, input.organizationId),
         eq(dialerImportBatches.source, input.source),
         eq(dialerImportBatches.importType, input.importType),
         eq(dialerImportBatches.fileHash, input.fileHash),
@@ -875,6 +883,7 @@ async function processDialerBatch(input: {
       listActiveDialerMetrics(),
       getDuplicateImports({
         batchId: batch.id,
+        organizationId: actorOrganizationId(input.actor),
         source: batch.source,
         importType: batch.importType,
         fileHash: batch.fileHash,
@@ -1020,6 +1029,7 @@ export async function createDialerPreviewBatch(input: {
   await getDb().transaction(async (tx) => {
     await tx.insert(dialerImportBatches).values({
       id: batchId,
+      organizationId: actorOrganizationId(input.actor),
       source: input.source,
       importType,
       granularity: format.granularity ?? "hourly",
@@ -1069,11 +1079,15 @@ export async function getStoredImportPreview(input: {
   const [batch] = await getDb()
     .select({
       id: dialerImportBatches.id,
+      organizationId: dialerImportBatches.organizationId,
       status: dialerImportBatches.status,
       uploadedById: dialerImportBatches.uploadedById,
     })
     .from(dialerImportBatches)
-    .where(eq(dialerImportBatches.id, input.batchId))
+    .where(and(
+      eq(dialerImportBatches.id, input.batchId),
+      eq(dialerImportBatches.organizationId, actorOrganizationId(input.actor)),
+    ))
     .limit(1);
 
   if (!batch) {
@@ -2097,13 +2111,17 @@ export async function getImportFile(actor: Actor, batchId: string) {
   const [batch] = await getDb()
     .select({
       id: dialerImportBatches.id,
+      organizationId: dialerImportBatches.organizationId,
       fileName: dialerImportBatches.fileName,
       uploadedById: dialerImportBatches.uploadedById,
       rawFileContent: dialerImportBatches.rawFileContent,
       fileHash: dialerImportBatches.fileHash,
     })
     .from(dialerImportBatches)
-    .where(eq(dialerImportBatches.id, batchId))
+    .where(and(
+      eq(dialerImportBatches.id, batchId),
+      eq(dialerImportBatches.organizationId, actorOrganizationId(actor)),
+    ))
     .limit(1);
 
   if (!batch) {

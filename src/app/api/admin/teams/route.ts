@@ -3,11 +3,14 @@ import { revalidatePath } from "next/cache";
 import { createTeam } from "@/admin/data";
 import { assertTrustedMutationOrigin } from "@/auth/request-security";
 import { getCurrentUser } from "@/auth/session";
+import { parseJsonBody } from "@/http/input";
+import { z } from "zod";
 
 const HEADERS = {
   "Cache-Control": "no-store, max-age=0",
   Pragma: "no-cache",
 } as const;
+const bodySchema = z.object({ name: z.string().trim().min(1).max(255) }).strict();
 
 export async function POST(request: Request) {
   const actor = await getCurrentUser();
@@ -26,13 +29,7 @@ export async function POST(request: Request) {
 
   try {
     assertTrustedMutationOrigin(request);
-    const body = (await request.json()) as { name?: unknown };
-    if (typeof body.name !== "string") {
-      return Response.json(
-        { error: "Team name is required." },
-        { status: 400, headers: HEADERS },
-      );
-    }
+    const body = await parseJsonBody(request, bodySchema, 2_048);
     const id = await createTeam(actor, body.name);
     revalidatePath("/admin/teams");
     revalidatePath("/admin/users");

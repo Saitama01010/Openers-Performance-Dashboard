@@ -5,6 +5,9 @@ export const TOKEN_TTL_MS = {
   passwordReset: 1000 * 60 * 30,
 } as const;
 
+export const MAX_PASSWORD_LENGTH = 256;
+const OPAQUE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
 export type AccountStatus =
   | "invited"
   | "active"
@@ -21,12 +24,20 @@ export function hashOpaqueToken(token: string) {
 }
 
 export function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
+  return email.trim().toLocaleLowerCase("en-US").slice(0, 255);
+}
+
+export function isValidOpaqueToken(token: string) {
+  return OPAQUE_TOKEN_PATTERN.test(token);
 }
 
 export function validatePassword(password: string) {
   const errors: string[] = [];
 
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    errors.push(`Use no more than ${MAX_PASSWORD_LENGTH} characters.`);
+    return errors;
+  }
   if (password.length < 12) errors.push("Use at least 12 characters.");
   if (!/[a-z]/.test(password)) errors.push("Include a lowercase letter.");
   if (!/[A-Z]/.test(password)) errors.push("Include an uppercase letter.");

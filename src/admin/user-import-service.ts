@@ -75,6 +75,7 @@ export async function createUserImportPreview(input: {
   const batchId = newId();
   await getDb().insert(userImportBatches).values({
     id: batchId,
+    organizationId: actorOrganizationId(input.actor),
     fileName: input.fileName,
     fileHash: createHash("sha256").update(input.content).digest("hex"),
     uploadedById: input.actor.id,
@@ -122,6 +123,7 @@ export async function confirmUserImport(input: {
       .where(
         and(
           eq(userImportBatches.id, input.batchId),
+          eq(userImportBatches.organizationId, actorOrganizationId(input.actor)),
           eq(userImportBatches.uploadedById, input.actor.id),
           eq(userImportBatches.status, "previewed"),
           gt(userImportBatches.expiresAt, now),

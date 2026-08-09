@@ -53,6 +53,7 @@ export default async function LoginPage({
           <input
             autoComplete="email"
             className="ui-input"
+            maxLength={255}
             name="email"
             required
             type="email"
@@ -63,6 +64,7 @@ export default async function LoginPage({
           <input
             autoComplete="current-password"
             className="ui-input"
+            maxLength={256}
             name="password"
             required
             type="password"

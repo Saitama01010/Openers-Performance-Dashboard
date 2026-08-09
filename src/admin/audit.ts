@@ -9,6 +9,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   like,
   lt,
   not,
@@ -206,7 +207,7 @@ function auditWhere(actor: Actor, filters: AdminAuditFilters, options: { include
   const matchedActions = auditSearchActionKeys(filters.query);
   const organizationId = actorOrganizationId(actor);
   return and(
-    eq(profiles.organizationId, actorOrganizationId(actor)),
+    auditOrganizationWhere(actor),
     options.includeDate !== false && filters.dateRange.from ? gte(auditLogs.createdAt, filters.dateRange.from) : undefined,
     options.includeDate !== false && filters.dateRange.toExclusive ? lt(auditLogs.createdAt, filters.dateRange.toExclusive) : undefined,
     filters.actorId ? eq(auditLogs.actorProfileId, filters.actorId) : undefined,
@@ -234,6 +235,17 @@ function auditWhere(actor: Actor, filters: AdminAuditFilters, options: { include
   );
 }
 
+function auditOrganizationWhere(actor: Actor) {
+  const organizationId = actorOrganizationId(actor);
+  return or(
+    eq(auditLogs.organizationId, organizationId),
+    and(
+      isNull(auditLogs.organizationId),
+      eq(profiles.organizationId, organizationId),
+    ),
+  )!;
+}
+
 function actorJoin() {
   return eq(profiles.id, auditLogs.actorProfileId);
 }
@@ -241,9 +253,9 @@ function actorJoin() {
 type RawAuditRow = {
   id: string;
   actorProfileId: string | null;
-  actorName: string;
+  actorName: string | null;
   actorEmail: string | null;
-  actorRole: "admin" | "manager" | "agent";
+  actorRole: "admin" | "manager" | "agent" | null;
   actorDeletedAt: Date | null;
   action: string;
   entityType: string;
@@ -267,10 +279,10 @@ async function resolveTargets(actor: Actor, rows: RawAuditRow[]) {
       ? getDb().select({ id: teams.id, name: teams.name, deletedAt: teams.deletedAt }).from(teams).where(and(inArray(teams.id, teamIds), eq(teams.organizationId, organizationId)))
       : [],
     importIds.length
-      ? getDb().select({ id: dialerImportBatches.id, name: dialerImportBatches.fileName }).from(dialerImportBatches).innerJoin(profiles, eq(profiles.id, dialerImportBatches.uploadedById)).where(and(inArray(dialerImportBatches.id, importIds), eq(profiles.organizationId, organizationId)))
+      ? getDb().select({ id: dialerImportBatches.id, name: dialerImportBatches.fileName }).from(dialerImportBatches).where(and(inArray(dialerImportBatches.id, importIds), eq(dialerImportBatches.organizationId, organizationId)))
       : [],
     userImportIds.length
-      ? getDb().select({ id: userImportBatches.id, name: userImportBatches.fileName }).from(userImportBatches).innerJoin(profiles, eq(profiles.id, userImportBatches.uploadedById)).where(and(inArray(userImportBatches.id, userImportIds), eq(profiles.organizationId, organizationId)))
+      ? getDb().select({ id: userImportBatches.id, name: userImportBatches.fileName }).from(userImportBatches).where(and(inArray(userImportBatches.id, userImportIds), eq(userImportBatches.organizationId, organizationId)))
       : [],
   ]);
   return {
@@ -310,8 +322,8 @@ function normalizeRow(row: RawAuditRow, targets: Awaited<ReturnType<typeof resol
       id: row.actorProfileId,
       name: row.actorName || "Deleted / unavailable actor",
       email: row.actorEmail,
-      role: row.actorRole,
-      unavailable: Boolean(row.actorDeletedAt),
+      role: row.actorRole ?? "admin",
+      unavailable: !row.actorProfileId || Boolean(row.actorDeletedAt),
     },
     action: row.action,
     title: formatted.title,
@@ -329,15 +341,15 @@ function normalizeRow(row: RawAuditRow, targets: Awaited<ReturnType<typeof resol
 
 async function filterOptions(actor: Actor, filters: AdminAuditFilters) {
   const organizationDateWhere = and(
-    eq(profiles.organizationId, actorOrganizationId(actor)),
+    auditOrganizationWhere(actor),
     filters.dateRange.from ? gte(auditLogs.createdAt, filters.dateRange.from) : undefined,
     filters.dateRange.toExclusive ? lt(auditLogs.createdAt, filters.dateRange.toExclusive) : undefined,
   );
   const [actors, actions, targets, categoryRows] = await Promise.all([
     getDb().selectDistinct({ id: profiles.id, name: profiles.name }).from(auditLogs).innerJoin(profiles, actorJoin()).where(organizationDateWhere).orderBy(asc(profiles.name), asc(profiles.id)),
-    getDb().selectDistinct({ action: auditLogs.action }).from(auditLogs).innerJoin(profiles, actorJoin()).where(organizationDateWhere).orderBy(asc(auditLogs.action)),
-    getDb().selectDistinct({ entityType: auditLogs.entityType }).from(auditLogs).innerJoin(profiles, actorJoin()).where(organizationDateWhere).orderBy(asc(auditLogs.entityType)),
-    getDb().selectDistinct({ action: auditLogs.action, entityType: auditLogs.entityType }).from(auditLogs).innerJoin(profiles, actorJoin()).where(organizationDateWhere),
+    getDb().selectDistinct({ action: auditLogs.action }).from(auditLogs).leftJoin(profiles, actorJoin()).where(organizationDateWhere).orderBy(asc(auditLogs.action)),
+    getDb().selectDistinct({ entityType: auditLogs.entityType }).from(auditLogs).leftJoin(profiles, actorJoin()).where(organizationDateWhere).orderBy(asc(auditLogs.entityType)),
+    getDb().selectDistinct({ action: auditLogs.action, entityType: auditLogs.entityType }).from(auditLogs).leftJoin(profiles, actorJoin()).where(organizationDateWhere),
   ]);
   const categories = Array.from(new Set(categoryRows.map((row) => auditCategory(row.action, row.entityType))));
   return {
@@ -353,7 +365,7 @@ function baseSelect(where: SQL | undefined) {
     .select({
       id: auditLogs.id,
       actorProfileId: auditLogs.actorProfileId,
-      actorName: profiles.name,
+      actorName: sql<string | null>`coalesce(${profiles.name}, ${auditLogs.actorDisplayName})`,
       actorEmail: profiles.email,
       actorRole: profiles.role,
       actorDeletedAt: profiles.deletedAt,
@@ -364,7 +376,7 @@ function baseSelect(where: SQL | undefined) {
       createdAt: auditLogs.createdAt,
     })
     .from(auditLogs)
-    .innerJoin(profiles, actorJoin())
+    .leftJoin(profiles, actorJoin())
     .where(where);
 }
 
@@ -376,7 +388,7 @@ export async function listAdminAuditEvents(
   assertAdmin(actor);
   const where = auditWhere(actor, filters);
   const [totalResult, optionsResult] = await Promise.all([
-    getDb().select({ total: count() }).from(auditLogs).innerJoin(profiles, actorJoin()).where(where),
+    getDb().select({ total: count() }).from(auditLogs).leftJoin(profiles, actorJoin()).where(where),
     filterOptions(actor, filters),
   ]);
   const totalRows = Number(totalResult[0]?.total ?? 0);
@@ -423,7 +435,7 @@ export async function getAdminAuditStats(
       uniqueActors: countDistinct(auditLogs.actorProfileId),
     })
     .from(auditLogs)
-    .innerJoin(profiles, actorJoin())
+    .leftJoin(profiles, actorJoin())
     .where(auditWhere(actor, filters));
   return {
     totalEvents: Number(row?.totalEvents ?? 0),
@@ -449,7 +461,7 @@ function safeString(record: Record<string, unknown>, keys: string[]) {
 
 export async function getAdminAuditEvent(actor: Actor, eventId: string) {
   assertAdmin(actor);
-  const [row] = await baseSelect(and(eq(auditLogs.id, eventId), eq(profiles.organizationId, actorOrganizationId(actor)))).limit(1);
+  const [row] = await baseSelect(and(eq(auditLogs.id, eventId), auditOrganizationWhere(actor))).limit(1);
   if (!row) return null;
   const targets = await resolveTargets(actor, [row]);
   const target = targetFor(row, targets);

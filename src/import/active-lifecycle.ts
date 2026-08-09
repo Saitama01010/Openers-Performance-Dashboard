@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { IMPORT_REASON_MIN_LENGTH } from "@/import/config";
 import { newId } from "@/lib/ids";
+import { actorOrganizationId } from "@/teams/visibility";
 
 const VALID_FALLBACK_STATUSES = [
   "superseded",
@@ -492,7 +493,13 @@ export async function deactivateDialerImportBatch(input: {
         status: dialerImportBatches.status,
       })
       .from(dialerImportBatches)
-      .where(eq(dialerImportBatches.id, input.batchId))
+      .where(and(
+        eq(dialerImportBatches.id, input.batchId),
+        eq(
+          dialerImportBatches.organizationId,
+          actorOrganizationId(input.actor),
+        ),
+      ))
       .limit(1)
       .for("update");
 

@@ -1,10 +1,12 @@
 import { getCurrentUser } from "@/auth/session";
+import { uuidSchema } from "@/http/input";
 import { getImportFile, ImportConfirmationError } from "@/import/service";
+import { logServerError, requestId } from "@/lib/logging";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ batchId: string }> },
 ) {
   const actor = await getCurrentUser();
@@ -14,6 +16,9 @@ export async function GET(
   }
 
   const { batchId } = await params;
+  if (!uuidSchema.safeParse(batchId).success) {
+    return new Response("Not found", { status: 404 });
+  }
 
   try {
     const file = await getImportFile(actor, batchId);
@@ -43,6 +48,14 @@ export async function GET(
       return new Response("Forbidden", { status: 403 });
     }
 
-    throw error;
+    logServerError({
+      requestId: requestId(request),
+      action: "import.raw_download",
+      actorId: actor.id,
+      entityId: batchId,
+      category: "unexpected",
+      error,
+    });
+    return new Response("Download failed", { status: 500 });
   }
 }

@@ -2,9 +2,12 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches-ignore:
+    branches:
       - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -38,22 +41,25 @@ jobs:
       EMAIL_REPLY_TO: ""
       INVITATION_TTL_HOURS: "48"
       PASSWORD_RESET_TTL_MINUTES: "30"
+      TRUSTED_PROXY_HEADERS: "false"
+      ALLOW_DESTRUCTIVE_DEMO_SEED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Generate disposable CI encryption key
+      - name: Generate disposable CI security secrets
         shell: bash
         run: |
-          KEY=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")
-          echo "TEMP_PASSWORD_ENCRYPTION_KEY=$KEY" >> "$GITHUB_ENV"
+          node -e "const {randomBytes}=require('node:crypto');const fs=require('node:fs');fs.appendFileSync(process.env.GITHUB_ENV,'TEMP_PASSWORD_ENCRYPTION_KEY='+randomBytes(32).toString('base64')+'\nDEMO_SEED_PASSWORD=CI-'+randomBytes(24).toString('base64url')+'!42\n')"
       - run: npm ci
+      - run: npm run security:audit
       - name: Allow triggers in the disposable test database
         run: >-
           node -e "const mysql=require('mysql2/promise');(async()=>{const connection=await mysql.createConnection({host:'127.0.0.1',user:'root',password:'root_password'});await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');await connection.end()})().catch((error)=>{console.error(error);process.exit(1)})"
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run db:generate
       - run: git diff --exit-code -- drizzle
       - run: npm run db:migrate

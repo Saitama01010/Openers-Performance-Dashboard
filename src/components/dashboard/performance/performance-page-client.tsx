@@ -324,7 +324,6 @@ function DailyPerformanceChart({
   const [singleMetric, setSingleMetric] = useState<MetricKey>("transfers");
   const [visible, setVisible] = useState<Record<MetricKey, boolean>>({ transfers: true, closedDeals: true, loggedInSeconds: true });
   const [hoveredSeries, setHoveredSeries] = useState<MetricKey | null>(null);
-  const [pinned, setPinned] = useState(false);
   const refs = useRef<Array<SVGGElement | null>>([]);
   const points = data.series;
   const selectedKey = highlightedKey;
@@ -355,7 +354,6 @@ function DailyPerformanceChart({
   function focusDate(index: number) {
     const target = Math.max(0, Math.min(points.length - 1, index));
     const key = points[target]?.key ?? null;
-    if (key) setPinned(true);
     onHighlight(key);
     refs.current[target]?.focus();
   }
@@ -413,7 +411,7 @@ function DailyPerformanceChart({
       {points.length === 0 ? (
         <div className={styles.emptyState}><DashboardIcon name="info" /><strong>No daily activity is available</strong><span>The authorized sources contain no records for this period.</span></div>
       ) : (
-        <div className={styles.chartFrame} onMouseLeave={() => { if (!pinned) onHighlight(null); }}>
+        <div className={styles.chartFrame} onPointerCancel={() => onHighlight(null)} onPointerLeave={() => onHighlight(null)}>
           <svg aria-labelledby="performance-chart-title performance-chart-description" className={styles.chart} role="img" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
             <title id="performance-chart-title">Daily performance trend</title>
             <desc id="performance-chart-description">Transfers and closed deals use the left count axis. Logged-in time uses the right hours axis.</desc>
@@ -439,24 +437,14 @@ function DailyPerformanceChart({
                   data-active={active || undefined}
                   data-faded={faded || undefined}
                   key={point.key}
-                  onBlur={() => { if (!pinned) onHighlight(null); }}
-                  onClick={() => {
-                    if (pinned && highlightedKey === point.key) {
-                      setPinned(false);
-                      onHighlight(null);
-                    } else {
-                      setPinned(true);
-                      onHighlight(point.key);
-                    }
-                  }}
+                  onBlur={() => onHighlight(null)}
                   onFocus={() => onHighlight(point.key)}
                   onKeyDown={(event) => {
                     if (event.key === "ArrowLeft") { event.preventDefault(); focusDate(index - 1); }
                     if (event.key === "ArrowRight") { event.preventDefault(); focusDate(index + 1); }
-                    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setPinned(true); onHighlight(point.key); }
-                    if (event.key === "Escape") { setPinned(false); onHighlight(null); }
+                    if (event.key === "Escape") onHighlight(null);
                   }}
-                  onMouseEnter={() => { if (!pinned) onHighlight(point.key); }}
+                  onPointerEnter={() => onHighlight(point.key)}
                   ref={(node) => { refs.current[index] = node; }}
                   role="button"
                   tabIndex={0}

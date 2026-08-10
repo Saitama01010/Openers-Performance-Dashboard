@@ -5,7 +5,8 @@
 .heading h1 { color: var(--flags-ink); font-size: clamp(28px, 2.5vw, 36px); letter-spacing: -.035em; line-height: 1.05; margin: 0; }
 .heading p { color: var(--flags-muted); font-size: 11px; line-height: 1.5; margin: 6px 0 0; max-width: 520px; }
 .dateSlot { min-width: min(520px, 48vw); }
-.dateRow { display: flex; justify-content: flex-end; margin-top: -66px; min-height: 52px; }
+.dateRow { display: flex; justify-content: flex-end; margin-top: -66px; min-height: 52px; pointer-events: none; }
+.dateRow > * { pointer-events: auto; }
 .tabs { border-bottom: 1px solid var(--flags-line); display: flex; gap: 14px; min-height: 42px; }
 .tabs a { align-items: center; border-bottom: 2px solid transparent; color: #53627c; display: inline-flex; font-size: 11px; font-weight: 750; padding: 0 12px; text-decoration: none; }
 .tabs a[aria-selected="true"] { border-color: var(--flags-blue); color: var(--flags-blue); }

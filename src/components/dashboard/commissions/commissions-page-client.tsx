@@ -226,10 +226,9 @@ function PageHeader({ data, exportHref }: { data: SharedData; exportHref?: strin
 
 function DashboardTrend({ points }: { points: CommissionTrendPoint[] }) {
   const [index, setIndex] = useState(Math.max(0, points.length - 1));
-  const [pinned, setPinned] = useState(false);
+  const [inspecting, setInspecting] = useState(false);
   const [activeSeries, setActiveSeries] = useState<"commission" | "totalCompensation" | null>(null);
   const [visible, setVisible] = useState({ commission: true, totalCompensation: true });
-  const chartRef = useRef<HTMLDivElement>(null);
   const width = 640;
   const height = 220;
   const plot = { left: 42, right: 18, top: 18, bottom: 32 };
@@ -242,25 +241,18 @@ function DashboardTrend({ points }: { points: CommissionTrendPoint[] }) {
   const x = (value: number) => plot.left + (points.length <= 1 ? (width - plot.left - plot.right) / 2 : value * (width - plot.left - plot.right) / (points.length - 1));
   const y = (value: number) => plot.top + (1 - value / maximum) * (height - plot.top - plot.bottom);
   const path = (key: "commission" | "totalCompensation") => points.map((point, pointIndex) => `${x(pointIndex)},${y(point[key])}`).join(" ");
-  const active = points[index];
+  const active = inspecting ? points[index] : null;
   const move = (clientX: number, element: SVGSVGElement) => {
-    if (pinned || points.length === 0) return;
+    if (points.length === 0) return;
     const rect = element.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     setIndex(Math.round(ratio * (points.length - 1)));
+    setInspecting(true);
   };
   const toggle = (key: "commission" | "totalCompensation") => {
     if (visible[key] && Object.values(visible).filter(Boolean).length === 1) return;
     setVisible((current) => ({ ...current, [key]: !current[key] }));
   };
-  useEffect(() => {
-    if (!pinned) return;
-    const close = (event: PointerEvent) => {
-      if (!chartRef.current?.contains(event.target as Node)) setPinned(false);
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [pinned]);
   return (
     <section className={`${styles.panel} ${styles.trendPanel}`} aria-labelledby="commission-trend-title">
       <header className={styles.panelHeader}>
@@ -271,17 +263,20 @@ function DashboardTrend({ points }: { points: CommissionTrendPoint[] }) {
         </div>
       </header>
       {points.length === 0 ? <EmptyState title="No commission history is available" detail="This is the first authoritative commission period in scope." /> : (
-        <div className={styles.chartArea} ref={chartRef}>
+        <div className={styles.chartArea}>
           <svg
             aria-label="Monthly commission and total compensation trend. Use left and right arrow keys to inspect months."
             className={styles.lineChart}
+            onBlur={() => setInspecting(false)}
+            onFocus={() => setInspecting(true)}
             onKeyDown={(event) => {
-              if (event.key === "ArrowLeft") { event.preventDefault(); setIndex((value) => Math.max(0, value - 1)); }
-              if (event.key === "ArrowRight") { event.preventDefault(); setIndex((value) => Math.min(points.length - 1, value + 1)); }
-              if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setPinned((value) => !value); }
-              if (event.key === "Escape") setPinned(false);
+              if (event.key === "ArrowLeft") { event.preventDefault(); setInspecting(true); setIndex((value) => Math.max(0, value - 1)); }
+              if (event.key === "ArrowRight") { event.preventDefault(); setInspecting(true); setIndex((value) => Math.min(points.length - 1, value + 1)); }
+              if (event.key === "Escape") setInspecting(false);
             }}
-            onPointerDown={() => setPinned(true)}
+            onLostPointerCapture={() => setInspecting(false)}
+            onPointerCancel={() => setInspecting(false)}
+            onPointerLeave={() => setInspecting(false)}
             onPointerMove={(event) => move(event.clientX, event.currentTarget)}
             role="img"
             tabIndex={0}
@@ -421,24 +416,20 @@ function PersonalProgress({ row }: { row: CommissionRow }) {
 function PersonalTrend({ points }: { points: CommissionTrendPoint[] }) {
   const [metric, setMetric] = useState<"commission" | "closedDeals" | "totalCompensation">("commission");
   const [index, setIndex] = useState(Math.max(0, points.length - 1));
-  const [pinned, setPinned] = useState(false);
-  const chartRef = useRef<HTMLDivElement>(null);
+  const [inspecting, setInspecting] = useState(false);
   const width = 720;
   const height = 230;
   const values = points.map((point) => point[metric]);
   const maximum = Math.max(1, ...values);
   const x = (value: number) => 44 + (points.length <= 1 ? 320 : value * 650 / (points.length - 1));
   const y = (value: number) => 18 + (1 - value / maximum) * 170;
-  const active = points[index];
-  useEffect(() => {
-    if (!pinned) return;
-    const close = (event: PointerEvent) => {
-      if (!chartRef.current?.contains(event.target as Node)) setPinned(false);
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [pinned]);
-  return <section className={`${styles.panel} ${styles.personalTrend}`} aria-labelledby="personal-trend-title"><header className={styles.panelHeader}><div><h2 id="personal-trend-title">My commission trend</h2><p>Your personal monthly earnings history only.</p></div><div className={styles.metricSwitch} role="group" aria-label="Personal trend metric">{(["commission", "closedDeals", "totalCompensation"] as const).map((item) => <button aria-pressed={metric === item} key={item} onClick={() => setMetric(item)} type="button">{item === "closedDeals" ? "Closed Deals" : item === "totalCompensation" ? "Total Compensation" : "Commission"}</button>)}</div></header>{points.length === 0 ? <EmptyState title="No personal history is available" detail="This is your first authoritative commission period." /> : <div className={styles.chartArea} ref={chartRef}><svg aria-label="Personal monthly commission trend. Use left and right arrow keys to inspect months." className={styles.lineChart} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setIndex((value) => Math.max(0, value - 1)); } if (event.key === "ArrowRight") { event.preventDefault(); setIndex((value) => Math.min(points.length - 1, value + 1)); } if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setPinned((value) => !value); } if (event.key === "Escape") setPinned(false); }} onPointerDown={() => setPinned(true)} onPointerMove={(event) => { if (pinned) return; const rect = event.currentTarget.getBoundingClientRect(); setIndex(Math.round(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * (points.length - 1))); }} role="img" tabIndex={0} viewBox={`0 0 ${width} ${height}`}>{[0, .25, .5, .75, 1].map((portion) => <line className={styles.gridLine} key={portion} x1="44" x2="694" y1={18 + portion * 170} y2={18 + portion * 170} />)}<polyline className={styles.seriesLine} fill="none" points={points.map((point, pointIndex) => `${x(pointIndex)},${y(point[metric])}`).join(" ")} stroke="#2563eb" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.7" />{active ? <><line className={styles.crosshair} x1={x(index)} x2={x(index)} y1="18" y2="188" /><circle cx={x(index)} cy={y(active[metric])} fill="#fff" r="5" stroke="#2563eb" strokeWidth="2.5" /></> : null}{points.map((point, pointIndex) => <text className={styles.axisLabel} key={point.key} textAnchor="middle" x={x(pointIndex)} y="216">{new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(`${point.key}-15T00:00:00Z`))}</text>)}</svg>{active ? <div aria-live="polite" className={styles.personalChartTooltip}><strong>{active.label}{active.estimated ? " · Estimated" : " · Final"}</strong><span>Closed Deals<b>{active.closedDeals}</b></span><span>Tier<b>{active.tierLabel ?? "N/A"}</b></span><span>Rate<b>{active.ratePerDeal === null ? "N/A" : `${egp(active.ratePerDeal)} / deal`}</b></span><span>Commission<b>{egp(active.commission)}</b></span><span>Base Salary<b>{egp(active.baseSalaries)}</b></span><span>Total Compensation<b>{egp(active.totalCompensation)}</b></span></div> : null}</div>}<div className={styles.srOnly}><table><caption>Accessible personal commission trend data</caption><thead><tr><th>Month</th><th>Closed deals</th><th>Tier</th><th>Rate</th><th>Commission</th><th>Base salary</th><th>Total compensation</th></tr></thead><tbody>{points.map((point) => <tr key={point.key}><th>{point.label}</th><td>{point.closedDeals}</td><td>{point.tierLabel}</td><td>{point.ratePerDeal}</td><td>{point.commission}</td><td>{point.baseSalaries}</td><td>{point.totalCompensation}</td></tr>)}</tbody></table></div></section>;
+  const active = inspecting ? points[index] : null;
+  function move(clientX: number, target: SVGSVGElement) {
+    const rect = target.getBoundingClientRect();
+    setIndex(Math.round(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * (points.length - 1)));
+    setInspecting(true);
+  }
+  return <section className={`${styles.panel} ${styles.personalTrend}`} aria-labelledby="personal-trend-title"><header className={styles.panelHeader}><div><h2 id="personal-trend-title">My commission trend</h2><p>Your personal monthly earnings history only.</p></div><div className={styles.metricSwitch} role="group" aria-label="Personal trend metric">{(["commission", "closedDeals", "totalCompensation"] as const).map((item) => <button aria-pressed={metric === item} key={item} onClick={() => setMetric(item)} type="button">{item === "closedDeals" ? "Closed Deals" : item === "totalCompensation" ? "Total Compensation" : "Commission"}</button>)}</div></header>{points.length === 0 ? <EmptyState title="No personal history is available" detail="This is your first authoritative commission period." /> : <div className={styles.chartArea}><svg aria-label="Personal monthly commission trend. Use left and right arrow keys to inspect months." className={styles.lineChart} onBlur={() => setInspecting(false)} onFocus={() => setInspecting(true)} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setInspecting(true); setIndex((value) => Math.max(0, value - 1)); } if (event.key === "ArrowRight") { event.preventDefault(); setInspecting(true); setIndex((value) => Math.min(points.length - 1, value + 1)); } if (event.key === "Escape") setInspecting(false); }} onLostPointerCapture={() => setInspecting(false)} onPointerCancel={() => setInspecting(false)} onPointerLeave={() => setInspecting(false)} onPointerMove={(event) => move(event.clientX, event.currentTarget)} role="img" tabIndex={0} viewBox={`0 0 ${width} ${height}`}>{[0, .25, .5, .75, 1].map((portion) => <line className={styles.gridLine} key={portion} x1="44" x2="694" y1={18 + portion * 170} y2={18 + portion * 170} />)}<polyline className={styles.seriesLine} fill="none" points={points.map((point, pointIndex) => `${x(pointIndex)},${y(point[metric])}`).join(" ")} stroke="#2563eb" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.7" />{active ? <><line className={styles.crosshair} x1={x(index)} x2={x(index)} y1="18" y2="188" /><circle cx={x(index)} cy={y(active[metric])} fill="#fff" r="5" stroke="#2563eb" strokeWidth="2.5" /></> : null}{points.map((point, pointIndex) => <text className={styles.axisLabel} key={point.key} textAnchor="middle" x={x(pointIndex)} y="216">{new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(`${point.key}-15T00:00:00Z`))}</text>)}</svg>{active ? <div aria-live="polite" className={styles.personalChartTooltip}><strong>{active.label}{active.estimated ? " · Estimated" : " · Final"}</strong><span>Closed Deals<b>{active.closedDeals}</b></span><span>Tier<b>{active.tierLabel ?? "N/A"}</b></span><span>Rate<b>{active.ratePerDeal === null ? "N/A" : `${egp(active.ratePerDeal)} / deal`}</b></span><span>Commission<b>{egp(active.commission)}</b></span><span>Base Salary<b>{egp(active.baseSalaries)}</b></span><span>Total Compensation<b>{egp(active.totalCompensation)}</b></span></div> : null}</div>}<div className={styles.srOnly}><table><caption>Accessible personal commission trend data</caption><thead><tr><th>Month</th><th>Closed deals</th><th>Tier</th><th>Rate</th><th>Commission</th><th>Base salary</th><th>Total compensation</th></tr></thead><tbody>{points.map((point) => <tr key={point.key}><th>{point.label}</th><td>{point.closedDeals}</td><td>{point.tierLabel}</td><td>{point.ratePerDeal}</td><td>{point.commission}</td><td>{point.baseSalaries}</td><td>{point.totalCompensation}</td></tr>)}</tbody></table></div></section>;
 }
 
 function TierReference({ tiers, row }: { tiers: CommissionTier[]; row: CommissionRow }) {

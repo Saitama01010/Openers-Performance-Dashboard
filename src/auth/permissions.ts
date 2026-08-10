@@ -6,9 +6,15 @@ import type { Actor } from "@/auth/authorization";
 import { resolvePermission } from "@/auth/authorization";
 import { getDb } from "@/db";
 import { rolePermissions, userPermissionOverrides } from "@/db/schema";
-import { OVERRIDABLE_PERMISSION_KEYS } from "@/admin/policy";
+import {
+  ADMIN_ONLY_PERMISSIONS,
+  OVERRIDABLE_PERMISSION_KEYS,
+} from "@/admin/policy";
 
 export async function hasPermission(actor: Actor, permissionKey: string) {
+  if (actor.role !== "admin" && ADMIN_ONLY_PERMISSIONS.has(permissionKey)) {
+    return false;
+  }
   const canUseIndividualOverride = OVERRIDABLE_PERMISSION_KEYS.includes(
     permissionKey as (typeof OVERRIDABLE_PERMISSION_KEYS)[number],
   );

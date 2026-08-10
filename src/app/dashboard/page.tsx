@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/auth/session";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import {
-  AdminRoleDashboard,
   AgentRoleDashboard,
   ManagerRoleDashboard,
-} from "@/components/dashboard/role-dashboard";
-import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+} from "@/components/dashboard/role-dashboard-modern";
+import { AdminRoleDashboard } from "@/components/dashboard/role-dashboard";
 import { resolveOverviewDateRange } from "@/dashboard/date-range";
 import { getRoleDashboardData } from "@/dashboard/role-data";
 import { getEnv } from "@/env";

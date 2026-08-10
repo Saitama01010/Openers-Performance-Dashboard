@@ -2,7 +2,7 @@
 
 ## Architecture and scope
 
-`/dashboard` authenticates once, resolves the requested date range, and invokes one server-only role data composer. The composer returns a discriminated agent, manager, or admin payload; client code never removes unauthorized records. Agents receive self-only operational records plus company rank and aggregate team competition. Managers receive current assigned-team person rows and company team aggregates. Admins receive company scope.
+`/dashboard` authenticates once, resolves the requested date range, and invokes one server-only role data composer. The composer returns a discriminated agent, manager, or admin payload; client code never removes unauthorized records. Agents receive self-only operational records plus company rank and aggregate team competition. Managers receive current assigned-team person rows and assigned-team aggregates only. Admins receive company scope.
 
 Transfers and Closed outcomes come from the existing combined leaderboard ingestion. Ranking uses the existing leaderboard ranking function, commissions use the existing commission service, and automatic flags remain calculated by the existing flag domain. Dialer queries join through the active dataset-version pointer. Missing sources retain an unavailable or incomplete state instead of becoming zero or absence.
 

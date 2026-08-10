@@ -14,7 +14,6 @@ import {
   performanceTargets,
   profiles,
   sessions,
-  teamMemberships,
   teams,
   tenureThresholds,
 } from "@/db/schema";
@@ -250,18 +249,7 @@ export async function recordEmploymentStatus(actor: Actor, input: {
   employmentEndDate?: string | null;
 }) {
   actor = await resolveCurrentActor(actor);
-  if (actor.role === "agent") throw new Error("Forbidden");
-  if (actor.role === "manager" && input.status === "active") {
-    throw new Error("Forbidden");
-  }
-  if (actor.role === "manager") {
-    await assertPermission(
-      actor,
-      input.status === "terminated"
-        ? "users.terminate_team_agent"
-        : "users.deactivate_team_agent",
-    );
-  }
+  if (actor.role !== "admin") throw new Error("Forbidden");
   const reason = input.reason.trim();
   if (!reason) throw new Error("A reason is required.");
   const now = new Date();
@@ -280,19 +268,6 @@ export async function recordEmploymentStatus(actor: Actor, input: {
     if (profile.employmentStatus === "terminated") {
       throw new Error("Terminated employment cannot transition to another status.");
     }
-    if (actor.role === "manager") {
-      if (actor.teamIds.length === 0) throw new Error("Forbidden");
-      const membership = await tx.select({ teamId: teamMemberships.teamId }).from(teamMemberships)
-        .innerJoin(teams, and(eq(teams.id, teamMemberships.teamId), visibleTeamWhere(actor)))
-        .where(and(
-          eq(teamMemberships.profileId, input.profileId),
-          eq(teamMemberships.role, "agent"),
-          eq(teamMemberships.active, true),
-          isNull(teamMemberships.endedAt),
-          inArray(teamMemberships.teamId, actor.teamIds),
-        )).limit(1).for("update");
-      if (!membership[0]) throw new Error("Forbidden");
-    } else if (actor.role !== "admin") throw new Error("Forbidden");
     await tx.update(profiles).set({
       employmentStatus: input.status,
       employmentEndDate: input.status === "terminated" ? input.employmentEndDate || now.toISOString().slice(0, 10) : null,

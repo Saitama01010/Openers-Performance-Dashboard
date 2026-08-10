@@ -9,6 +9,7 @@ import {
 import { useFormStatus } from "react-dom";
 
 import styles from "@/app/import/import-page.module.css";
+import { Badge } from "@/components/ui/base-badge";
 import {
   filterPreviewAgents,
   getPreviewTeams,
@@ -160,13 +161,13 @@ function importStatusLabel(status: string) {
 function statusTone(status: AgentMappingStatus) {
   switch (status) {
     case "mapped":
-      return styles.statusMapped;
+      return "success";
     case "unmapped":
-      return styles.statusUnmatched;
+      return "warning";
     case "out_of_scope":
-      return styles.statusUnauthorized;
+      return "secondary";
     case "invalid_mapping":
-      return styles.statusInvalid;
+      return "destructive";
   }
 }
 
@@ -244,16 +245,19 @@ function MappingBadge({
   date: string;
 }) {
   return (
-    <span
+    <Badge
+      appearance="outline"
       aria-label={mappingDescription(agent, date)}
-      className={`${styles.mappingBadge} ${statusTone(agent.mappingStatus)}`}
+      className={styles.mappingBadge}
+      size="sm"
       tabIndex={0}
+      variant={statusTone(agent.mappingStatus)}
     >
       {mappingStatusLabels[agent.mappingStatus]}
       <span className={styles.mappingTooltip} role="tooltip">
         {mappingDescription(agent, date)}
       </span>
-    </span>
+    </Badge>
   );
 }
 

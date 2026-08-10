@@ -283,8 +283,8 @@
 .agentIdentity small { color: #77839b; font-size: 9px; font-weight: 500; }
 .avatar, .previewAvatar { align-items: center; border-radius: 50%; color: #fff; display: inline-flex; flex: 0 0 auto; font-weight: 800; justify-content: center; }
 .avatar { box-shadow: 0 2px 5px rgb(24 54 90 / 18%); height: 27px; width: 27px; }
-.teamBadge { background: #e9f1ff; border-radius: 4px; color: #1760d8; display: inline-block; font-size: 9px; font-weight: 700; max-width: 110px; overflow: hidden; padding: 4px 7px; text-overflow: ellipsis; white-space: nowrap; }
-.statusBadge { background: #e5f6ed; border-radius: 999px; color: #0d7d42; display: inline-flex; font-size: 9px; font-weight: 750; padding: 4px 8px; text-transform: capitalize; white-space: nowrap; }
+.teamBadge { align-items: center; background: #e9f1ff; border: 1px solid transparent; border-radius: 4px; color: #1760d8; display: inline-flex; font-size: 10px; font-weight: 600; height: 20px; justify-content: center; max-width: 110px; min-width: 20px; overflow: hidden; padding: 0 5px; text-overflow: ellipsis; white-space: nowrap; }
+.statusBadge { align-items: center; background: #e5f6ed; border: 1px solid transparent; border-radius: 999px; color: #0d7d42; display: inline-flex; font-size: 10px; font-weight: 600; height: 20px; justify-content: center; min-width: 20px; padding: 0 5px; text-transform: capitalize; white-space: nowrap; }
 .statusBadge:not([data-status="active"]) { background: #eef1f5; color: #536078; }
 .numeric { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sparkline { display: block; height: 28px; overflow: visible; width: 76px; }

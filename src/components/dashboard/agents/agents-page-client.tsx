@@ -11,6 +11,7 @@ import {
 } from "@/agents/directory-analytics";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { Badge, BadgeDot } from "@/components/ui/base-badge";
 import styles from "@/components/dashboard/agents/agents-page.module.css";
 
 const SORT_OPTIONS: Array<{ value: AgentDirectorySortKey; label: string }> = [
@@ -252,8 +253,8 @@ export function AgentsPageClient({ data, exportHref }: { data: AgentDirectoryDat
                       <tr aria-selected={active} data-selected={active || undefined} key={row.profileId} onClick={() => select(row)}>
                         <td><input aria-label={`Preview ${row.realName}`} checked={active} name="selected-agent" onChange={() => select(row)} type="radio" /></td>
                         <th scope="row"><span className={styles.agentIdentity}><span className={styles.avatar} style={{ backgroundColor: initialColor(row.realName) }}>{initials(row.realName)}</span><span><strong>{row.realName}</strong>{row.americanName ? <small>{row.americanName}</small> : null}</span></span></th>
-                        <td><span className={styles.teamBadge}>{row.teamName}</span></td>
-                        <td><span className={styles.statusBadge} data-status={row.accountStatus}>{row.accountStatus}</span></td>
+                        <td><Badge appearance="light" className="max-w-[110px] overflow-hidden text-ellipsis" size="xs" variant="primary">{row.teamName}</Badge></td>
+                        <td><Badge appearance="light" shape="circle" size="xs" variant={row.accountStatus === "active" ? "success" : "secondary"}><BadgeDot />{row.accountStatus}</Badge></td>
                         <td className={styles.numeric}>{formatDuration(row.loggedInSeconds)}</td>
                         <td className={styles.numeric}>{formatNumber(row.transfers)}</td>
                         <td className={styles.numeric}>{formatNumber(row.closedDeals)}</td>
@@ -285,7 +286,7 @@ export function AgentsPageClient({ data, exportHref }: { data: AgentDirectoryDat
                 <button aria-label={pinned ? "Unpin preview" : "Pin preview"} aria-pressed={pinned} className={styles.pinButton} onClick={() => setPinned((value) => !value)} type="button">⌖</button>
                 <button aria-label="Close agent preview" className={styles.closeButton} onClick={() => setPreviewOpen(false)} type="button"><DashboardIcon name="close" /></button>
               </div>
-              <div className={styles.previewStatus}><span className={styles.statusBadge} data-status={selected.accountStatus}>{selected.accountStatus} account</span><span>{selected.hasMetrics ? "Active data included" : "No active data"}</span></div>
+              <div className={styles.previewStatus}><Badge appearance="light" shape="circle" size="xs" variant={selected.accountStatus === "active" ? "success" : "secondary"}><BadgeDot />{selected.accountStatus} account</Badge><span>{selected.hasMetrics ? "Active data included" : "No active data"}</span></div>
               <div className={styles.previewMetrics}>
                 <PreviewMetric current={selected.transfers} label="Transfers" previous={selected.comparison?.transfers ?? null} value={formatNumber(selected.transfers)} />
                 <PreviewMetric current={selected.closedDeals} label="Closed deals" previous={selected.comparison?.closedDeals ?? null} value={formatNumber(selected.closedDeals)} />

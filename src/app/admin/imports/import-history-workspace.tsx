@@ -15,6 +15,7 @@ import { ImportDeleteForm } from "@/app/admin/imports/import-delete-form";
 import styles from "@/app/admin/imports/import-history.module.css";
 import { RestoreImportDialog } from "@/app/admin/imports/restore-import-dialog";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { Badge, BadgeDot } from "@/components/ui/base-badge";
 import type { ActiveImportLifecycleOptions } from "@/import/active-lifecycle";
 import type {
   ImportHistoryFacets,
@@ -104,6 +105,11 @@ function statusTone(status: string) {
     return "neutral";
   }
   return "info";
+}
+
+function statusVariant(status: string) {
+  const tone = statusTone(status);
+  return tone === "danger" ? "destructive" : tone === "neutral" ? "secondary" : tone;
 }
 
 function statusExplanation(row: ImportHistoryRow) {
@@ -234,19 +240,23 @@ function StatusBadge({ row }: { row: ImportHistoryRow }) {
   const tooltipId = useId();
   const status = displayStatus(row);
   return (
-    <span
+    <Badge
+      appearance="outline"
       aria-describedby={tooltipId}
-      className={`${styles.statusBadge} ${styles[`status${statusTone(status)}`]}`}
+      className={styles.statusBadge}
+      shape="circle"
+      size="sm"
       tabIndex={0}
+      variant={statusVariant(status)}
     >
-      <span aria-hidden="true" className={styles.statusDot} />
+      <BadgeDot />
       {importStatusLabel(status)}
       <span className={styles.statusTooltip} id={tooltipId} role="tooltip">
         <strong>{importStatusLabel(status)}</strong>
         <span>{reportingPeriod(row)}</span>
         <span>{statusExplanation(row)}</span>
       </span>
-    </span>
+    </Badge>
   );
 }
 

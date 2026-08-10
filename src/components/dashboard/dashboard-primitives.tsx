@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/base-badge";
+
 export function PageHeader({
   actions,
   description,
@@ -50,9 +52,8 @@ export function StatusBadge({
   children: ReactNode;
   tone?: "danger" | "info" | "neutral" | "success" | "warning";
 }) {
-  return (
-    <span className={`status-badge status-badge--${tone}`}>{children}</span>
-  );
+  const variant = tone === "danger" ? "destructive" : tone === "neutral" ? "secondary" : tone;
+  return <Badge appearance="light" shape="circle" size="sm" variant={variant}>{children}</Badge>;
 }
 
 export function TableScroll({

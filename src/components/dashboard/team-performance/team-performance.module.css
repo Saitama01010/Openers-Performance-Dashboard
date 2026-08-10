@@ -142,7 +142,7 @@
 .tableScroll tbody th > a { align-items: center; color: #192b4b; display: inline-flex; font-weight: 750; min-height: 44px; text-decoration: none; }
 .tableScroll tbody th > small { color: var(--team-muted); display: block; font-size: 7.5px; font-weight: 500; margin-top: 2px; }
 .numeric { font-variant-numeric: tabular-nums; text-align: right !important; }
-.healthBadge { background: #eef1f5; border-radius: 999px; color: #647087; display: inline-flex; font-size: 8px; font-weight: 750; padding: 4px 7px; white-space: nowrap; }
+.healthBadge { align-items: center; background: #eef1f5; border: 1px solid transparent; border-radius: 999px; color: #647087; display: inline-flex; font-size: 10px; font-weight: 600; gap: 4px; height: 20px; justify-content: center; min-width: 20px; padding: 0 5px; white-space: nowrap; }
 .healthBadge[data-health="healthy"] { background: #e4f6ec; color: #16814a; }
 .healthBadge[data-health="under-target"] { background: #fde9eb; color: #c73544; }
 .healthBadge[data-health="not-configured"] { background: #fff3d9; color: #9c6810; }

@@ -449,7 +449,7 @@
 .table tbody th { color: #19365f; font-weight: 700; }
 .numeric { font-variant-numeric: tabular-nums; font-weight: 690; }
 .activeMetric { color: #1765ff; font-weight: 820; }
-.rankBadge { align-items: center; display: inline-flex; font-variant-numeric: tabular-nums; font-weight: 820; gap: 0.2rem; min-width: 1.9rem; }
+.rankBadge { align-items: center; border: 1px solid transparent; border-radius: 0.25rem; display: inline-flex; font-size: 0.6875rem; font-variant-numeric: tabular-nums; font-weight: 650; gap: 0.25rem; height: 1.25rem; justify-content: center; min-width: 1.25rem; padding: 0 0.325rem; }
 .rankBadge[data-rank="1"] { color: #d99b0c; }
 .rankBadge[data-rank="2"] { color: #71839f; }
 .rankBadge[data-rank="3"] { color: #bd6428; }
@@ -457,8 +457,8 @@
 .table td:first-child small[data-tone="up"] { background: #e6f6ee; color: #16834f; }
 .table td:first-child small[data-tone="down"] { background: #fff0f1; color: #d54352; }
 .table td:first-child small[data-tone="neutral"] { background: #f1f4f8; color: #7a899f; }
-.teamPill { background: #edf3ff; border-radius: 0.25rem; color: #1765ff; display: inline-block; font-size: 0.58rem; font-weight: 680; padding: 0.2rem 0.38rem; }
-.conversionPill { border-radius: 999px; display: inline-block; min-width: 3.5rem; padding: 0.22rem 0.42rem; text-align: center; }
+.teamPill { align-items: center; background: #edf3ff; border: 1px solid transparent; border-radius: 0.25rem; color: #1765ff; display: inline-flex; font-size: 0.6875rem; font-weight: 600; height: 1.25rem; justify-content: center; min-width: 1.25rem; padding: 0 0.325rem; }
+.conversionPill { align-items: center; border: 1px solid transparent; border-radius: 999px; display: inline-flex; font-size: 0.6875rem; font-weight: 600; height: 1.25rem; justify-content: center; min-width: 3.5rem; padding: 0 0.325rem; text-align: center; }
 .conversionPill[data-tone="high"] { background: #e3f5eb; color: #138853; }
 .conversionPill[data-tone="medium"] { background: #fff3d9; color: #9a6413; }
 .conversionPill[data-tone="low"] { background: #f1f4f8; color: #6d7c92; }

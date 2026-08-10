@@ -15,6 +15,7 @@ import styles from "@/components/dashboard/admin-overview/admin-overview.module.
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import { OverviewDateFilter } from "@/components/dashboard/overview-date-filter";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { Badge, BadgeDot } from "@/components/ui/base-badge";
 import { DonutChart } from "@/components/ui/donut-chart";
 import {
   createRubricTemplateDialogAction,
@@ -71,8 +72,8 @@ function statusLabel(status: OverviewSourceStatus) {
   return status[0].toUpperCase() + status.slice(1);
 }
 
-function statusTone(status: OverviewSourceStatus) {
-  return `${styles.status} ${styles[`status_${status}`]}`;
+function statusVariant(status: OverviewSourceStatus) {
+  return status === "healthy" ? "success" : status === "warning" || status === "partial" ? "warning" : "secondary";
 }
 
 function Panel({
@@ -338,9 +339,9 @@ function DataHealth({ data, overall }: { data: AdminDashboardData["dataHealth"];
     },
   ];
   return (
-    <Panel actions={<span className={statusTone(overall)}>{statusLabel(overall)}</span>} className={styles.healthPanel} id="overview-data-health" title="Data Health">
+    <Panel actions={<Badge appearance="light" shape="circle" size="xs" variant={statusVariant(overall)}><BadgeDot />{statusLabel(overall)}</Badge>} className={styles.healthPanel} id="overview-data-health" title="Data Health">
       <div className={styles.healthRows}>
-        {rows.map((row) => <div className={styles.healthRow} key={row.id}><button aria-expanded={expanded === row.id} onClick={() => setExpanded((value) => value === row.id ? null : row.id)} type="button"><span className={styles.healthIcon}><DashboardIcon name={row.icon} /></span><span><strong>{row.title}</strong><small>{row.summary}</small></span><span className={statusTone(row.status)}>{statusLabel(row.status)}</span><span aria-hidden="true">›</span></button>{expanded === row.id ? <div className={styles.healthDetail}><p>{row.detail}</p>{row.href ? <Link href={row.href}>Open related administration page</Link> : null}</div> : null}</div>)}
+        {rows.map((row) => <div className={styles.healthRow} key={row.id}><button aria-expanded={expanded === row.id} onClick={() => setExpanded((value) => value === row.id ? null : row.id)} type="button"><span className={styles.healthIcon}><DashboardIcon name={row.icon} /></span><span><strong>{row.title}</strong><small>{row.summary}</small></span><Badge appearance="light" shape="circle" size="xs" variant={statusVariant(row.status)}><BadgeDot />{statusLabel(row.status)}</Badge><span aria-hidden="true">›</span></button>{expanded === row.id ? <div className={styles.healthDetail}><p>{row.detail}</p>{row.href ? <Link href={row.href}>Open related administration page</Link> : null}</div> : null}</div>)}
       </div>
     </Panel>
   );
@@ -498,7 +499,7 @@ export function AdminOverviewClient({ data }: { data: AdminDashboardData }) {
       </header>
       <div className={styles.kpiGrid}>{kpis.map((kpi) => <KpiCard {...kpi} comparisonLabel={data.company.comparisonLabel} key={kpi.id} sourceStatus={kpi.source} />)}</div>
       {overall !== "healthy" ? <div className={styles.warning} data-attention-count="1" data-attention-href="#overview-data-health" data-attention-title="Data source health"><DashboardIcon name="info" /><span><strong>Some outcome sources need attention</strong><small>Unavailable values remain visible and are never replaced with estimates.</small></span><button onClick={() => { const target = document.getElementById("overview-data-health"); target?.scrollIntoView({ behavior: "smooth", block: "center" }); target?.focus({ preventScroll: true }); }} type="button">View source health</button></div> : null}
-      <div className={styles.analyticsGrid}><Panel className={styles.teamPanel} description={`Performance by team (${data.period.label})`} title="Team comparison"><TeamComparison onPreview={previewTeam} rows={data.teamComparison} /></Panel><Panel className={styles.trendsPanel} actions={<span className={styles.periodPill}>Last 6 months</span>} description="Outcome trends across real calendar months" title="Month-over-month trends"><MonthlyTrends months={data.trends.months} /></Panel><DataHealth data={data.dataHealth} overall={overall} /></div>
+      <div className={styles.analyticsGrid}><Panel className={styles.teamPanel} description={`Performance by team (${data.period.label})`} title="Team comparison"><TeamComparison onPreview={previewTeam} rows={data.teamComparison} /></Panel><Panel className={styles.trendsPanel} actions={<Badge appearance="outline" size="sm" variant="secondary">Last 6 months</Badge>} description="Outcome trends across real calendar months" title="Month-over-month trends"><MonthlyTrends months={data.trends.months} /></Panel><DataHealth data={data.dataHealth} overall={overall} /></div>
       <div className={styles.secondaryGrid}><TalentDistribution agents={data.talentDistributionAgents} /><LeaderTable leaders={data.leaderPerformance} onPreview={previewLeader} /></div>
       <ManagementActions onOpen={(key, trigger) => { lastTrigger.current = trigger; setAction(key); }} />
       <Panel className={styles.insights} description={`Authoritative operational context (${data.period.label})`} title="Operational insights"><div className={styles.insightGrid}>{insights.map(([label, value, detail, icon, color]) => <article data-attention-count={label === "Active Flags" ? activeFlags : undefined} data-attention-href={label === "Active Flags" ? "/flags" : undefined} data-attention-title={label === "Active Flags" ? "Active flags" : undefined} key={label}><span style={{ background: `${color}18`, color }}><DashboardIcon name={icon} /></span><div><small>{label}</small><strong>{value}</strong><p>{detail}</p></div></article>)}</div></Panel>

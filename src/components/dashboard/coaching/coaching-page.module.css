@@ -55,7 +55,7 @@
 .progress strong { font-size: 10px; text-align: right; }
 .track { background: #e8edf5; border-radius: 99px; height: 5px; overflow: hidden; }
 .fill { background: var(--coach-blue); border-radius: inherit; display: block; height: 100%; transition: width 180ms ease; }
-.badge { background: #eaf2ff; border-radius: 999px; color: #1764df; display: inline-flex; font-size: 8px; font-weight: 750; padding: 4px 7px; white-space: nowrap; }
+.badge { align-items: center; background: #eaf2ff; border: 1px solid transparent; border-radius: 0.25rem; color: #1764df; display: inline-flex; font-size: 10px; font-weight: 600; height: 20px; justify-content: center; min-width: 20px; padding: 0 5px; white-space: nowrap; }
 .badge[data-tone="green"] { background: #e5f7ed; color: #15824a; }
 .badge[data-tone="orange"] { background: #fff1dc; color: #a7640b; }
 .badge[data-tone="red"] { background: #fde9eb; color: #c93643; }

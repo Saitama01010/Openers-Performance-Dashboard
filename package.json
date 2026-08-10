@@ -34,7 +34,9 @@
     "users:purge-legacy-deleted": "tsx scripts/purge-legacy-deleted-users.ts"
   },
   "dependencies": {
+    "@base-ui-components/react": "^1.0.0-rc.0",
     "bcryptjs": "^3.0.2",
+    "class-variance-authority": "^0.7.1",
     "csv-parse": "^6.1.0",
     "drizzle-orm": "^0.45.1",
     "framer-motion": "^13.0.0",

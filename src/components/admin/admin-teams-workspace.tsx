@@ -9,6 +9,7 @@ import type {
   AdminTeamDirectoryRow,
 } from "@/admin/teams";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { Badge, BadgeDot } from "@/components/ui/base-badge";
 import { roleLabel, statusLabel } from "@/presentation/labels";
 import styles from "./teams-admin.module.css";
 
@@ -246,7 +247,7 @@ export function AdminTeamsWorkspace({
               <td><ManagerSummary managers={team.managers} /></td>
               <td className={styles.numeric}>{team.memberCount}</td>
               <td className={styles.numeric}>{team.agentCount}</td>
-              <td><details className={styles.statusDetails}><summary className={team.active ? styles.statusActive : styles.statusInactive}>{team.active ? "Active" : "Inactive"}</summary><p>{team.active ? "Available for active assignments." : "Unavailable for new assignments. Historical reporting remains."}</p></details></td>
+              <td><details className={styles.statusDetails}><Badge appearance="light" render={<summary />} shape="circle" size="xs" variant={team.active ? "success" : "destructive"}><BadgeDot />{team.active ? "Active" : "Inactive"}</Badge><p>{team.active ? "Available for active assignments." : "Unavailable for new assignments. Historical reporting remains."}</p></details></td>
               <td><time dateTime={team.createdAt}>{formatDate(team.createdAt)}</time></td>
               <td><div className={styles.rowActions}><button aria-label={`View ${team.name}`} onClick={(event) => openTeam(team.id, event.currentTarget)} type="button"><DashboardIcon name="info" /></button><button aria-label={`Manage members for ${team.name}`} onClick={(event) => openTeam(team.id, event.currentTarget, "members")} type="button"><DashboardIcon name="users" /></button></div></td>
             </tr>;
@@ -260,7 +261,7 @@ export function AdminTeamsWorkspace({
       <div className={styles.drawerInner}>
         <header className={styles.drawerHeader}><strong id="team-drawer-title">Team details</strong><button aria-label="Close team details" onClick={() => drawer.current?.close()} type="button"><DashboardIcon name="close" /></button></header>
         {busy === "load" ? <p className={styles.drawerLoading}>Loading authorized team details…</p> : !details ? <p className={styles.drawerLoading}>{feedback?.message ?? "Team details are unavailable."}</p> : <>
-          <div className={styles.drawerTeam}><span className={styles.drawerMark}>{initials(details.team.name)}</span><div><h2>{details.team.name}</h2><span className={details.team.active ? styles.statusActive : styles.statusInactive}>{details.team.active ? "Active" : "Inactive"}</span><p>{managerNames(details.managers)}</p></div></div>
+          <div className={styles.drawerTeam}><span className={styles.drawerMark}>{initials(details.team.name)}</span><div><h2>{details.team.name}</h2><Badge appearance="light" shape="circle" size="xs" variant={details.team.active ? "success" : "destructive"}><BadgeDot />{details.team.active ? "Active" : "Inactive"}</Badge><p>{managerNames(details.managers)}</p></div></div>
           <nav aria-label="Team detail sections" className={styles.tabs}>{(["overview", "members", "settings", "activity"] as DrawerTab[]).map((item) => <button aria-current={tab === item ? "page" : undefined} key={item} onClick={() => setTab(item)} type="button">{item === "members" ? `Members (${details.counts.members})` : capitalize(item)}</button>)}</nav>
           <div className={styles.drawerBody}>
             {feedback ? <div className={feedback.tone === "error" ? styles.feedbackError : styles.feedbackSuccess} role={feedback.tone === "error" ? "alert" : "status"}>{feedback.message}</div> : null}

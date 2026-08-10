@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { TemporaryPasswordControls } from "@/components/admin/temporary-password-controls";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { Badge } from "@/components/ui/base-badge";
 import styles from "./users-access.module.css";
 
 type Role = "admin" | "manager" | "agent";
@@ -440,7 +441,7 @@ function ValidationPreviewTable({ filter, preview }: { filter: ValidationFilter;
               <td className="px-3 py-2">{row.americanName || "—"}</td>
               <td className="px-3 py-2">{row.shift || "—"}</td>
               <td className="px-3 py-2">{row.email || "—"}</td>
-              <td className="px-3 py-2">{row.validForAssignment ? <span className={styles.badgeSuccess}>VALID</span> : isExistingUser(row) ? <span className={styles.badgeDanger} title={`${row.errors.join(" ")} No new user will be created.`}>BLOCKED</span> : <span className={styles.badgeWarning} title={row.errors.join(" ")}>INVALID</span>}</td>
+              <td className="px-3 py-2">{row.validForAssignment ? <Badge appearance="light" size="xs" variant="success">VALID</Badge> : isExistingUser(row) ? <Badge appearance="light" size="xs" title={`${row.errors.join(" ")} No new user will be created.`} variant="destructive">BLOCKED</Badge> : <Badge appearance="light" size="xs" title={row.errors.join(" ")} variant="warning">INVALID</Badge>}</td>
               <td className="max-w-80 px-3 py-2 text-muted">
                 {[...row.errors, ...row.warnings].join(" ") ||
                   "No validation issues."}
@@ -560,7 +561,7 @@ function AssignmentTable({
                   </select>
                 </td>
                 <td className="max-w-80 px-3 py-2">
-                  <p>{row.validForAssignment ? <span className={styles.badgeSuccess}>VALID</span> : isExistingUser(row) ? <span className={styles.badgeDanger}>BLOCKED</span> : <span className={styles.badgeWarning}>INVALID</span>}</p>
+                  <p>{row.validForAssignment ? <Badge appearance="light" size="xs" variant="success">VALID</Badge> : isExistingUser(row) ? <Badge appearance="light" size="xs" variant="destructive">BLOCKED</Badge> : <Badge appearance="light" size="xs" variant="warning">INVALID</Badge>}</p>
                   <p className="mt-1 text-xs text-muted">
                     {assignmentIssues.join(" ") || "Ready to publish."}
                   </p>

@@ -72,7 +72,7 @@ function formatPercent(value: number | null) {
 }
 
 function formatDuration(seconds: number | null) {
-  if (seconds === null) return "N/A";
+  if (seconds === null) return "0";
   const safe = Math.max(0, Math.trunc(seconds));
   return `${integer.format(Math.floor(safe / 3600))}h ${Math.floor((safe % 3600) / 60)}m`;
 }
@@ -499,7 +499,7 @@ function ProductivityMix({
         title="Productivity mix"
       />
       <div className={styles.productivityBody}>
-        <DonutChart activeSegmentId={activeState} ariaLabel={totalRecorded > 0 ? `Productivity mix totaling ${formatDuration(totalRecorded)}` : "Productivity mix unavailable"} centerContent={<><strong>{active ? formatPercent(productivityStatePercentage(data.totals[active.key], totalRecorded)) : totalRecorded > 0 ? "100%" : "N/A"}</strong><span>{active?.shortLabel ?? (totalRecorded > 0 ? "Total" : "No data")}</span></>} className={styles.donut} data={available.filter((state) => visible[state.key]).map((state) => ({ id: state.key, value: data.totals[state.key] ?? 0, color: state.color, label: state.label, accessibleLabel: `${state.label}: ${formatDuration(data.totals[state.key])}, ${formatPercent(productivityStatePercentage(data.totals[state.key], visibleTotal))}` }))} onSegmentHover={(segment) => onActiveState((segment?.id as ActivityKey | undefined) ?? null)} size={200} strokeWidth={32} />
+        <DonutChart activeSegmentId={activeState} ariaLabel={totalRecorded > 0 ? `Productivity mix totaling ${formatDuration(totalRecorded)}` : "Productivity mix unavailable"} centerContent={<><strong>{active ? formatPercent(productivityStatePercentage(data.totals[active.key], totalRecorded)) : totalRecorded > 0 ? "100%" : "0"}</strong><span>{active?.shortLabel ?? (totalRecorded > 0 ? "Total" : "No data")}</span></>} className={styles.donut} data={available.filter((state) => visible[state.key]).map((state) => ({ id: state.key, value: data.totals[state.key] ?? 0, color: state.color, label: state.label, accessibleLabel: `${state.label}: ${formatDuration(data.totals[state.key])}, ${formatPercent(productivityStatePercentage(data.totals[state.key], visibleTotal))}` }))} onSegmentHover={(segment) => onActiveState((segment?.id as ActivityKey | undefined) ?? null)} size={200} strokeWidth={32} />
         <div className={styles.productivityLegend}>
           {activityStates.filter((state) => PRODUCTIVITY_MIX_KEYS.some((key) => key === state.key)).map((state) => {
             const seconds = data.totals[state.key];
@@ -521,12 +521,12 @@ function ProductivityMix({
                 onMouseLeave={() => onActiveState(null)}
                 type="button"
               >
-                <span style={{ background: state.color }} /><b>{state.shortLabel}</b><strong>{seconds === null ? "N/A" : formatPercent(percentage)}</strong>
+                <span style={{ background: state.color }} /><b>{state.shortLabel}</b><strong>{seconds === null ? "0" : formatPercent(percentage)}</strong>
                 <small>{seconds === null ? "Not reported by source" : `${formatDuration(seconds)} · ${integer.format(seconds)}s`}</small>
               </button>
             );
           })}
-          <div className={styles.productivityTotal}><span>Total recorded</span><strong>{totalRecorded > 0 ? formatDuration(totalRecorded) : "N/A"}</strong></div>
+          <div className={styles.productivityTotal}><span>Total recorded</span><strong>{totalRecorded > 0 ? formatDuration(totalRecorded) : "0"}</strong></div>
         </div>
       </div>
       {active ? <div className={styles.inlineTooltip} role="tooltip"><strong>{active.label}</strong><span>{formatDuration(activeSeconds)} · {activeSeconds === null ? "Unavailable" : `${integer.format(activeSeconds)} seconds`}</span><span>{formatPercent(productivityStatePercentage(activeSeconds, totalRecorded))} of recorded activity</span><span>{formatPercent(data.totals.loggedInSeconds && activeSeconds !== null ? (activeSeconds / data.totals.loggedInSeconds) * 100 : null)} of logged-in time</span></div> : null}
@@ -550,8 +550,6 @@ function ActivityStates({ activeState, data, onActiveState }: { activeState: Act
               key={state.key}
               onBlur={() => onActiveState(null)}
               onFocus={() => onActiveState(state.key)}
-              onMouseEnter={() => onActiveState(state.key)}
-              onMouseLeave={() => onActiveState(null)}
               style={{ "--state-color": state.color } as CSSProperties}
               tabIndex={0}
             >

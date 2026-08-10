@@ -293,7 +293,9 @@ export async function employmentAction(formData: FormData) {
   }
   const status = text(formData, "status");
   if (!isOneOf(status, EMPLOYMENT_STATUSES)) throw new Error("Employment status is invalid.");
-  await recordEmploymentStatus(await actor(), {
+  const user = await actor();
+  if (user.role !== "admin") throw new Error("Forbidden");
+  await recordEmploymentStatus(user, {
     profileId: text(formData, "profileId"),
     status,
     reason: text(formData, "reason"),

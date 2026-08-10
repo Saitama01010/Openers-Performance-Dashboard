@@ -65,4 +65,19 @@ describe("role dashboard feature boundary", () => {
     expect(roleData).toContain("getTransferFlagsData");
     expect(roleData).toContain("transferCount");
   });
+
+  it("does not render Team Manager user deactivation or termination controls", () => {
+    const component = readFileSync(
+      "src/components/dashboard/role-dashboard.tsx",
+      "utf8",
+    );
+
+    expect(component).not.toContain("Deactivate or terminate agent");
+    expect(component).not.toContain("Deactivate access");
+    expect(component).not.toContain("Terminate employment");
+    expect(component).not.toContain("employmentAction");
+    expect(component).toContain("Add team agent");
+    expect(component).toContain("Schedule shadowing");
+    expect(component).toContain("Raise manual flag");
+  });
 });

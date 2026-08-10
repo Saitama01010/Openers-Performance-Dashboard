@@ -1,10 +1,11 @@
-import "dotenv/config";
+import "@/test/integration-env";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { permanentlyDeleteValidatedUsers } from "@/admin/data";
 import type { Actor, Role } from "@/auth/authorization";
+import { getCoachingLeaderboardData } from "@/coaching/data";
 import { createCoachingSession } from "@/coaching/service";
 import { getDb } from "@/db";
 import {
@@ -262,6 +263,23 @@ describe("coaching session persistence integration", () => {
         }),
       ]),
     );
+
+    const leaderboard = await getCoachingLeaderboardData(admin, {
+      dateRange: { from: "2026-01-05", to: "2026-01-11" },
+      managerId,
+      teamId,
+      sort: "oneToOne",
+      direction: "desc",
+    });
+    expect(leaderboard.applicableWeeks).toBe(1);
+    expect(leaderboard.rows).toHaveLength(1);
+    expect(leaderboard.rows[0]).toMatchObject({
+      managerId,
+      oneToOneCompleted: 1,
+      oneToOneTarget: 25,
+      teamCoachingCompleted: 0,
+      teamCoachingTarget: 1,
+    });
   });
 
   it("fails closed for an unassigned manager, empty selection, and future dates", async () => {

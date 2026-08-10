@@ -61,13 +61,25 @@ describe("coaching and flags UI contract", () => {
     expect(client).toContain("Missing-source data was not classified as zero deals");
   });
 
-  it("uses exactly six Coaching Leaderboard headers and an accessible progress bar", () => {
-    for (const label of ["Manager", "Teams", "Assigned Agents", "Coached Agents", "Sessions Completed", "Coverage"]) {
+  it("separates the two manager Coaching Leaderboard targets with accessible progress bars", () => {
+    for (const label of [
+      "Manager",
+      "Teams",
+      "Assigned Agents",
+      "Coached Agents",
+      "1:1 Coachings completed",
+      "1:1 target",
+      "1:1 score/progress",
+      "Team Coachings completed",
+      "Team Coaching target",
+      "Team Coaching score/progress",
+    ]) {
       expect(coachingLeaderboard).toContain(`>${label}<`);
     }
     expect(coachingLeaderboard).toContain('role="progressbar"');
     expect(coachingLeaderboard).toContain("aria-valuenow");
-    expect(coachingLeaderboard).toContain('percentage === null ? "N/A"');
+    expect(coachingLeaderboard).toContain("Select a bounded date range");
+    expect(coachingLeaderboard).toContain("displayed progress is capped at 100%");
     expect(globalStyles).toContain("@media (prefers-reduced-motion: reduce)");
     expect(globalStyles).toContain(".coverage-progress__fill");
     expect(globalStyles).toContain("animation: none");

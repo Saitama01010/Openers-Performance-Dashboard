@@ -51,16 +51,19 @@ const ids = {
   westAgent: `ops-west-agent-${suffix}`,
   lifecycleAgent: `ops-lifecycle-agent-${suffix}`,
   lifecycleSession: `ops-session-${suffix}`,
+  terminationAgent: `ops-termination-agent-${suffix}`,
+  terminationSession: `ops-termination-session-${suffix}`,
   coachingSession: `ops-coaching-${suffix}`,
   otherCoachingSession: `ops-other-coaching-${suffix}`,
   otherAdmin: `ops-other-admin-${suffix}`,
   otherAgent: `ops-other-agent-${suffix}`,
 };
-const profileIds = [ids.admin, ids.manager, ids.noTeamManager, ids.staleManager, ids.eastAgent, ids.westAgent, ids.lifecycleAgent];
+const profileIds = [ids.admin, ids.manager, ids.noTeamManager, ids.staleManager, ids.eastAgent, ids.westAgent, ids.lifecycleAgent, ids.terminationAgent];
 const eastManager: Actor = { id: ids.manager, role: "manager", teamIds: [ids.east], organizationId: ids.organization };
 const noTeamManager: Actor = { id: ids.noTeamManager, role: "manager", teamIds: [], organizationId: ids.organization };
 const staleManager: Actor = { id: ids.staleManager, role: "manager", teamIds: [ids.east], organizationId: ids.organization };
 const admin: Actor = { id: ids.admin, role: "admin", teamIds: [], organizationId: ids.organization };
+const eastAgent: Actor = { id: ids.eastAgent, role: "agent", teamIds: [ids.east], organizationId: ids.organization };
 let createdAgentId: string | null = null;
 
 describe("team-scoped performance operations", () => {
@@ -80,6 +83,7 @@ describe("team-scoped performance operations", () => {
       { id: ids.eastAgent, organizationId: ids.organization, name: "East Agent", email: `${ids.eastAgent}@example.com`, role: "agent", accountStatus: "active" },
       { id: ids.westAgent, organizationId: ids.organization, name: "West Agent", email: `${ids.westAgent}@example.com`, role: "agent", accountStatus: "active" },
       { id: ids.lifecycleAgent, organizationId: ids.organization, name: "Lifecycle Agent", email: `${ids.lifecycleAgent}@example.com`, role: "agent", accountStatus: "active" },
+      { id: ids.terminationAgent, organizationId: ids.organization, name: "Termination Agent", email: `${ids.terminationAgent}@example.com`, role: "agent", accountStatus: "active" },
       { id: ids.otherAdmin, organizationId: ids.otherOrganization, name: "Other Admin", email: `${ids.otherAdmin}@example.com`, role: "admin", accountStatus: "active" },
       { id: ids.otherAgent, organizationId: ids.otherOrganization, name: "Other Agent", email: `${ids.otherAgent}@example.com`, role: "agent", accountStatus: "active" },
     ]);
@@ -89,13 +93,21 @@ describe("team-scoped performance operations", () => {
       { id: randomUUID(), teamId: ids.east, profileId: ids.eastAgent, role: "agent" },
       { id: randomUUID(), teamId: ids.west, profileId: ids.westAgent, role: "agent" },
       { id: randomUUID(), teamId: ids.east, profileId: ids.lifecycleAgent, role: "agent" },
+      { id: randomUUID(), teamId: ids.east, profileId: ids.terminationAgent, role: "agent" },
       { id: randomUUID(), teamId: ids.otherTeam, profileId: ids.otherAgent, role: "agent" },
     ]);
-    await getDb().insert(sessions).values({
-      id: ids.lifecycleSession,
-      profileId: ids.lifecycleAgent,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
+    await getDb().insert(sessions).values([
+      {
+        id: ids.lifecycleSession,
+        profileId: ids.lifecycleAgent,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      {
+        id: ids.terminationSession,
+        profileId: ids.terminationAgent,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    ]);
     await getDb().insert(coachingSessions).values([
       {
         id: ids.coachingSession,
@@ -310,42 +322,86 @@ describe("team-scoped performance operations", () => {
     })).rejects.toThrow("Forbidden");
   });
 
-  it("soft-deactivates only an assigned-team agent, preserves history, and revokes sessions", async () => {
-    const concurrentActions = await Promise.allSettled([
-      recordEmploymentStatus(eastManager, {
-        profileId: ids.lifecycleAgent,
-        status: "deactivated",
-        reason: "Operational deactivation A",
-      }),
-      recordEmploymentStatus(eastManager, {
-        profileId: ids.lifecycleAgent,
-        status: "deactivated",
-        reason: "Operational deactivation B",
-      }),
-    ]);
-    expect(concurrentActions.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(concurrentActions.filter((result) => result.status === "rejected")).toHaveLength(1);
-    const [profile] = await getDb().select({ active: profiles.active, accountStatus: profiles.accountStatus, employmentStatus: profiles.employmentStatus })
-      .from(profiles).where(eq(profiles.id, ids.lifecycleAgent));
-    const [session] = await getDb().select({ revokedAt: sessions.revokedAt }).from(sessions).where(eq(sessions.id, ids.lifecycleSession));
-    const events = await getDb().select().from(employmentStatusEvents).where(eq(employmentStatusEvents.profileId, ids.lifecycleAgent));
-    expect(profile).toEqual({ active: false, accountStatus: "deactivated", employmentStatus: "deactivated" });
-    expect(session?.revokedAt).toBeInstanceOf(Date);
-    expect(events).toHaveLength(1);
-    await expect(recordEmploymentStatus(eastManager, {
-      profileId: ids.lifecycleAgent,
-      status: "active",
-      reason: "Forged manager reactivation",
-    })).rejects.toThrow("Forbidden");
+  it("rejects manager deactivation and termination for assigned-team and out-of-team agents", async () => {
     await expect(recordEmploymentStatus(eastManager, {
       profileId: ids.lifecycleAgent,
       status: "deactivated",
-      reason: "Duplicate deactivation",
-    })).rejects.toThrow(/already deactivated/);
+      reason: "Assigned-team deactivation",
+    })).rejects.toThrow("Forbidden");
+    await expect(recordEmploymentStatus(eastManager, {
+      profileId: ids.terminationAgent,
+      status: "terminated",
+      reason: "Assigned-team termination",
+    })).rejects.toThrow("Forbidden");
+    await expect(recordEmploymentStatus(eastManager, {
+      profileId: ids.westAgent,
+      status: "deactivated",
+      reason: "Out-of-team deactivation",
+    })).rejects.toThrow("Forbidden");
     await expect(recordEmploymentStatus(eastManager, {
       profileId: ids.westAgent,
       status: "terminated",
-      reason: "Out of scope",
+      reason: "Out-of-team termination",
     })).rejects.toThrow("Forbidden");
+
+    const protectedProfiles = await getDb().select({ id: profiles.id, active: profiles.active })
+      .from(profiles).where(inArray(profiles.id, [ids.lifecycleAgent, ids.terminationAgent, ids.westAgent]));
+    expect(protectedProfiles.every((profile) => profile.active)).toBe(true);
+  });
+
+  it("rejects agent lifecycle operations", async () => {
+    await expect(recordEmploymentStatus(eastAgent, {
+      profileId: ids.lifecycleAgent,
+      status: "deactivated",
+      reason: "Agent deactivation attempt",
+    })).rejects.toThrow("Forbidden");
+    await expect(recordEmploymentStatus(eastAgent, {
+      profileId: ids.terminationAgent,
+      status: "terminated",
+      reason: "Agent termination attempt",
+    })).rejects.toThrow("Forbidden");
+  });
+
+  it("lets an administrator deactivate, reactivate, and terminate agents while preserving history and revoking sessions", async () => {
+    await recordEmploymentStatus(admin, {
+      profileId: ids.lifecycleAgent,
+      status: "deactivated",
+      reason: "Administrator deactivation",
+    });
+    const [deactivatedProfile] = await getDb().select({ active: profiles.active, accountStatus: profiles.accountStatus, employmentStatus: profiles.employmentStatus })
+      .from(profiles).where(eq(profiles.id, ids.lifecycleAgent));
+    const [deactivatedSession] = await getDb().select({ revokedAt: sessions.revokedAt })
+      .from(sessions).where(eq(sessions.id, ids.lifecycleSession));
+    expect(deactivatedProfile).toEqual({ active: false, accountStatus: "deactivated", employmentStatus: "deactivated" });
+    expect(deactivatedSession?.revokedAt).toBeInstanceOf(Date);
+
+    await recordEmploymentStatus(admin, {
+      profileId: ids.lifecycleAgent,
+      status: "active",
+      reason: "Administrator reactivation",
+    });
+    await recordEmploymentStatus(admin, {
+      profileId: ids.terminationAgent,
+      status: "terminated",
+      reason: "Administrator termination",
+      employmentEndDate: "2026-08-10",
+    });
+
+    const [reactivatedProfile] = await getDb().select({ active: profiles.active, accountStatus: profiles.accountStatus, employmentStatus: profiles.employmentStatus })
+      .from(profiles).where(eq(profiles.id, ids.lifecycleAgent));
+    const [terminatedProfile] = await getDb().select({ active: profiles.active, accountStatus: profiles.accountStatus, employmentStatus: profiles.employmentStatus, employmentEndDate: profiles.employmentEndDate })
+      .from(profiles).where(eq(profiles.id, ids.terminationAgent));
+    const [terminatedSession] = await getDb().select({ revokedAt: sessions.revokedAt })
+      .from(sessions).where(eq(sessions.id, ids.terminationSession));
+    const events = await getDb().select({ profileId: employmentStatusEvents.profileId, status: employmentStatusEvents.status })
+      .from(employmentStatusEvents).where(inArray(employmentStatusEvents.profileId, [ids.lifecycleAgent, ids.terminationAgent]));
+    expect(reactivatedProfile).toEqual({ active: true, accountStatus: "active", employmentStatus: "active" });
+    expect(terminatedProfile).toEqual({ active: false, accountStatus: "deactivated", employmentStatus: "terminated", employmentEndDate: "2026-08-10" });
+    expect(terminatedSession?.revokedAt).toBeInstanceOf(Date);
+    expect(events).toEqual(expect.arrayContaining([
+      { profileId: ids.lifecycleAgent, status: "deactivated" },
+      { profileId: ids.lifecycleAgent, status: "active" },
+      { profileId: ids.terminationAgent, status: "terminated" },
+    ]));
   });
 });

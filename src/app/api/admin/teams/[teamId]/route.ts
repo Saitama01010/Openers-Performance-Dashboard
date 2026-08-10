@@ -10,18 +10,28 @@ import {
 import { getAdminTeamDetails } from "@/admin/teams";
 import { assertTrustedMutationOrigin } from "@/auth/request-security";
 import { getCurrentUser } from "@/auth/session";
+import { pageSchema, pageSizeSchema, parseJsonBody, uuidSchema } from "@/http/input";
+import { z } from "zod";
 
 const HEADERS = {
   "Cache-Control": "no-store, max-age=0",
   Pragma: "no-cache",
 } as const;
 
-type TeamMutation =
-  | { action: "rename"; name: string }
-  | { action: "status"; active: boolean }
-  | { action: "assign-manager"; managerId: string }
-  | { action: "move-member"; userId: string; targetTeamId: string }
-  | { action: "remove-member"; membershipId: string };
+const paramsSchema = z.object({ teamId: uuidSchema }).strict();
+const querySchema = z.object({
+  memberQuery: z.string().max(200).default(""),
+  memberPage: pageSchema.default(1),
+  memberPageSize: pageSizeSchema.default(25),
+}).strict();
+const mutationSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("rename"), name: z.string().trim().min(1).max(255) }).strict(),
+  z.object({ action: z.literal("status"), active: z.boolean() }).strict(),
+  z.object({ action: z.literal("assign-manager"), managerId: uuidSchema }).strict(),
+  z.object({ action: z.literal("move-member"), userId: uuidSchema, targetTeamId: uuidSchema }).strict(),
+  z.object({ action: z.literal("remove-member"), membershipId: uuidSchema }).strict(),
+]);
+type TeamMutation = z.infer<typeof mutationSchema>;
 
 function revalidateTeamPaths() {
   revalidatePath("/admin/teams");
@@ -54,29 +64,6 @@ function errorResponse(error: unknown) {
   return Response.json({ error: safe }, { status, headers: HEADERS });
 }
 
-function parseMutation(body: unknown): TeamMutation {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new Error("Invalid team update.");
-  }
-  const record = body as Record<string, unknown>;
-  if (record.action === "rename" && typeof record.name === "string") {
-    return { action: "rename", name: record.name };
-  }
-  if (record.action === "status" && typeof record.active === "boolean") {
-    return { action: "status", active: record.active };
-  }
-  if (record.action === "assign-manager" && typeof record.managerId === "string") {
-    return { action: "assign-manager", managerId: record.managerId };
-  }
-  if (record.action === "move-member" && typeof record.userId === "string" && typeof record.targetTeamId === "string") {
-    return { action: "move-member", userId: record.userId, targetTeamId: record.targetTeamId };
-  }
-  if (record.action === "remove-member" && typeof record.membershipId === "string") {
-    return { action: "remove-member", membershipId: record.membershipId };
-  }
-  throw new Error("Invalid team update.");
-}
-
 export async function GET(
   request: Request,
   context: { params: Promise<{ teamId: string }> },
@@ -84,12 +71,18 @@ export async function GET(
   const actor = await getCurrentUser();
   if (!actor) return Response.json({ error: "Authentication required." }, { status: 401, headers: HEADERS });
   if (actor.role !== "admin") return Response.json({ error: "Administrator access required." }, { status: 403, headers: HEADERS });
-  const { teamId } = await context.params;
+  const parsedParams = paramsSchema.safeParse(await context.params);
+  if (!parsedParams.success) return Response.json({ error: "Invalid team ID." }, { status: 400, headers: HEADERS });
+  const { teamId } = parsedParams.data;
   const search = new URL(request.url).searchParams;
-  const details = await getAdminTeamDetails(actor, teamId, {
+  const parsedQuery = querySchema.safeParse({
     memberQuery: search.get("memberQuery") ?? "",
-    memberPage: Number.parseInt(search.get("memberPage") ?? "1", 10) || 1,
-    memberPageSize: Number.parseInt(search.get("memberPageSize") ?? "25", 10) || 25,
+    memberPage: search.get("memberPage") ?? "1",
+    memberPageSize: search.get("memberPageSize") ?? "25",
+  });
+  if (!parsedQuery.success) return Response.json({ error: "Invalid team query." }, { status: 400, headers: HEADERS });
+  const details = await getAdminTeamDetails(actor, teamId, {
+    ...parsedQuery.data,
   });
   if (!details) return Response.json({ error: "Team was not found." }, { status: 404, headers: HEADERS });
   return Response.json(details, { headers: HEADERS });
@@ -105,8 +98,8 @@ export async function PATCH(
 
   try {
     assertTrustedMutationOrigin(request);
-    const { teamId } = await context.params;
-    const mutation = parseMutation(await request.json());
+    const { teamId } = paramsSchema.parse(await context.params);
+    const mutation: TeamMutation = await parseJsonBody(request, mutationSchema, 4_096);
     if (mutation.action === "rename") {
       await renameTeam(actor, { teamId, name: mutation.name });
     } else if (mutation.action === "status") {

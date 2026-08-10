@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { ImportPreviewSummary } from "@/app/import/import-preview-summary";
+import { ImportProcessingStatus } from "@/app/import/import-processing-status";
 import { ImportUploadForm } from "@/app/import/import-upload-form";
 import styles from "@/app/import/import-page.module.css";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
@@ -14,7 +15,7 @@ import {
   AGENT_HOURS_DAILY_HEADERS,
   HOURLY_DIALER_HEADERS,
 } from "@/import/dialer";
-import { getStoredImportPreview } from "@/import/service";
+import { getImportProcessingStatus, getStoredImportPreview } from "@/import/service";
 
 export const dynamic = "force-dynamic";
 
@@ -192,6 +193,9 @@ export default async function ImportPage({
   const storedPreview = params.preview
     ? await getStoredImportPreview({ actor: user, batchId: params.preview })
     : null;
+  const processingStatus = params.preview && !storedPreview
+    ? await getImportProcessingStatus({ actor: user, batchId: params.preview })
+    : null;
   const disabledReasons = storedPreview?.validation.errors ?? [];
 
   return (
@@ -225,7 +229,12 @@ export default async function ImportPage({
               error={params.error}
               rejected={params.rejected}
             />
-            {params.preview ? (
+            {processingStatus && ["queued", "processing", "failed", "cancelled"].includes(processingStatus.status) ? (
+              <ImportProcessingStatus
+                failureReason={processingStatus.failureReason}
+                status={processingStatus.status as "queued" | "processing" | "failed" | "cancelled"}
+              />
+            ) : params.preview ? (
               <StatusBanner tone="danger">
                 This draft is unavailable, no longer unpublished, or does not
                 belong to the current user. Upload the file again to create a

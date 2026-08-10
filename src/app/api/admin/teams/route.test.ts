@@ -30,6 +30,7 @@ describe("admin teams route", () => {
     const response = await POST(
       new Request("https://dashboard.example/api/admin/teams", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "Blocked" }),
       }),
     );
@@ -51,6 +52,7 @@ describe("admin teams route", () => {
     const response = await POST(
       new Request("https://dashboard.example/api/admin/teams", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "Team Two" }),
       }),
     );

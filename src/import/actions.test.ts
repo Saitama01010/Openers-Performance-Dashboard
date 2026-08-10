@@ -71,6 +71,16 @@ function mutationFormData(batchId: string) {
   return formData;
 }
 
+const BATCH_IDS = {
+  rolledBack: "00000000-0000-4000-8000-000000000401",
+  restored: "00000000-0000-4000-8000-000000000402",
+  delete: "00000000-0000-4000-8000-000000000403",
+  lastRow: "00000000-0000-4000-8000-000000000404",
+  deactivate: "00000000-0000-4000-8000-000000000405",
+  restoreFiltered: "00000000-0000-4000-8000-000000000406",
+  activeDelete: "00000000-0000-4000-8000-000000000407",
+} as const;
+
 describe("import history cache revalidation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -105,7 +115,7 @@ describe("import history cache revalidation", () => {
   ])(
     "revalidates the dashboard and affected import pages after a historical mutation",
     async ({ action, service, suffix }) => {
-      const batchId = `batch-${suffix}`;
+      const batchId = BATCH_IDS[suffix as keyof Pick<typeof BATCH_IDS, "rolledBack" | "restored">];
 
       await expect(action(mutationFormData(batchId))).rejects.toThrow(
         `REDIRECT:/admin/imports/${batchId}?${suffix}=true`,
@@ -125,7 +135,7 @@ describe("import history cache revalidation", () => {
   );
 
   it("revalidates history only after permanent deletion succeeds", async () => {
-    const batchId = "batch-delete";
+    const batchId = BATCH_IDS.delete;
     const formData = mutationFormData(batchId);
     formData.set("confirmation", "DELETE IMPORT");
 
@@ -147,7 +157,7 @@ describe("import history cache revalidation", () => {
   });
 
   it("returns to the previous valid page when the final row is deleted", async () => {
-    const batchId = "batch-last-row";
+    const batchId = BATCH_IDS.lastRow;
     const formData = mutationFormData(batchId);
     formData.set("confirmation", "DELETE IMPORT");
     formData.set("returnPage", "3");
@@ -166,7 +176,7 @@ describe("import history cache revalidation", () => {
   });
 
   it("returns list-page deactivation to the same filtered page", async () => {
-    const batchId = "batch-deactivate";
+    const batchId = BATCH_IDS.deactivate;
     const formData = mutationFormData(batchId);
     formData.set("resolutionMode", "none");
     formData.set("returnPage", "2");
@@ -189,7 +199,7 @@ describe("import history cache revalidation", () => {
   });
 
   it("preserves search, filters, pagination, and sorting after restoration", async () => {
-    const formData = mutationFormData("batch-restore-filtered");
+    const formData = mutationFormData(BATCH_IDS.restoreFiltered);
     formData.set(
       "returnQuery",
       "q=agent-hours&status=superseded&page=2&pageSize=10&sort=fileName&order=asc",
@@ -201,7 +211,7 @@ describe("import history cache revalidation", () => {
   });
 
   it("reports the authoritative fallback after deleting an active import", async () => {
-    const formData = mutationFormData("batch-active-delete");
+    const formData = mutationFormData(BATCH_IDS.activeDelete);
     formData.set("confirmation", "DELETE ACTIVE IMPORT");
     formData.set("returnQuery", "q=hours&page=2&pageSize=10");
     mocks.deleteDialerImportBatch.mockResolvedValue({

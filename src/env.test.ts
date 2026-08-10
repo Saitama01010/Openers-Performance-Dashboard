@@ -6,6 +6,7 @@ const baseEnv = {
   DATABASE_URL: "mysql://openers:openers_password@127.0.0.1:3306/openers_dashboard",
   DATABASE_ENVIRONMENT: "development",
   SESSION_SECRET: "12345678901234567890123456789012",
+  APP_URL: "https://dashboard.example.test",
   NODE_ENV: "development",
 } satisfies NodeJS.ProcessEnv;
 
@@ -21,6 +22,20 @@ describe("environment validation", () => {
     expect(env.EMAIL_PROVIDER).toBe("console");
     expect(env.EMAIL_FROM_NAME).toBe("DialExpert");
     expect(env.EMAIL_FROM_ADDRESS).toBe("no-reply@updates.dialexpert.com");
+  });
+
+  it("requires a canonical application origin and production HTTPS", async () => {
+    const { parseEnv } = await import("@/env");
+    expect(() => parseEnv({ ...baseEnv, APP_URL: "https://dashboard.example.test/path" })).toThrow(/canonical origin/);
+    expect(() => parseEnv({
+      ...baseEnv,
+      NODE_ENV: "production",
+      DATABASE_ENVIRONMENT: "production",
+      APP_URL: "http://dashboard.example.test",
+      EMAIL_PROVIDER: "resend",
+      RESEND_API_KEY: "re_test_123",
+      TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+    })).toThrow(/must use HTTPS/);
   });
 
   it("rejects console email in production", async () => {
@@ -58,6 +73,25 @@ describe("environment validation", () => {
         EMAIL_REPLY_TO: "not-an-email",
       }),
     ).toThrow(/Invalid email address/);
+  });
+
+  it("keeps the email lease safely beyond the provider timeout", async () => {
+    const { parseEnv } = await import("@/env");
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        EMAIL_WORKER_LEASE_SECONDS: "15",
+        EMAIL_PROVIDER_TIMEOUT_MS: "15000",
+      }),
+    ).toThrow(/must exceed EMAIL_PROVIDER_TIMEOUT_MS/);
+
+    expect(
+      parseEnv({
+        ...baseEnv,
+        EMAIL_WORKER_LEASE_SECONDS: "20",
+        EMAIL_PROVIDER_TIMEOUT_MS: "15000",
+      }).EMAIL_WORKER_LEASE_SECONDS,
+    ).toBe(20);
   });
 
   it("requires a valid temporary-password encryption key in production", async () => {
@@ -149,6 +183,7 @@ describe("environment validation", () => {
         EMAIL_PROVIDER: "resend",
         RESEND_API_KEY: "re_preview_test",
         TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+        OUTBOX_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString("base64"),
       }),
     ).toThrow(/DATABASE_ENVIRONMENT must match/);
 
@@ -160,6 +195,7 @@ describe("environment validation", () => {
       EMAIL_PROVIDER: "resend",
       RESEND_API_KEY: "re_preview_test",
       TEMP_PASSWORD_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+      OUTBOX_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString("base64"),
     });
     expect(preview.DATABASE_ENVIRONMENT).toBe("preview");
   });

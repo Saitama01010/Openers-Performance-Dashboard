@@ -167,7 +167,8 @@ export async function listShadowingSessionsForCurrentActor(
       actor.role === "manager" ? inArray(shadowingSessions.teamIdSnapshot, actor.teamIds) : undefined,
       actor.role === "manager" && currentManagerAgentIds ? inArray(shadowingSessions.agentProfileId, currentManagerAgentIds) : undefined,
     ))
-    .orderBy(asc(shadowingSessions.scheduledDate));
+    .orderBy(asc(shadowingSessions.scheduledDate), asc(shadowingSessions.id))
+    .limit(500);
   const today = dateKeyInTimeZone(new Date(), timeZone);
   return rows.map((row) => ({
     ...row,
@@ -327,6 +328,7 @@ export async function listManualFlagCasesForCurrentActor(actor: CurrentActor) {
       actor.role === "manager" ? inArray(manualFlagCases.teamIdSnapshot, actor.teamIds) : undefined,
       actor.role === "manager" && currentManagerAgentIds ? inArray(manualFlagCases.agentProfileId, currentManagerAgentIds) : undefined,
     ))
-    .orderBy(desc(manualFlagCases.createdAt));
+    .orderBy(desc(manualFlagCases.createdAt), desc(manualFlagCases.id))
+    .limit(500);
   return rows.map((row) => ({ ...row, internalNotes: actor.role === "agent" ? null : row.internalNotes }));
 }

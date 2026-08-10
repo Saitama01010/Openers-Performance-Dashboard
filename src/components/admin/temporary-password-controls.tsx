@@ -17,14 +17,14 @@ export function TemporaryPasswordControls({
   const [busy, setBusy] = useState<"reveal" | "copy" | "regenerate" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function request(action: "reveal" | "regenerate") {
+  async function request(action: "reveal" | "regenerate", reason?: string) {
     const response = await fetch(
       `/api/admin/users/${encodeURIComponent(userId)}/temporary-password`,
       {
         method: "POST",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify(action === "regenerate" ? { action, reason } : { action }),
       },
     );
     const result = (await response.json()) as {
@@ -70,10 +70,17 @@ export function TemporaryPasswordControls({
     ) {
       return;
     }
+    const reason = window.prompt(
+      "Record the reason for regenerating this credential (minimum 8 characters):",
+    )?.trim();
+    if (!reason || reason.length < 8) {
+      setError("A reason of at least 8 characters is required.");
+      return;
+    }
     setBusy("regenerate");
     setError(null);
     try {
-      await request("regenerate");
+      await request("regenerate", reason);
       setPassword(null);
     } catch (cause) {
       setError(

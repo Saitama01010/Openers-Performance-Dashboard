@@ -1,8 +1,11 @@
 import { bulkSendInvitations } from "@/admin/data";
 import { assertTrustedMutationOrigin } from "@/auth/request-security";
 import { getCurrentUser } from "@/auth/session";
+import { parseJsonBody, uuidSchema } from "@/http/input";
+import { z } from "zod";
 
 const HEADERS = { "Cache-Control": "no-store, max-age=0" } as const;
+const bodySchema = z.object({ userIds: z.array(uuidSchema).min(1).max(100) }).strict();
 
 export async function POST(request: Request) {
   const actor = await getCurrentUser();
@@ -11,14 +14,7 @@ export async function POST(request: Request) {
 
   try {
     assertTrustedMutationOrigin(request);
-    const body = (await request.json()) as { userIds?: unknown };
-    if (
-      !Array.isArray(body.userIds) ||
-      body.userIds.length === 0 ||
-      body.userIds.some((id) => typeof id !== "string")
-    ) {
-      throw new Error("Select at least one user.");
-    }
+    const body = await parseJsonBody(request, bodySchema, 8 * 1024);
     const outcomes = await bulkSendInvitations(actor, body.userIds);
     return Response.json(
       {
@@ -31,9 +27,13 @@ export async function POST(request: Request) {
       { headers: HEADERS },
     );
   } catch (error) {
+    const message =
+      error instanceof Error && error.message === "Untrusted request origin."
+        ? error.message
+        : "Invitations failed.";
     return Response.json(
-      { error: error instanceof Error ? error.message : "Invitations failed." },
-      { status: 400, headers: HEADERS },
+      { error: message },
+      { status: message === "Untrusted request origin." ? 403 : 400, headers: HEADERS },
     );
   }
 }

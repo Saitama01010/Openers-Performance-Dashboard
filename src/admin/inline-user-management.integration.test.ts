@@ -5,10 +5,13 @@ import { and, eq, inArray, or } from "drizzle-orm";
 
 import {
   addDialerMapping,
+  deactivateDialerMapping,
+  editDialerMapping,
   listAdminUsers,
   listTeams,
   moveAgentToTeam,
   moveUserToTeam,
+  setPrimaryDialerMapping,
   updateUserEmail,
   updateUserPrimaryDialerName,
 } from "@/admin/data";
@@ -485,6 +488,49 @@ describe("inline admin user management integration", () => {
       agentId: agent.id,
       teamId: foreignTeamId,
     })).rejects.toThrow("Team was not found");
+  });
+
+  it("rejects known foreign profile and mapping IDs across every dialer mutation", async () => {
+    const admin = await createProfile("admin");
+    const foreignOrganizationId = newId();
+    organizationIds.push(foreignOrganizationId);
+    await getDb().insert(organizations).values({
+      id: foreignOrganizationId,
+      name: `Foreign mappings ${foreignOrganizationId}`,
+    });
+    const foreignAdmin = await createProfile("admin", { organizationId: foreignOrganizationId });
+    const foreignAgent = await createProfile("agent", { organizationId: foreignOrganizationId });
+    const foreignActor: Actor = {
+      id: foreignAdmin.id,
+      role: "admin",
+      teamIds: [],
+      organizationId: foreignOrganizationId,
+    };
+    await addDialerMapping(foreignActor, {
+      userId: foreignAgent.id,
+      sourceAgentName: `Foreign Dialer ${foreignAgent.id}`,
+      makePrimary: true,
+    });
+    const [foreignMapping] = await getDb()
+      .select({ id: sourceUserMappings.id })
+      .from(sourceUserMappings)
+      .where(eq(sourceUserMappings.profileId, foreignAgent.id));
+
+    await expect(addDialerMapping(actor(admin.id), {
+      userId: foreignAgent.id,
+      sourceAgentName: "Cross Organization Add",
+      makePrimary: false,
+    })).rejects.toThrow("User was not found");
+    await expect(updateUserPrimaryDialerName(actor(admin.id), {
+      userId: foreignAgent.id,
+      dialerName: "Cross Organization Primary",
+    })).rejects.toThrow("User was not found");
+    await expect(editDialerMapping(actor(admin.id), {
+      mappingId: foreignMapping.id,
+      sourceAgentName: "Cross Organization Edit",
+    })).rejects.toThrow("Active mapping was not found");
+    await expect(deactivateDialerMapping(actor(admin.id), foreignMapping.id)).rejects.toThrow("Mapping was not found");
+    await expect(setPrimaryDialerMapping(actor(admin.id), foreignMapping.id)).rejects.toThrow("Active mapping was not found");
   });
 
   it("serializes concurrent admin moves without duplicate active memberships", async () => {

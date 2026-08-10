@@ -38,7 +38,20 @@ function isOneOf<T extends string>(value: string, allowed: readonly T[]): value 
 }
 
 function text(formData: FormData, key: string) {
-  return String(formData.get(key) ?? "").trim();
+  const value = String(formData.get(key) ?? "").trim();
+  if (value.length > 5_000) throw new Error(`${key} is too long.`);
+  return value;
+}
+
+function id(formData: FormData, key: string, optional?: false): string;
+function id(formData: FormData, key: string, optional: true): string | undefined;
+function id(formData: FormData, key: string, optional = false) {
+  const value = text(formData, key);
+  if (optional && !value) return undefined;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new Error(`${key} is invalid.`);
+  }
+  return value;
 }
 
 function optionalText(formData: FormData, key: string) {
@@ -83,7 +96,7 @@ export async function createTargetDialogAction(
     const metric = text(formData, "metric");
     if (!isOneOf(metric, TARGET_METRICS)) throw new Error("Target metric is invalid.");
     await createPerformanceTarget(user, {
-      teamId: optionalText(formData, "teamId"),
+      teamId: id(formData, "teamId", true),
       metric,
       targetValue: number(formData, "targetValue"),
       effectiveFrom: text(formData, "effectiveFrom"),
@@ -103,7 +116,7 @@ export async function createThresholdDialogAction(
 ): Promise<DashboardActionState> {
   try {
     await createTenureThreshold(await actor(), {
-      teamId: optionalText(formData, "teamId"),
+      teamId: id(formData, "teamId", true),
       bandLabel: text(formData, "bandLabel"),
       minimumDays: number(formData, "minimumDays"),
       maximumDays: optionalNumber(formData, "maximumDays"),
@@ -154,7 +167,7 @@ export async function updateEmploymentStartDialogAction(
 ): Promise<DashboardActionState> {
   try {
     await updateEmploymentStartDate(await actor(), {
-      profileId: text(formData, "profileId"),
+      profileId: id(formData, "profileId"),
       employmentStartDate: text(formData, "employmentStartDate"),
     });
     revalidatePath("/dashboard");
@@ -171,7 +184,7 @@ export async function createTargetAction(formData: FormData) {
     throw new Error("Target metric is invalid.");
   }
   await createPerformanceTarget(user, {
-    teamId: optionalText(formData, "teamId"),
+    teamId: id(formData, "teamId", true),
     metric,
     targetValue: number(formData, "targetValue"),
     effectiveFrom: text(formData, "effectiveFrom"),
@@ -184,7 +197,7 @@ export async function createTargetAction(formData: FormData) {
 export async function createThresholdAction(formData: FormData) {
   const user = await actor();
   await createTenureThreshold(user, {
-    teamId: optionalText(formData, "teamId"),
+    teamId: id(formData, "teamId", true),
     bandLabel: text(formData, "bandLabel"),
     minimumDays: number(formData, "minimumDays"),
     maximumDays: optionalNumber(formData, "maximumDays"),
@@ -221,7 +234,7 @@ export async function createRubricTemplateAction(formData: FormData) {
 
 export async function updateEmploymentStartAction(formData: FormData) {
   await updateEmploymentStartDate(await actor(), {
-    profileId: text(formData, "profileId"),
+    profileId: id(formData, "profileId"),
     employmentStartDate: text(formData, "employmentStartDate"),
   });
   finish("employment-start-updated");
@@ -229,7 +242,7 @@ export async function updateEmploymentStartAction(formData: FormData) {
 
 export async function createShadowingAction(formData: FormData) {
   await createShadowingSession(await actor(), {
-    agentProfileId: text(formData, "agentProfileId"),
+    agentProfileId: id(formData, "agentProfileId"),
     scheduledDate: text(formData, "scheduledDate"),
     objective: text(formData, "objective"),
   });
@@ -238,7 +251,7 @@ export async function createShadowingAction(formData: FormData) {
 
 export async function completeShadowingAction(formData: FormData) {
   await completeShadowingSession(await actor(), {
-    sessionId: text(formData, "sessionId"),
+    sessionId: id(formData, "sessionId"),
     internalNotes: optionalText(formData, "internalNotes"),
     publishedOutcome: optionalText(formData, "publishedOutcome"),
     followUpAction: optionalText(formData, "followUpAction"),
@@ -251,7 +264,7 @@ export async function createManualFlagAction(formData: FormData) {
   const severity = text(formData, "severity");
   if (!isOneOf(severity, ["low", "medium", "high", "critical"] as const)) throw new Error("Severity is invalid.");
   await createManualFlagCase(await actor(), {
-    agentProfileId: text(formData, "agentProfileId"),
+    agentProfileId: id(formData, "agentProfileId"),
     category: text(formData, "category"),
     severity,
     reason: text(formData, "reason"),
@@ -267,7 +280,7 @@ export async function updateManualFlagAction(formData: FormData) {
   const status = text(formData, "status");
   if (!isOneOf(status, MANUAL_FLAG_STATUSES)) throw new Error("Manual flag status is invalid.");
   await updateManualFlagCase(await actor(), {
-    caseId: text(formData, "caseId"),
+    caseId: id(formData, "caseId"),
     status,
     resolution: optionalText(formData, "resolution"),
     publishToAgent: formData.get("publishToAgent") === "on",
@@ -279,7 +292,7 @@ export async function createTeamAgentAction(formData: FormData) {
   await createTeamAgent(await actor(), {
     name: text(formData, "name"),
     email: text(formData, "email"),
-    teamId: text(formData, "teamId"),
+    teamId: id(formData, "teamId"),
     dialerName: text(formData, "dialerName"),
     shift: optionalText(formData, "shift"),
     employmentStartDate: optionalText(formData, "employmentStartDate"),
@@ -294,7 +307,7 @@ export async function employmentAction(formData: FormData) {
   const status = text(formData, "status");
   if (!isOneOf(status, EMPLOYMENT_STATUSES)) throw new Error("Employment status is invalid.");
   await recordEmploymentStatus(await actor(), {
-    profileId: text(formData, "profileId"),
+    profileId: id(formData, "profileId"),
     status,
     reason: text(formData, "reason"),
     employmentEndDate: optionalText(formData, "employmentEndDate"),
@@ -313,10 +326,10 @@ export async function saveCoachingReportAction(formData: FormData) {
     throw new Error("Rubric scores must be numbers.");
   }
   await saveCoachingReport(await actor(), {
-    reportId: optionalText(formData, "reportId"),
-    coachingSessionId: text(formData, "coachingSessionId"),
-    agentProfileId: text(formData, "agentProfileId"),
-    templateId: text(formData, "templateId"),
+    reportId: id(formData, "reportId", true),
+    coachingSessionId: id(formData, "coachingSessionId"),
+    agentProfileId: id(formData, "agentProfileId"),
+    templateId: id(formData, "templateId"),
     criterionScores: criterionIds.map((criterionId, index) => ({
       criterionId,
       score: scores[index],
@@ -332,7 +345,7 @@ export async function saveCoachingReportAction(formData: FormData) {
 
 export async function transitionCoachingReportAction(formData: FormData) {
   const user = await actor();
-  const reportId = text(formData, "reportId");
+  const reportId = id(formData, "reportId");
   const transition = text(formData, "transition");
   if (transition === "finalize") await finalizeCoachingReport(user, reportId);
   else if (transition === "publish") await publishCoachingReport(user, reportId);

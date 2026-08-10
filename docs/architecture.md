@@ -8,14 +8,22 @@ Current vertical slices:
 
 - Hashed, revocable database sessions with HTTP-only cookies.
 - Invitation and password-reset token services with expiring, single-use hashed tokens.
+- Transactionally queued, AES-GCM-protected email intents with a leased MySQL
+  delivery worker and bounded provider retries.
 - Permanent dialer CSV batches with staged validation, immutable versions,
   atomic publication, administrator rollback/restore/deactivation,
-  transactionally resolved active deletion, and permission-gated cleanup.
+  transactionally resolved active deletion, durable background parsing jobs,
+  crash recovery, and permission-gated cleanup.
 - Role-scoped operational totals with fail-closed manager scope.
 - Server-only Google Apps Script ingestion of the backward-compatible Xfers
   envelope and nested Closed envelope, exact American Name matching, isolated
   per-source errors, and Closed-row LeaderBoard rankings.
+- SQL-aggregated commissions, performance/transfer flags, coaching, employment,
+  team operations, and role-specific dashboard composition.
+- Bounded retention cleanup, request correlation, configurable database pooling,
+  and live/ready/version operational endpoints.
 
-Planned slices remain commissions and metric flags.
+The process and operational architecture is maintained in
+[`production-readiness.md`](./production-readiness.md).
 
 The deployment target is a Hostinger Node.js Web App. The code does not depend on Vercel infrastructure.

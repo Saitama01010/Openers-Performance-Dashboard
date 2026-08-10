@@ -1,0 +1,2 @@
+CREATE INDEX `dialer_hourly_date_version_idx` ON `dialer_agent_hourly_metrics` (`metric_date`,`version_id`);--> statement-breakpoint
+CREATE INDEX `dialer_hourly_team_date_version_idx` ON `dialer_agent_hourly_metrics` (`team_id_snapshot`,`metric_date`,`version_id`);

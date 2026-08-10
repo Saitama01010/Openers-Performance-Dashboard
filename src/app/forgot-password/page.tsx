@@ -36,6 +36,7 @@ export default async function ForgotPasswordPage({
             <input
               autoComplete="email"
               className="ui-input"
+              maxLength={255}
               name="email"
               required
               type="email"

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { navigationForRole } from "@/components/dashboard/dashboard-navigation-config";
@@ -54,7 +57,9 @@ describe("dashboard shell navigation by role", () => {
 
   it("adds Commissions once without removing Coaching Sessions or Flags", () => {
     for (const role of ["admin", "manager", "agent"] as const) {
-      expect(destinations(role).filter((href) => href === "/commissions")).toHaveLength(1);
+      expect(
+        destinations(role).filter((href) => href === "/commissions"),
+      ).toHaveLength(1);
       expect(destinations(role)).toContain("/flags");
     }
     expect(destinations("admin")).toContain("/coaching");
@@ -66,5 +71,36 @@ describe("dashboard shell navigation by role", () => {
     for (const role of ["admin", "manager", "agent"] as const) {
       expect(destinations(role)).toContain("/leaderboard");
     }
+  });
+
+  it("uses the official logo and preserves the secure logout action", () => {
+    const shell = readFileSync(
+      resolve(process.cwd(), "src/components/dashboard/dashboard-shell-client.tsx"),
+      "utf8",
+    );
+
+    expect(shell).toContain('/brand/openers-performance-logo.png');
+    expect(shell).toContain('loading="eager"');
+    expect(shell).toContain("action={logoutAction}");
+    expect(shell).toContain("title={user.name}");
+    expect(shell).toContain('aria-label={`Sign out ${user.name}`}');
+  });
+
+  it("keeps the redesigned rail scoped to sidebar selectors", () => {
+    const styles = readFileSync(
+      resolve(process.cwd(), "src/app/globals.css"),
+      "utf8",
+    );
+    const sidebar = styles.slice(
+      styles.indexOf(".dashboard-sidebar"),
+      styles.indexOf(".dashboard-workspace"),
+    );
+
+    expect(sidebar).toContain("min-height: 2.5rem");
+    expect(sidebar).toContain("background: var(--primary)");
+    expect(sidebar).toContain("outline: 3px solid #81a3ff");
+    expect(styles).toContain("grid-template-columns: 14rem minmax(0, 1fr)");
+    expect(styles).toContain("@media (pointer: coarse)");
+    expect(styles).toContain("min-height: 2.75rem");
   });
 });

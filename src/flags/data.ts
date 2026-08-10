@@ -208,14 +208,18 @@ function weeklyPerformanceRows(
   });
 }
 
-function performanceFilter<T extends { wrapFlag: boolean; pauseFlag: boolean }>(
+export function performanceFilter<T extends { wrapFlag: boolean; pauseFlag: boolean }>(
   rows: T[],
-  filters: { wrap?: "flagged" | "all"; pause?: "flagged" | "all" },
+  filters: {
+    wrap?: "flagged" | "all";
+    pause?: "flagged" | "all";
+    flaggedOnly?: boolean;
+  },
 ) {
   return rows.filter((row) => {
     if (filters.wrap === "flagged" && !row.wrapFlag) return false;
     if (filters.pause === "flagged" && !row.pauseFlag) return false;
-    return row.wrapFlag || row.pauseFlag;
+    return filters.flaggedOnly === false || row.wrapFlag || row.pauseFlag;
   });
 }
 

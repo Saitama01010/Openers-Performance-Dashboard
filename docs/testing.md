@@ -4,12 +4,15 @@ Local verification:
 
 ```bash
 npm run lint
+npm run typecheck
 npm run test
 npm run build
 npm run db:generate
+npm run db:migrate:upgrade-test
 npm run db:migrate
-npm run db:seed
 npm run db:health
+npm run security:audit
+npm run production:rehearsal
 ```
 
 Database-backed tests fail before test discovery unless the database is
@@ -25,7 +28,25 @@ and explicit `preview` and `production` values respectively.
 
 CI runs the same commands against an isolated MySQL 8.4 service and fails if `db:generate` changes version-controlled migrations.
 
-Current unit coverage includes CSV header normalization, duplicate and corrected rows, aggregate reconciliation, duration formatting, mapping/scope outcomes, authentication security policy, token lifecycle policy, fail-closed authorization, Resend env validation, transactional email rendering, provider selection, reply-to handling, provider message IDs, and duplicate password-reset suppression. Database-backed end-to-end tests for invitation/reset consumption and admin account management remain required before production.
+The release workflow also rehearses the real upgrade path. Set
+`UPGRADE_TEST_DATABASE_URL` to a disposable local/CI schema whose name contains
+standalone `upgrade` and `test` markers, set
+`ALLOW_UPGRADE_MIGRATION_TEST=true`, and run
+`npm run db:migrate:upgrade-test`. The command builds a representative schema at
+migration `0019`, inserts active-version, import, user, team, metric, and audit
+history, upgrades through the current migration, and verifies row counts,
+organization backfills, foreign-key behavior, and the active-version pointer.
+It drops and recreates only the explicitly guarded upgrade-test schema. Never
+point it at development, preview, or production data.
+
+Current coverage includes CSV normalization and reconciliation, authorization,
+authentication policy, invitation/reset consumption and replay, concurrent token
+consumption, durable rate-limit races, admin account management,
+cross-organization rejection, session revocation, email delivery, and import
+lifecycle behavior. Tier 2 adds atomic import/email claims, stale-lease recovery,
+bounded retries, duplicate execution, encrypted outbox tamper handling, provider
+timeouts, retention dry-run/execution, session expiry, health/readiness/version,
+request IDs, pagination bounds, and bulk-import replay/recovery.
 
 Versioned import integration coverage includes permanent draft creation, invalid
 headers, active-data isolation, first publish, superseding, latest rollback,
@@ -48,7 +69,7 @@ zero-reference metric removal; stored-file success, missing-file, and
 cleanup-pending behavior; durable audits; concurrent deletion; concurrent
 activation; database transaction rollback; and targeted history revalidation.
 
-Provisioning coverage also includes authenticated temporary-password encryption and tamper detection, strict user-CSV header mapping and validation, formula-injection blocking, plain-English audit formatting and secret removal, immediate temporary-password authentication, regeneration invalidation, no automatic invitation, and transactional physical deletion of authentication and user-owned application data.
+Provisioning coverage also includes temporary-password encryption and tamper detection, one-time reveal, required first-login password change, strict user-CSV header mapping and validation, formula-injection blocking, plain-English audit formatting and secret removal, regeneration invalidation, no automatic invitation, and transactional physical deletion while retaining security audit evidence.
 
 Phase 2 adds unit coverage for:
 
@@ -64,7 +85,7 @@ Manual acceptance flow:
 2. Create Team Alpha.
 3. Create a manager and an agent assigned to Team Alpha.
 4. Add the agent's dialer name and send the invitation.
-5. Open the console invitation link and let the agent set their password.
+5. Open the invitation delivered to a controlled test inbox and let the agent set their password.
 6. Confirm the agent is redirected away from admin routes and sees only self-scoped data.
 7. Confirm the manager cannot access `/admin/users` and sees only Team Alpha data.
 8. Upload a CSV containing the agent's dialer name.
@@ -85,16 +106,19 @@ Manual Resend verification:
 8. Trigger forgot-password and confirm the reset email opens `/reset-password?token=...`.
 9. Trigger a repeated forgot-password submission before the token expires and confirm it does not send a duplicate email.
 
-The complete verification target remains:
+The complete repository verification target is:
 
 ```bash
 npm run lint
+npm run typecheck
 npm run test
 npm run build
 npm run db:generate
+npm run db:migrate:upgrade-test
 npm run db:migrate
-npm run db:seed
 npm run db:health
+npm run security:audit
+npm run production:rehearsal
 ```
 
 On Windows PowerShell, use `npm.cmd run ...` when script execution policy blocks `npm.ps1`.
@@ -107,7 +131,7 @@ development database.
 Required environment variables:
 
 ```txt
-DATABASE_URL=mysql://user:password@127.0.0.1:3306/openers_dashboard
+DATABASE_URL=mysql://user:password@127.0.0.1:3306/openers_dashboard_runtime_test
 TEST_DATABASE_URL=mysql://user:password@127.0.0.1:3306/openers_dashboard_test
 ALLOW_INTEGRATION_TEST_DATABASE=true
 NODE_ENV=test
@@ -123,14 +147,32 @@ The integration guard in `src/test/integration-env.ts` refuses to run when:
 - the target database name does not include `test`
 - the target looks production-like
 
-Create and migrate the local test database before running integration tests:
+Both URLs must be disposable local databases with `test` in their names and
+must be migrated. Vitest's process-level safety setup can initialize the runtime
+pool before a test file switches to `TEST_DATABASE_URL`; leaving the auxiliary
+`DATABASE_URL` at an older schema produces misleading missing-column failures.
+Never point either URL at the development or production schema.
+
+Create and migrate both local test databases before running integration tests:
 
 ```powershell
 $env:NODE_ENV = "test"
 $env:ALLOW_INTEGRATION_TEST_DATABASE = "true"
+$env:DATABASE_URL = "mysql://user:password@127.0.0.1:3306/openers_dashboard_runtime_test"
 $env:TEST_DATABASE_URL = "mysql://user:password@127.0.0.1:3306/openers_dashboard_test"
 npm run db:migrate:test
+$runtime = $env:DATABASE_URL
+$env:DATABASE_URL = $env:TEST_DATABASE_URL
+$env:TEST_DATABASE_URL = $runtime
+npm run db:migrate:test
+$runtime = $env:DATABASE_URL
+$env:DATABASE_URL = $env:TEST_DATABASE_URL
+$env:TEST_DATABASE_URL = $runtime
 npm run test:integration
 ```
+
+For production-like performance validation, follow the guarded disposable
+fixture and load commands in `production-readiness.md`. Performance data is
+never part of `db:seed` or `db:bootstrap`.
 
 Do not commit real database URLs or local `.env*` files.

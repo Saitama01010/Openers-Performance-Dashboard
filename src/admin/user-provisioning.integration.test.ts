@@ -171,6 +171,7 @@ describe("admin user provisioning integration", () => {
     expect(profile).toMatchObject({
       accountStatus: "active",
       passwordState: "temporary",
+      mustResetPassword: true,
       active: true,
     });
     expect(profile.passwordHash).toBeTruthy();
@@ -193,7 +194,7 @@ describe("admin user provisioning integration", () => {
     );
     expect(
       await authenticateCredentials(profile.email!, temporaryPassword),
-    ).toMatchObject({ ok: true });
+    ).toMatchObject({ ok: true, requiresPasswordChange: true });
 
     const listed = await listAdminUsers(actor(adminId), {
       page: 1,
@@ -207,6 +208,14 @@ describe("admin user provisioning integration", () => {
     expect(
       await revealTemporaryPassword(actor(adminId), created.profileId),
     ).toBe(temporaryPassword);
+    await expect(
+      revealTemporaryPassword(actor(adminId), created.profileId),
+    ).rejects.toThrow("Temporary password is no longer available");
+    const [revealedProfile] = await getDb()
+      .select({ encryptedTemporaryPassword: profiles.encryptedTemporaryPassword })
+      .from(profiles)
+      .where(eq(profiles.id, created.profileId));
+    expect(revealedProfile.encryptedTemporaryPassword).toBeNull();
     const [revealAudit] = await getDb()
       .select()
       .from(auditLogs)
@@ -220,7 +229,11 @@ describe("admin user provisioning integration", () => {
       temporaryPassword,
     );
 
-    await regenerateTemporaryPassword(actor(adminId), created.profileId);
+    await regenerateTemporaryPassword(
+      actor(adminId),
+      created.profileId,
+      "Credential rotation requested by administrator",
+    );
     const replacement = await revealTemporaryPassword(
       actor(adminId),
       created.profileId,
@@ -231,7 +244,53 @@ describe("admin user provisioning integration", () => {
     ).toMatchObject({ ok: false });
     expect(
       await authenticateCredentials(profile.email!, replacement),
-    ).toMatchObject({ ok: true });
+    ).toMatchObject({ ok: true, requiresPasswordChange: true });
+    await expect(
+      revealTemporaryPassword(actor(adminId), created.profileId),
+    ).rejects.toThrow("Temporary password is no longer available");
+
+    const securityAudits = await getDb()
+      .select({ action: auditLogs.action, metadata: auditLogs.metadata })
+      .from(auditLogs)
+      .where(eq(auditLogs.entityId, created.profileId));
+    expect(securityAudits.map((row) => row.action)).toEqual(
+      expect.arrayContaining([
+        "user.temporary_password_viewed",
+        "user.temporary_password_regenerated",
+      ]),
+    );
+    expect(JSON.stringify(securityAudits)).not.toContain(replacement);
+  });
+
+  it("fails closed on a tampered temporary-password ciphertext", async () => {
+    const adminId = await createActorProfile("admin");
+    const teamId = await createTeam();
+    const created = await createAdminUser(actor(adminId), {
+      name: "Tampered Cipher Agent",
+      email: "tampered.cipher@example.test",
+      role: "agent",
+      teamId,
+      dialerName: "Tampered Cipher Dialer",
+      dialerAliases: [],
+      permissionOverrides: [],
+    });
+    profileIds.push(created.profileId);
+
+    await getDb()
+      .update(profiles)
+      .set({ encryptedTemporaryPassword: "v1.invalid.invalid.invalid" })
+      .where(eq(profiles.id, created.profileId));
+
+    await expect(
+      revealTemporaryPassword(actor(adminId), created.profileId),
+    ).rejects.toThrow();
+    const [profile] = await getDb()
+      .select({ encryptedTemporaryPassword: profiles.encryptedTemporaryPassword })
+      .from(profiles)
+      .where(eq(profiles.id, created.profileId));
+    expect(profile.encryptedTemporaryPassword).toBe(
+      "v1.invalid.invalid.invalid",
+    );
   });
 
   it("physically removes the auth account and all user-owned application data", async () => {
@@ -464,6 +523,24 @@ describe("admin user provisioning integration", () => {
         "anything",
       ),
     ).toMatchObject({ ok: false });
+
+    const preservedAudits = await getDb()
+      .select({
+        action: auditLogs.action,
+        organizationId: auditLogs.organizationId,
+        actorDisplayName: auditLogs.actorDisplayName,
+      })
+      .from(auditLogs)
+      .where(eq(auditLogs.entityId, created.profileId));
+    expect(preservedAudits.map((row) => row.action)).toEqual(
+      expect.arrayContaining(["user.created", "user.permanently_deleted"]),
+    );
+    expect(
+      preservedAudits.every(
+        (row) => row.organizationId === DEFAULT_ORGANIZATION_ID,
+      ),
+    ).toBe(true);
+    expect(preservedAudits.some((row) => row.actorDisplayName)).toBe(true);
   });
 
   it("keeps the self-deletion safeguard", async () => {

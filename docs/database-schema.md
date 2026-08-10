@@ -11,7 +11,9 @@ memberships, roles, permissions, user permission overrides, hashed sessions,
 invitation tokens, reset tokens, rate-limit counters, source mappings,
 permanent dialer import batches, staged import rows, immutable dataset versions,
 active dataset scope pointers, hourly dialer metrics, import errors, and audit
-logs.
+logs. Tier 2 adds leased `import_jobs`, encrypted durable `email_outbox` intents,
+persisted import preview/validation results, raw-retention metadata, and
+checkpointed user-import confirmation state.
 
 User provisioning adds encrypted temporary-password state to `profiles` and server-owned `user_import_batches`. The CSV batch stores the original upload for confirmation-time revalidation, is bound to the uploading administrator, expires after 30 minutes, and uses a `processing` state to reject duplicate confirmation races.
 
@@ -33,7 +35,8 @@ Important invariants:
 - Duration metrics are integer seconds.
 - Imported metrics store team ID and name snapshots.
 - Original dialer CSVs are private `LONGTEXT` records and are never publicly
-  addressed.
+  addressed, are size/row bounded, and are selected only for explicit processing
+  or authorized download.
 - Import deletion explicitly removes owned metric, staging, error, version, and
   batch rows in one transaction. Audit rows intentionally have no import foreign
   key, so the metadata-only deletion event survives.
@@ -46,7 +49,24 @@ Important invariants:
   authenticated organization, `active = true`, and null `archived_at` and
   `deleted_at` values.
 
-Future source, commission, and flag tables will be introduced only through additive migrations. Applied migrations must not be edited after release.
+Commissions and performance/transfer flags are implemented on the normalized
+active-version and external-source model. Applied migrations must not be edited
+after release.
+
+## Tier 2 migrations
+
+- `0021_crazy_karnak.sql` adds durable import jobs, the encrypted email outbox,
+  persisted preview/validation payloads, raw-retention metadata, session cleanup
+  indexes, and production query indexes.
+- `0022_bumpy_serpent_society.sql` adds bulk-user-import claim, confirmation
+  hash, durable result checkpoints, and stale-processing recovery metadata.
+- `0023_lethal_vulcan.sql` makes organization teardown cleanly cascade outbox
+  rows while profile deletion still nulls the historical profile reference.
+- `0024_nervous_scrambler.sql` separates available-work and stale-lease indexes
+  for both queues, adds outbox cleanup ordering, and aligns audit action history
+  with mandatory organization scope.
+- `0025_wise_prism.sql` adds date-led and team/date-led active metric indexes
+  justified by the 600-user, 12-month performance fixture.
 
 ## Role dashboard operations migration
 
@@ -78,11 +98,13 @@ Audit metadata must remain safe: never store passwords, password hashes, raw inv
 
 Permanent deletion physically removes the profile row (the local authentication
 account), sessions, invitations, reset tokens, permissions, memberships,
-mappings, imported agent rows, performance metrics, transfer fixtures, delivery
-records, and user-linked audit rows in one transaction. Shared import batches
+mappings, imported agent rows, performance metrics, transfer fixtures, and
+ephemeral delivery records in one transaction. Security audit evidence is
+preserved with a nullable actor reference and display-name snapshot. Shared import batches
 are retained, operator references are cleared or reassigned to the deleting
-administrator, and affected import/version aggregates are recalculated before
-commit. Deactivation and revocation remain separate non-destructive operations.
+administrator, and affected active-version state is reconciled transactionally
+before commit. Deactivation and revocation remain separate non-destructive
+operations.
 
 ## Team contamination cleanup
 

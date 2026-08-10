@@ -1,12 +1,14 @@
 import "server-only";
 
 import { randomBytes, timingSafeEqual } from "crypto";
+import { cache } from "react";
 import { cookies } from "next/headers";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import { profiles, sessions, teamMemberships, teams } from "@/db/schema";
 import { hashOpaqueToken } from "@/auth/security";
+import { getEnv } from "@/env";
 
 export const SESSION_COOKIE_NAME = "op_session";
 
@@ -29,9 +31,31 @@ export function safeTokenEquals(a: string, b: string) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
+export function isSessionUsableAt(
+  session: { expiresAt: Date; lastSeenAt: Date },
+  now: Date,
+  idleMinutes: number,
+) {
+  return (
+    session.expiresAt.getTime() > now.getTime() &&
+    session.lastSeenAt.getTime() + idleMinutes * 60 * 1_000 > now.getTime()
+  );
+}
+
 export async function createSession(profileId: string) {
   const token = createSessionToken();
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
+  const [profile] = await getDb()
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+  if (!profile) throw new Error("Authenticated profile is unavailable.");
+  const env = getEnv();
+  const lifetimeHours =
+    profile.role === "admin"
+      ? env.ADMIN_SESSION_ABSOLUTE_HOURS
+      : env.SESSION_ABSOLUTE_HOURS;
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * lifetimeHours);
 
   await getDb().insert(sessions).values({
     id: sessionIdFromToken(token),
@@ -74,7 +98,7 @@ export async function getCurrentSessionId() {
   return token ? sessionIdFromToken(token) : null;
 }
 
-export async function getCurrentUser() {
+async function getCurrentUserUncached() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
@@ -94,12 +118,43 @@ export async function getCurrentUser() {
     .limit(1);
   const session = sessionRows[0];
 
-  if (!session || session.expiresAt.getTime() <= Date.now()) {
+  const now = Date.now();
+  if (
+    !session ||
+    !isSessionUsableAt(session, new Date(now), getEnv().SESSION_IDLE_MINUTES)
+  ) {
+    if (session) {
+      await getDb()
+        .update(sessions)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(sessions.id, session.id), isNull(sessions.revokedAt)));
+    }
     return null;
   }
 
+  if (session.lastSeenAt.getTime() <= now - 5 * 60 * 1000) {
+    await getDb()
+      .update(sessions)
+      .set({ lastSeenAt: new Date(now) })
+      .where(
+        and(
+          eq(sessions.id, session.id),
+          isNull(sessions.revokedAt),
+          lt(sessions.lastSeenAt, new Date(now - 5 * 60 * 1000)),
+        ),
+      );
+  }
+
   const userRows = await getDb()
-    .select()
+    .select({
+      id: profiles.id,
+      email: profiles.email,
+      name: profiles.name,
+      role: profiles.role,
+      active: profiles.active,
+      accountStatus: profiles.accountStatus,
+      organizationId: profiles.organizationId,
+    })
     .from(profiles)
     .where(eq(profiles.id, session.profileId))
     .limit(1);
@@ -134,3 +189,5 @@ export async function getCurrentUser() {
     organizationId: user.organizationId,
   };
 }
+
+export const getCurrentUser = cache(getCurrentUserUncached);

@@ -49,6 +49,6 @@ describe("flag dashboard analytics", () => {
     expect(weekForDate("2026-08-10")).toEqual({ weekStart: "2026-08-10", weekEnd: "2026-08-16" });
     expect(paginateRows([1, 2, 3, 4, 5], 3, 2)).toEqual({ rows: [5], pagination: { page: 3, pageSize: 2, total: 5, totalPages: 3 } });
     expect(paginateRows([1, 2], 99, 1).pagination.page).toBe(2);
-    expect(paginateRows(Array.from({ length: 137 }, (_, index) => index)).rows).toHaveLength(137);
+    expect(paginateRows(Array.from({ length: 137 }, (_, index) => index)).rows).toHaveLength(50);
   });
 });

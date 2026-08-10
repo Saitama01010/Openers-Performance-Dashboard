@@ -6,23 +6,30 @@ import { getDb } from "@/db";
 import {
   accountInvitationTokens,
   auditLogs,
-  emailDeliveryAttempts,
   passwordResetTokens,
   profiles,
   sessions,
 } from "@/db/schema";
 import { getEnv } from "@/env";
-import { sendInvitationEmail, sendPasswordChangedEmail, sendPasswordResetEmail } from "@/email/provider";
+import { enqueueEmailOutbox } from "@/email/outbox";
 import { newId } from "@/lib/ids";
-import { hashPassword, verifyPassword } from "@/auth/password";
 import {
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  verifyPassword,
+} from "@/auth/password";
+import {
+  MAX_PASSWORD_LENGTH,
   canAuthenticate,
   createOpaqueToken,
   hashOpaqueToken,
+  isValidOpaqueToken,
   normalizeEmail,
   validatePassword,
 } from "@/auth/security";
 import type { Actor } from "@/auth/authorization";
+import { consumeRateLimit } from "@/auth/rate-limit";
+import { actorOrganizationId } from "@/teams/visibility";
 
 const INVALID_CREDENTIALS = "Invalid email or password.";
 const LINK_NO_LONGER_VALID = "This link is no longer valid. Request a new link.";
@@ -43,31 +50,6 @@ function isExpired(expiresAt: Date, now = new Date()) {
   return expiresAt.getTime() <= now.getTime();
 }
 
-async function recordEmailAttempt(input: {
-  profileId?: string;
-  tokenId?: string;
-  messageType: string;
-  recipientEmail: string;
-  provider: string;
-  ok: boolean;
-  acceptedAt?: Date | null;
-  providerMessageId?: string | null;
-  error?: string;
-}) {
-  await getDb().insert(emailDeliveryAttempts).values({
-    id: newId(),
-    profileId: input.profileId,
-    tokenId: input.tokenId,
-    messageType: input.messageType,
-    provider: input.provider,
-    recipientEmail: input.recipientEmail,
-    status: input.ok ? "accepted" : "failed",
-    providerMessageId: input.providerMessageId,
-    acceptedAt: input.acceptedAt,
-    errorMessage: input.error,
-  });
-}
-
 export async function authenticateCredentials(email: string, password: string) {
   const rows = await getDb()
     .select()
@@ -76,13 +58,28 @@ export async function authenticateCredentials(email: string, password: string) {
     .limit(1);
   const profile = rows[0];
 
-  if (!profile?.passwordHash || !(await verifyPassword(password, profile.passwordHash))) {
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return { ok: false, error: INVALID_CREDENTIALS } as const;
+  }
+
+  const passwordMatches = await verifyPassword(
+    password,
+    profile?.passwordHash ?? DUMMY_PASSWORD_HASH,
+  );
+  if (!profile?.passwordHash || !passwordMatches) {
     return { ok: false, error: INVALID_CREDENTIALS } as const;
   }
 
   const policy = canAuthenticate(profile);
 
   if (!policy.allowed) {
+    if (policy.reason === "reset_required") {
+      return {
+        ok: true,
+        profile,
+        requiresPasswordChange: true,
+      } as const;
+    }
     return { ok: false, error: INVALID_CREDENTIALS } as const;
   }
 
@@ -91,7 +88,63 @@ export async function authenticateCredentials(email: string, password: string) {
     .set({ lastLoginAt: new Date() })
     .where(eq(profiles.id, profile.id));
 
-  return { ok: true, profile } as const;
+  return { ok: true, profile, requiresPasswordChange: false } as const;
+}
+
+export async function issueRequiredPasswordChangeToken(profileId: string) {
+  const now = new Date();
+  const token = createOpaqueToken();
+  const tokenId = newId();
+  const expiresAt = new Date(
+    now.getTime() + getEnv().PASSWORD_RESET_TTL_MINUTES * 60 * 1000,
+  );
+
+  await getDb().transaction(async (tx) => {
+    const [profile] = await tx
+      .select({
+        id: profiles.id,
+        active: profiles.active,
+        accountStatus: profiles.accountStatus,
+        mustResetPassword: profiles.mustResetPassword,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, profileId))
+      .limit(1)
+      .for("update");
+    if (
+      !profile ||
+      !profile.active ||
+      profile.accountStatus !== "active" ||
+      !profile.mustResetPassword
+    ) {
+      throw new Error(INVALID_CREDENTIALS);
+    }
+    await tx
+      .update(passwordResetTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(passwordResetTokens.profileId, profile.id),
+          isNull(passwordResetTokens.usedAt),
+          isNull(passwordResetTokens.revokedAt),
+        ),
+      );
+    await tx.insert(passwordResetTokens).values({
+      id: tokenId,
+      profileId: profile.id,
+      tokenHash: hashOpaqueToken(token),
+      expiresAt,
+    });
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: profile.id,
+      action: "user.required_password_change_started",
+      entityType: "profile",
+      entityId: profile.id,
+    });
+  });
+
+  return token;
 }
 
 export async function issueInvitation(input: {
@@ -105,7 +158,10 @@ export async function issueInvitation(input: {
   const profileRows = await getDb()
     .select()
     .from(profiles)
-    .where(eq(profiles.id, input.profileId))
+    .where(and(
+      eq(profiles.id, input.profileId),
+      eq(profiles.organizationId, actorOrganizationId(input.actor)),
+    ))
     .limit(1);
   const profile = profileRows[0];
 
@@ -171,51 +227,25 @@ export async function issueInvitation(input: {
       entityId: profile.id,
       metadata: { expiresAt: expiresAt.toISOString() },
     });
-  });
-
-  try {
-    const result = await sendInvitationEmail({
-      email: recipientEmail,
-      name: profile.name,
-      token,
-      tokenId,
-      resent: pendingInvitations.length > 0,
-    });
-    await recordEmailAttempt({
+    await enqueueEmailOutbox(tx, {
+      organizationId: actorOrganizationId(input.actor),
       profileId: profile.id,
-      tokenId,
+      referenceId: tokenId,
+      recipientEmail,
       messageType:
         pendingInvitations.length > 0
           ? "account_invitation_resent"
           : "account_invitation",
-      recipientEmail,
-      provider: result.provider,
-      ok: true,
-      acceptedAt: result.acceptedAt,
-      providerMessageId: result.providerMessageId,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Email delivery failed.";
-    await getDb().transaction(async (tx) => {
-      await tx
-        .update(accountInvitationTokens)
-        .set({ deliveryStatus: "delivery_failed" })
-        .where(eq(accountInvitationTokens.id, tokenId));
-      await tx.insert(emailDeliveryAttempts).values({
-        id: newId(),
-        profileId: profile.id,
+      idempotencyKey: `account_invitation:${tokenId}`,
+      payload: {
+        kind: "account_invitation",
+        name: profile.name,
+        token,
         tokenId,
-        messageType:
-          pendingInvitations.length > 0
-            ? "account_invitation_resent"
-            : "account_invitation",
-        provider: getEnv().EMAIL_PROVIDER,
-        recipientEmail,
-        status: "failed",
-        errorMessage: message,
-      });
+        resent: pendingInvitations.length > 0,
+      },
     });
-  }
+  });
 
   return { expiresAt };
 }
@@ -223,7 +253,14 @@ export async function issueInvitation(input: {
 export async function inspectInvitationToken(
   token: string,
 ): Promise<{ status: TokenInspectionStatus }> {
-  if (!token) return { status: "invalid" };
+  if (!isValidOpaqueToken(token)) return { status: "invalid" };
+  const inspectionLimit = await consumeRateLimit({
+    scope: "invitation-inspection-token-15m",
+    identifier: token,
+    limit: 30,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (!inspectionLimit.allowed) return { status: "invalid" };
 
   const now = new Date();
   const tokenHash = hashOpaqueToken(token);
@@ -286,6 +323,9 @@ export async function acceptInvitation(input: {
   token: string;
   password: string;
 }) {
+  if (!isValidOpaqueToken(input.token)) {
+    return { ok: false, error: INVITATION_ALREADY_USED } as const;
+  }
   const passwordErrors = validatePassword(input.password);
 
   if (passwordErrors.length > 0) {
@@ -294,7 +334,6 @@ export async function acceptInvitation(input: {
 
   const now = new Date();
   const tokenHash = hashOpaqueToken(input.token);
-  const passwordHash = await hashPassword(input.password);
   const result = await getDb().transaction(async (tx) => {
     const tokenRows = await tx
       .select()
@@ -352,6 +391,8 @@ export async function acceptInvitation(input: {
     if (profile.passwordHash && (await verifyPassword(input.password, profile.passwordHash))) {
       return "password_reused";
     }
+
+    const passwordHash = await hashPassword(input.password);
 
     await tx
       .update(profiles)
@@ -439,6 +480,7 @@ export async function requestPasswordReset(email: string) {
   ) {
     return;
   }
+  const recipientEmail = profile.email;
 
   const now = new Date();
   const token = createOpaqueToken();
@@ -472,42 +514,34 @@ export async function requestPasswordReset(email: string) {
       entityId: profile.id,
       metadata: { expiresAt: expiresAt.toISOString() },
     });
+    await enqueueEmailOutbox(tx, {
+      organizationId: profile.organizationId,
+      profileId: profile.id,
+      referenceId: tokenId,
+      recipientEmail,
+      messageType: "password_reset",
+      idempotencyKey: `password_reset:${tokenId}`,
+      payload: {
+        kind: "password_reset",
+        name: profile.name,
+        token,
+        tokenId,
+      },
+    });
   });
-
-  try {
-    const result = await sendPasswordResetEmail({
-      email: profile.email,
-      name: profile.name,
-      token,
-      tokenId,
-    });
-    await recordEmailAttempt({
-      profileId: profile.id,
-      tokenId,
-      messageType: "password_reset",
-      recipientEmail: profile.email,
-      provider: result.provider,
-      ok: true,
-      acceptedAt: result.acceptedAt,
-      providerMessageId: result.providerMessageId,
-    });
-  } catch (error) {
-    await recordEmailAttempt({
-      profileId: profile.id,
-      tokenId,
-      messageType: "password_reset",
-      recipientEmail: profile.email,
-      provider: getEnv().EMAIL_PROVIDER,
-      ok: false,
-      error: error instanceof Error ? error.message : "Email delivery failed.",
-    });
-  }
 }
 
 export async function inspectPasswordResetToken(
   token: string,
 ): Promise<{ status: TokenInspectionStatus }> {
-  if (!token) return { status: "invalid" };
+  if (!isValidOpaqueToken(token)) return { status: "invalid" };
+  const inspectionLimit = await consumeRateLimit({
+    scope: "reset-inspection-token-15m",
+    identifier: token,
+    limit: 30,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (!inspectionLimit.allowed) return { status: "invalid" };
 
   const now = new Date();
   const tokenHash = hashOpaqueToken(token);
@@ -559,6 +593,9 @@ export async function resetPassword(input: {
   token: string;
   password: string;
 }) {
+  if (!isValidOpaqueToken(input.token)) {
+    return { ok: false, error: RESET_ALREADY_USED } as const;
+  }
   const passwordErrors = validatePassword(input.password);
 
   if (passwordErrors.length > 0) {
@@ -567,7 +604,6 @@ export async function resetPassword(input: {
 
   const now = new Date();
   const tokenHash = hashOpaqueToken(input.token);
-  const passwordHash = await hashPassword(input.password);
   const profile = await getDb().transaction(async (tx) => {
     const tokenRows = await tx
       .select()
@@ -625,6 +661,8 @@ export async function resetPassword(input: {
       return "password_reused";
     }
 
+    const passwordHash = await hashPassword(input.password);
+
     await tx
       .update(profiles)
       .set({
@@ -678,7 +716,16 @@ export async function resetPassword(input: {
       entityType: "profile",
       entityId: currentProfile.id,
     });
-    return { ...currentProfile, email: currentProfile.email };
+    await enqueueEmailOutbox(tx, {
+      organizationId: currentProfile.organizationId,
+      profileId: currentProfile.id,
+      referenceId: currentProfile.id,
+      recipientEmail: currentProfile.email,
+      messageType: "password_changed",
+      idempotencyKey: `password_changed:${currentProfile.id}:${now.toISOString()}`,
+      payload: { kind: "password_changed", name: currentProfile.name },
+    });
+    return "success";
   });
 
   if (profile === "password_reused") {
@@ -691,29 +738,5 @@ export async function resetPassword(input: {
     return { ok: false, error: RESET_ALREADY_USED } as const;
   }
 
-  try {
-    const result = await sendPasswordChangedEmail({
-      email: profile.email,
-      name: profile.name,
-    });
-    await recordEmailAttempt({
-      profileId: profile.id,
-      messageType: "password_changed",
-      recipientEmail: profile.email,
-      provider: result.provider,
-      ok: true,
-      acceptedAt: result.acceptedAt,
-      providerMessageId: result.providerMessageId,
-    });
-  } catch (error) {
-    await recordEmailAttempt({
-      profileId: profile.id,
-      messageType: "password_changed",
-      recipientEmail: profile.email,
-      provider: getEnv().EMAIL_PROVIDER,
-      ok: false,
-      error: error instanceof Error ? error.message : "Email delivery failed.",
-    });
-  }
   return { ok: true } as const;
 }

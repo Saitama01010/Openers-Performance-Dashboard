@@ -7,13 +7,22 @@ duration/call calculations remain supported.
 
 ## Lifecycle
 
-Every upload creates a permanent `dialer_import_batches` record before parsing.
+Every upload creates a permanent `dialer_import_batches` record and durable
+`import_jobs` row before background parsing. The HTTP request validates and
+stores the bounded input, then returns the batch ID; the leased MySQL worker
+performs parsing, comparison, validation, and staging outside the request.
 The original UTF-8 CSV is stored privately in MySQL `LONGTEXT`, with its byte
 size, SHA-256 checksum, original name, database storage location, uploader,
 scope, validation report, publication data, and rollback data. The application
 has no object-storage integration and is self-hosted on Hostinger, so private
 database storage avoids adding a paid dependency. Original files are available
 only through an authenticated, no-store download route.
+
+The worker atomically claims jobs with `FOR UPDATE SKIP LOCKED`, renews a lease,
+recovers stale claims after a crash, and retries only transient failures up to a
+bounded maximum. Processed preview and validation JSON are stored on the batch,
+so reopening review does not parse the raw file again. Batch-job uniqueness and
+version constraints make repeated delivery idempotent.
 
 Batch lifecycle values are:
 
@@ -169,22 +178,19 @@ cleanup-pending metadata without rolling back the database deletion. Shared
 source mappings, users,
 teams, audit events, and unrelated dashboard records are never removed.
 
-Retention defaults live in `src/import/config.ts`:
-
-- Preserve failed imports for 30 days and rejected imports for 30 days as
-  application-level cleanup guidance.
-- Never delete any audit event.
-- Do not automatically delete superseded imports.
-- Keep raw CSVs for the same period as their parsed import rows.
-
-There is intentionally no automatic or bulk cleanup in this release. The
-repository has no reliable scheduled-job mechanism, and bounded single-import
-transactions are easier to audit and recover.
+Retention defaults are validated environment settings. The bounded cleanup
+command scrubs eligible raw CSV content after 120 days by default and removes
+failed/rejected batches after 45 days and abandoned drafts after 14 days.
+Superseded rollback history, active versions, and audit events are never selected
+by generic retention cleanup. Run `npm run cleanup:retention` for dry-run counts
+and schedule `npm run cleanup:retention -- --execute` only as described in
+`production-readiness.md`.
 
 ## Cache behavior
 
 Dashboard and import pages are force-dynamic and there is no SWR, React Query,
-Redis, Vercel, or database-result cache. Server Actions still call targeted
+Redis, Vercel, or shared database-result cache. Current actor/session resolution
+uses request-scoped React memoization only. Server Actions still call targeted
 `revalidatePath` for `/dashboard`, `/import`, and `/admin/imports`. If path
 revalidation fails after the database transaction commits, the database remains
 authoritative and the next force-dynamic request reads the new pointers.
@@ -235,8 +241,9 @@ when legacy import provenance is removed.
 8. Open `/dashboard`, `/import`, and `/admin/imports`.
 9. Resume imports.
 
-No new environment variable is required. Next.js Server Action body size is set
-to 11 MB so the existing 10 MB CSV limit plus multipart overhead is supported.
+Configure the import worker variables from `.env.example` and run a supervised
+worker or scheduled `--once` command. Next.js Server Action body size is set to
+11 MB so the existing 10 MB CSV limit plus multipart overhead is supported.
 
 ### Code-deployment rollback
 

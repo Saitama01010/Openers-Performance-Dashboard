@@ -141,6 +141,48 @@
       "when": 1785994562342,
       "tag": "0019_handy_terrax",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1786273313991,
+      "tag": "0020_romantic_ultimates",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1786281502988,
+      "tag": "0021_crazy_karnak",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1786282052939,
+      "tag": "0022_bumpy_serpent_society",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1786282499089,
+      "tag": "0023_lethal_vulcan",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1786283155675,
+      "tag": "0024_nervous_scrambler",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1786284237260,
+      "tag": "0025_wise_prism",
+      "breakpoints": true
     }
   ]
 }

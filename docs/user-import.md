@@ -19,3 +19,13 @@ third step of the import wizard.
 The legacy `Username,Dialer name,Email` format is not supported. It cannot
 supply the required Shift value, so accepting it would create incomplete users
 or require fabricated data.
+
+Confirmation is intentionally partial-success: each selected row is validated
+and checkpointed as created, skipped, or failed, and the final summary reports
+all three counts. The batch is bound to the uploading administrator and
+organization. A concurrent confirmation cannot claim an active processing
+batch. The same confirmed assignment payload replays its durable result without
+creating another user, and an identical claim left processing for more than ten
+minutes can resume from row checkpoints. Different assignments cannot reuse a
+confirmed or stale batch. Client-facing failures are generic and never include
+SQL/provider details.

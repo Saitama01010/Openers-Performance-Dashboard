@@ -75,13 +75,9 @@ import {
   userPermissionOverrides,
 } from "@/db/schema";
 import { getEnv } from "@/env";
-import {
-  accessRevokedEmail,
-  deliverEmail,
-  invitationEmail,
-  passwordResetEmail,
-} from "@/email/provider";
+import { enqueueEmailOutbox } from "@/email/outbox";
 import { newId } from "@/lib/ids";
+import { redactSecrets } from "@/lib/redaction";
 import {
   actorOrganizationId,
   normalizeTeamName,
@@ -252,13 +248,23 @@ async function writeAudit(input: {
   entityId?: string;
   metadata?: Record<string, unknown>;
 }) {
+  const [actor] = await getDb()
+    .select({
+      organizationId: profiles.organizationId,
+      name: profiles.name,
+    })
+    .from(profiles)
+    .where(eq(profiles.id, input.actorId))
+    .limit(1);
   await getDb().insert(auditLogs).values({
     id: newId(),
+    organizationId: actor?.organizationId,
     actorProfileId: input.actorId,
+    actorDisplayName: actor?.name,
     action: input.action,
     entityType: input.entityType,
     entityId: input.entityId,
-    metadata: input.metadata,
+    metadata: redactSecrets(input.metadata) as Record<string, unknown> | undefined,
   });
 }
 
@@ -280,132 +286,6 @@ async function getActiveAdminCountForUpdate(
     .for("update");
 
   return rows.length;
-}
-
-async function recordEmailAttempt(input: {
-  profileId?: string;
-  tokenId?: string;
-  messageType: string;
-  recipientEmail: string;
-  provider: string;
-  ok: boolean;
-  acceptedAt?: Date | null;
-  providerMessageId?: string | null;
-  error?: string;
-}) {
-  await getDb().insert(emailDeliveryAttempts).values({
-    id: newId(),
-    profileId: input.profileId,
-    tokenId: input.tokenId,
-    messageType: input.messageType,
-    provider: input.provider,
-    recipientEmail: input.recipientEmail,
-    status: input.ok ? "accepted" : "failed",
-    providerMessageId: input.providerMessageId,
-    acceptedAt: input.acceptedAt,
-    errorMessage: input.error,
-  });
-}
-
-async function deliverInvitationAfterCommit(input: {
-  actorId: string;
-  profileId: string;
-  tokenId: string;
-  email: string;
-  name: string;
-  token: string;
-  resent: boolean;
-}) {
-  const result = await deliverEmail(
-    invitationEmail({
-      email: input.email,
-      name: input.name,
-      token: input.token,
-      tokenId: input.tokenId,
-      resent: input.resent,
-    }),
-  );
-
-  await recordEmailAttempt({
-    profileId: input.profileId,
-    tokenId: input.tokenId,
-    messageType: input.resent ? "account_invitation_resent" : "account_invitation",
-    recipientEmail: input.email,
-    provider: result.provider,
-    ok: result.ok,
-    acceptedAt: result.ok ? result.acceptedAt : null,
-    providerMessageId: result.ok ? result.providerMessageId : null,
-    error: result.ok ? undefined : result.error,
-  });
-
-  if (!result.ok) {
-    await getDb()
-      .update(accountInvitationTokens)
-      .set({ deliveryStatus: "delivery_failed" })
-      .where(eq(accountInvitationTokens.id, input.tokenId));
-    await writeAudit({
-      actorId: input.actorId,
-      action: "user.invitation_email_failed",
-      entityType: "profile",
-      entityId: input.profileId,
-    });
-  }
-
-  return result;
-}
-
-async function deliverPasswordResetAfterCommit(input: {
-  profileId: string;
-  tokenId: string;
-  email: string;
-  name: string;
-  token: string;
-}) {
-  const result = await deliverEmail(
-    passwordResetEmail({
-      email: input.email,
-      name: input.name,
-      token: input.token,
-      tokenId: input.tokenId,
-    }),
-  );
-
-  await recordEmailAttempt({
-    profileId: input.profileId,
-    tokenId: input.tokenId,
-    messageType: "password_reset",
-    recipientEmail: input.email,
-    provider: result.provider,
-    ok: result.ok,
-    acceptedAt: result.ok ? result.acceptedAt : null,
-    providerMessageId: result.ok ? result.providerMessageId : null,
-    error: result.ok ? undefined : result.error,
-  });
-
-  return result;
-}
-
-async function sendAccessRevokedNotice(input: {
-  profileId: string;
-  email: string;
-  name: string;
-}) {
-  const result = await deliverEmail(
-    accessRevokedEmail({ email: input.email, name: input.name }),
-  );
-
-  await recordEmailAttempt({
-    profileId: input.profileId,
-    messageType: "access_revoked",
-    recipientEmail: input.email,
-    provider: result.provider,
-    ok: result.ok,
-    acceptedAt: result.ok ? result.acceptedAt : null,
-    providerMessageId: result.ok ? result.providerMessageId : null,
-    error: result.ok ? undefined : result.error,
-  });
-
-  return result;
 }
 
 function listWhere(actor: Actor, filters: AdminUserListFilters) {
@@ -776,6 +656,10 @@ async function hasActiveDialerMapping(
 async function createInvitationRecord(input: {
   profileId: string;
   createdById: string;
+  organizationId: string;
+  email: string;
+  name: string;
+  resent: boolean;
 }) {
   const token = createOpaqueToken();
   const tokenId = newId();
@@ -784,23 +668,40 @@ async function createInvitationRecord(input: {
     now.getTime() + getEnv().INVITATION_TTL_HOURS * 60 * 60 * 1000,
   );
 
-  await getDb()
-    .update(accountInvitationTokens)
-    .set({ revokedAt: now, deliveryStatus: "revoked" })
-    .where(
-      and(
-        eq(accountInvitationTokens.profileId, input.profileId),
-        isNull(accountInvitationTokens.usedAt),
-        isNull(accountInvitationTokens.revokedAt),
-      ),
-    );
-  await getDb().insert(accountInvitationTokens).values({
-    id: tokenId,
-    profileId: input.profileId,
-    tokenHash: hashOpaqueToken(token),
-    createdById: input.createdById,
-    deliveryStatus: "pending",
-    expiresAt,
+  await getDb().transaction(async (tx) => {
+    await tx
+      .update(accountInvitationTokens)
+      .set({ revokedAt: now, deliveryStatus: "revoked" })
+      .where(
+        and(
+          eq(accountInvitationTokens.profileId, input.profileId),
+          isNull(accountInvitationTokens.usedAt),
+          isNull(accountInvitationTokens.revokedAt),
+        ),
+      );
+    await tx.insert(accountInvitationTokens).values({
+      id: tokenId,
+      profileId: input.profileId,
+      tokenHash: hashOpaqueToken(token),
+      createdById: input.createdById,
+      deliveryStatus: "pending",
+      expiresAt,
+    });
+    await enqueueEmailOutbox(tx, {
+      organizationId: input.organizationId,
+      profileId: input.profileId,
+      referenceId: tokenId,
+      recipientEmail: input.email,
+      messageType: input.resent ? "account_invitation_resent" : "account_invitation",
+      idempotencyKey: `account_invitation:${tokenId}`,
+      payload: {
+        kind: "account_invitation",
+        name: input.name,
+        token,
+        tokenId,
+        resent: input.resent,
+      },
+    });
   });
 
   return { token, tokenId, expiresAt };
@@ -922,6 +823,7 @@ async function createProvisionedUser(actor: Actor, input: CreateUserInput) {
       passwordState: "temporary",
       encryptedTemporaryPassword,
       accountStatus: "active",
+      mustResetPassword: true,
       employmentStartDate: input.employmentStartDate || null,
       employmentStatus: "active",
     });
@@ -1016,6 +918,10 @@ export async function createTeamAgent(actor: Actor, input: {
   const invitation = await createInvitationRecord({
     profileId: created.profileId,
     createdById: actor.id,
+    organizationId: actorOrganizationId(actor),
+    email: normalizeEmail(input.email),
+    name: trimText(input.name),
+    resent: false,
   });
   await writeAudit({
     actorId: actor.id,
@@ -1024,59 +930,69 @@ export async function createTeamAgent(actor: Actor, input: {
     entityId: created.profileId,
     metadata: { expiresAt: invitation.expiresAt.toISOString() },
   });
-  const delivery = await deliverInvitationAfterCommit({
-    actorId: actor.id,
-    profileId: created.profileId,
-    tokenId: invitation.tokenId,
-    email: normalizeEmail(input.email),
-    name: trimText(input.name),
-    token: invitation.token,
-    resent: false,
-  });
-  return { ...created, invitationDelivered: delivery.ok };
+  return { ...created, invitationDelivered: true };
 }
 
 export async function revealTemporaryPassword(actor: Actor, userId: string) {
   assertAdmin(actor);
 
-  const rows = await getDb()
-    .select({
-      accountStatus: profiles.accountStatus,
-      passwordState: profiles.passwordState,
-      encryptedTemporaryPassword: profiles.encryptedTemporaryPassword,
-    })
-    .from(profiles)
-    .where(eq(profiles.id, userId))
-    .limit(1);
-  const profile = rows[0];
+  return getDb().transaction(async (tx) => {
+    const [profile] = await tx
+      .select({
+        accountStatus: profiles.accountStatus,
+        passwordState: profiles.passwordState,
+        encryptedTemporaryPassword: profiles.encryptedTemporaryPassword,
+      })
+      .from(profiles)
+      .where(and(
+        eq(profiles.id, userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
+      .limit(1)
+      .for("update");
 
-  if (
-    !profile ||
-    profile.accountStatus === "deleted" ||
-    profile.passwordState !== "temporary" ||
-    !profile.encryptedTemporaryPassword
-  ) {
-    throw new Error("Temporary password is no longer available.");
-  }
+    if (
+      !profile ||
+      profile.accountStatus === "deleted" ||
+      profile.passwordState !== "temporary" ||
+      !profile.encryptedTemporaryPassword
+    ) {
+      throw new Error("Temporary password is no longer available.");
+    }
 
-  const password = decryptTemporaryPassword(profile.encryptedTemporaryPassword);
-  await writeAudit({
-    actorId: actor.id,
-    action: "user.temporary_password_viewed",
-    entityType: "profile",
-    entityId: userId,
+    const password = decryptTemporaryPassword(
+      profile.encryptedTemporaryPassword,
+    );
+    await tx
+      .update(profiles)
+      .set({ encryptedTemporaryPassword: null })
+      .where(and(
+        eq(profiles.id, userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ));
+    await tx.insert(auditLogs).values({
+      id: newId(),
+      actorProfileId: actor.id,
+      action: "user.temporary_password_viewed",
+      entityType: "profile",
+      entityId: userId,
+      metadata: { oneTimeReveal: true },
+    });
+    return password;
   });
-  return password;
 }
 
-export async function regenerateTemporaryPassword(actor: Actor, userId: string) {
+export async function regenerateTemporaryPassword(
+  actor: Actor,
+  userId: string,
+  reason: string,
+) {
   assertAdmin(actor);
 
-  const temporaryPassword = generateTemporaryPassword();
-  const [passwordHash, encryptedTemporaryPassword] = await Promise.all([
-    hashPassword(temporaryPassword),
-    Promise.resolve(encryptTemporaryPassword(temporaryPassword)),
-  ]);
+  const normalizedReason = reason.trim();
+  if (normalizedReason.length < 8 || normalizedReason.length > 500) {
+    throw new Error("Provide a reason between 8 and 500 characters.");
+  }
 
   await getDb().transaction(async (tx) => {
     const rows = await tx
@@ -1086,7 +1002,10 @@ export async function regenerateTemporaryPassword(actor: Actor, userId: string) 
         passwordState: profiles.passwordState,
       })
       .from(profiles)
-      .where(eq(profiles.id, userId))
+      .where(and(
+        eq(profiles.id, userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
     const profile = rows[0];
@@ -1099,6 +1018,12 @@ export async function regenerateTemporaryPassword(actor: Actor, userId: string) 
       throw new Error("Temporary password is no longer available.");
     }
 
+    const temporaryPassword = generateTemporaryPassword();
+    const [passwordHash, encryptedTemporaryPassword] = await Promise.all([
+      hashPassword(temporaryPassword),
+      Promise.resolve(encryptTemporaryPassword(temporaryPassword)),
+    ]);
+
     const now = new Date();
     await tx
       .update(profiles)
@@ -1107,9 +1032,12 @@ export async function regenerateTemporaryPassword(actor: Actor, userId: string) 
         encryptedTemporaryPassword,
         passwordState: "temporary",
         passwordChangedAt: null,
-        mustResetPassword: false,
+        mustResetPassword: true,
       })
-      .where(eq(profiles.id, userId));
+      .where(and(
+        eq(profiles.id, userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ));
     await tx
       .update(sessions)
       .set({ revokedAt: now })
@@ -1120,7 +1048,7 @@ export async function regenerateTemporaryPassword(actor: Actor, userId: string) 
       action: "user.temporary_password_regenerated",
       entityType: "profile",
       entityId: userId,
-      metadata: { sessionsRevoked: true },
+      metadata: { sessionsRevoked: true, reason: normalizedReason },
     });
   });
 }
@@ -1187,7 +1115,7 @@ export async function permanentlyDeleteValidatedUsers(
 
   return getDb().transaction(async (tx) => {
     const actorRows = await tx
-      .select({ id: profiles.id })
+      .select({ id: profiles.id, name: profiles.name })
       .from(profiles)
       .where(and(
         eq(profiles.id, actor.id),
@@ -1265,6 +1193,19 @@ export async function permanentlyDeleteValidatedUsers(
     const emails = rows.flatMap((profile) =>
       profile.email ? [profile.email] : [],
     );
+    for (const profile of rows) {
+      await tx
+        .update(auditLogs)
+        .set({
+          organizationId: actorOrganizationId(actor),
+          actorDisplayName: profile.name,
+        })
+        .where(eq(auditLogs.actorProfileId, profile.id));
+    }
+    await tx
+      .update(auditLogs)
+      .set({ organizationId: actorOrganizationId(actor) })
+      .where(inArray(auditLogs.entityId, userIds));
     const [metricReferences, importRowReferences] = await Promise.all([
       tx
         .select({
@@ -1535,13 +1476,6 @@ export async function permanentlyDeleteValidatedUsers(
           .where(inArray(coachingSessions.id, emptiedCoachingSessionIds));
       }
     }
-    await tx
-      .delete(auditLogs)
-      .where(or(
-        inArray(auditLogs.actorProfileId, userIds),
-        inArray(auditLogs.entityId, userIds),
-      ));
-
     for (const versionId of affectedVersionIds) {
       const [totals] = await tx
         .select({
@@ -1587,10 +1521,24 @@ export async function permanentlyDeleteValidatedUsers(
     }
 
     await tx.delete(profiles).where(inArray(profiles.id, userIds));
+    await tx.insert(auditLogs).values(
+      rows.map((profile) => ({
+        id: newId(),
+        organizationId: actorOrganizationId(actor),
+        actorProfileId: actor.id,
+        actorDisplayName: actorRows[0].name,
+        action: "user.permanently_deleted",
+        entityType: "profile",
+        entityId: profile.id,
+        metadata: { targetDisplayName: profile.name },
+      })),
+    );
     await tx.insert(auditLogs).values({
       id: newId(),
+      organizationId: actorOrganizationId(actor),
       actorProfileId: actor.id,
-      action: "user.permanently_deleted",
+      actorDisplayName: actorRows[0].name,
+      action: "user.bulk_permanently_deleted",
       entityType: "profile_batch",
       metadata: {
         deletedCount: userIds.length,
@@ -1759,7 +1707,10 @@ export async function updateUserEmail(
           accountStatus: profiles.accountStatus,
         })
         .from(profiles)
-        .where(eq(profiles.id, input.userId))
+        .where(and(
+          eq(profiles.id, input.userId),
+          eq(profiles.organizationId, actorOrganizationId(actor)),
+        ))
         .limit(1)
         .for("update");
       const profile = profileRows[0];
@@ -1808,7 +1759,10 @@ export async function updateUserEmail(
       await tx
         .update(profiles)
         .set({ email })
-        .where(eq(profiles.id, input.userId));
+        .where(and(
+          eq(profiles.id, input.userId),
+          eq(profiles.organizationId, actorOrganizationId(actor)),
+        ));
       await tx.insert(auditLogs).values({
         id: newId(),
         actorProfileId: actor.id,
@@ -1904,7 +1858,10 @@ export async function updateUserPrimaryDialerName(
       const profileRows = await tx
         .select({ id: profiles.id, accountStatus: profiles.accountStatus })
         .from(profiles)
-        .where(eq(profiles.id, input.userId))
+        .where(and(
+          eq(profiles.id, input.userId),
+          eq(profiles.organizationId, actorOrganizationId(actor)),
+        ))
         .limit(1)
         .for("update");
       const profile = profileRows[0];
@@ -2218,7 +2175,10 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
     const profileRows = await tx
       .select()
       .from(profiles)
-      .where(eq(profiles.id, input.userId))
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
     const profile = profileRows[0];
@@ -2254,7 +2214,10 @@ export async function updateAdminUser(actor: Actor, input: UpdateUserInput) {
     await tx
       .update(profiles)
       .set({ name, email, role: input.role, shift })
-      .where(eq(profiles.id, input.userId));
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ));
 
     await tx
       .update(teamMemberships)
@@ -2332,7 +2295,10 @@ export async function sendOrResendInvitation(actor: Actor, userId: string) {
   const profileRows = await getDb()
     .select()
     .from(profiles)
-    .where(eq(profiles.id, userId))
+    .where(and(
+      eq(profiles.id, userId),
+      eq(profiles.organizationId, actorOrganizationId(actor)),
+    ))
     .limit(1);
   const profile = profileRows[0];
 
@@ -2362,6 +2328,10 @@ export async function sendOrResendInvitation(actor: Actor, userId: string) {
   const invitation = await createInvitationRecord({
     profileId: userId,
     createdById: actor.id,
+    organizationId: actorOrganizationId(actor),
+    email: recipientEmail,
+    name: profile.name,
+    resent: previousRows.length > 0,
   });
 
   await writeAudit({
@@ -2372,21 +2342,23 @@ export async function sendOrResendInvitation(actor: Actor, userId: string) {
     metadata: { expiresAt: invitation.expiresAt.toISOString() },
   });
 
-  return deliverInvitationAfterCommit({
-    actorId: actor.id,
-    profileId: userId,
-    tokenId: invitation.tokenId,
-    email: recipientEmail,
-    name: profile.name,
-    token: invitation.token,
-    resent: previousRows.length > 0,
-  });
+  return { ok: true as const, queued: true as const };
 }
 
 export async function revokeInvitation(actor: Actor, userId: string) {
   assertAdmin(actor);
 
   await getDb().transaction(async (tx) => {
+    const [target] = await tx
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(and(
+        eq(profiles.id, userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
+      .limit(1)
+      .for("update");
+    if (!target) throw new Error("User was not found.");
     await tx
       .update(accountInvitationTokens)
       .set({ revokedAt: new Date(), deliveryStatus: "revoked" })
@@ -2416,11 +2388,14 @@ export async function forcePasswordReset(actor: Actor, input: {
   const token = createOpaqueToken();
   const tokenId = newId();
 
-  const profile = await getDb().transaction(async (tx) => {
+  await getDb().transaction(async (tx) => {
     const rows = await tx
       .select()
       .from(profiles)
-      .where(eq(profiles.id, input.userId))
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
     const current = rows[0];
@@ -2455,7 +2430,10 @@ export async function forcePasswordReset(actor: Actor, input: {
     await tx
       .update(profiles)
       .set({ mustResetPassword: true })
-      .where(eq(profiles.id, input.userId));
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ));
 
     if (input.revokeSessions) {
       await tx
@@ -2472,17 +2450,23 @@ export async function forcePasswordReset(actor: Actor, input: {
       entityId: input.userId,
       metadata: { sessionsRevoked: input.revokeSessions },
     });
-
-    return resetProfile;
+    await enqueueEmailOutbox(tx, {
+      organizationId: actorOrganizationId(actor),
+      profileId: resetProfile.id,
+      referenceId: tokenId,
+      recipientEmail: resetProfile.email,
+      messageType: "password_reset",
+      idempotencyKey: `password_reset:${tokenId}`,
+      payload: {
+        kind: "password_reset",
+        name: resetProfile.name,
+        token,
+        tokenId,
+      },
+    });
   });
 
-  return deliverPasswordResetAfterCommit({
-    profileId: profile.id,
-    tokenId,
-    email: profile.email,
-    name: profile.name,
-    token,
-  });
+  return { ok: true as const, queued: true as const };
 }
 
 export async function setUserAccountStatus(actor: Actor, input: {
@@ -2491,13 +2475,14 @@ export async function setUserAccountStatus(actor: Actor, input: {
 }) {
   assertAdmin(actor);
 
-  let revokedNotice: { profileId: string; email: string; name: string } | null = null;
-
   await getDb().transaction(async (tx) => {
     const rows = await tx
       .select()
       .from(profiles)
-      .where(eq(profiles.id, input.userId))
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
     const profile = rows[0];
@@ -2532,7 +2517,10 @@ export async function setUserAccountStatus(actor: Actor, input: {
         accountStatus: input.status,
         accessRevokedAt: input.status === "revoked" ? now : null,
       })
-      .where(eq(profiles.id, input.userId));
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ));
 
     if (input.status !== "active") {
       await tx
@@ -2563,7 +2551,15 @@ export async function setUserAccountStatus(actor: Actor, input: {
           ),
         );
       if (profile.email) {
-        revokedNotice = { profileId: profile.id, email: profile.email, name: profile.name };
+        await enqueueEmailOutbox(tx, {
+          organizationId: actorOrganizationId(actor),
+          profileId: profile.id,
+          referenceId: profile.id,
+          recipientEmail: profile.email,
+          messageType: "access_revoked",
+          idempotencyKey: `access_revoked:${profile.id}:${now.toISOString()}`,
+          payload: { kind: "access_revoked", name: profile.name },
+        });
       }
     }
 
@@ -2582,9 +2578,6 @@ export async function setUserAccountStatus(actor: Actor, input: {
     });
   });
 
-  if (revokedNotice) {
-    await sendAccessRevokedNotice(revokedNotice);
-  }
 }
 
 export async function revokeUserSessions(actor: Actor, input: {
@@ -2592,6 +2585,16 @@ export async function revokeUserSessions(actor: Actor, input: {
   includeCurrentSession: boolean;
 }) {
   assertAdmin(actor);
+
+  const [target] = await getDb()
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(and(
+      eq(profiles.id, input.userId),
+      eq(profiles.organizationId, actorOrganizationId(actor)),
+    ))
+    .limit(1);
+  if (!target) throw new Error("User was not found.");
 
   const currentSessionId =
     actor.id === input.userId && !input.includeCurrentSession
@@ -2636,7 +2639,10 @@ export async function addDialerMapping(actor: Actor, input: {
     const profileRows = await tx
       .select({ id: profiles.id })
       .from(profiles)
-      .where(eq(profiles.id, input.userId))
+      .where(and(
+        eq(profiles.id, input.userId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
 
@@ -2692,12 +2698,16 @@ export async function editDialerMapping(actor: Actor, input: {
 
   await getDb().transaction(async (tx) => {
     const rows = await tx
-      .select()
+      .select({ mapping: sourceUserMappings })
       .from(sourceUserMappings)
-      .where(eq(sourceUserMappings.id, input.mappingId))
+      .innerJoin(profiles, eq(profiles.id, sourceUserMappings.profileId))
+      .where(and(
+        eq(sourceUserMappings.id, input.mappingId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
-    const mapping = rows[0];
+    const mapping = rows[0]?.mapping;
 
     if (!mapping || !mapping.active) {
       throw new Error("Active mapping was not found.");
@@ -2769,12 +2779,16 @@ export async function deactivateDialerMapping(actor: Actor, mappingId: string) {
 
   await getDb().transaction(async (tx) => {
     const rows = await tx
-      .select()
+      .select({ mapping: sourceUserMappings })
       .from(sourceUserMappings)
-      .where(eq(sourceUserMappings.id, mappingId))
+      .innerJoin(profiles, eq(profiles.id, sourceUserMappings.profileId))
+      .where(and(
+        eq(sourceUserMappings.id, mappingId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
-    const mapping = rows[0];
+    const mapping = rows[0]?.mapping;
 
     if (!mapping) throw new Error("Mapping was not found.");
 
@@ -2805,12 +2819,16 @@ export async function setPrimaryDialerMapping(actor: Actor, mappingId: string) {
 
   await getDb().transaction(async (tx) => {
     const rows = await tx
-      .select()
+      .select({ mapping: sourceUserMappings })
       .from(sourceUserMappings)
-      .where(eq(sourceUserMappings.id, mappingId))
+      .innerJoin(profiles, eq(profiles.id, sourceUserMappings.profileId))
+      .where(and(
+        eq(sourceUserMappings.id, mappingId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ))
       .limit(1)
       .for("update");
-    const mapping = rows[0];
+    const mapping = rows[0]?.mapping;
 
     if (!mapping || !mapping.active) throw new Error("Active mapping was not found.");
 
@@ -2859,6 +2877,7 @@ export async function getUnmappedDialerNames(actor: Actor) {
     .where(
       and(
         eq(importErrors.status, "unknown"),
+        eq(dialerImportBatches.organizationId, actorOrganizationId(actor)),
         inArray(dialerImportBatches.status, [
           "draft",
           "validation_failed",
@@ -3365,6 +3384,13 @@ export async function listAuditLogs(actor: Actor) {
     })
     .from(auditLogs)
     .leftJoin(profiles, eq(profiles.id, auditLogs.actorProfileId))
+    .where(or(
+      eq(auditLogs.organizationId, actorOrganizationId(actor)),
+      and(
+        isNull(auditLogs.organizationId),
+        eq(profiles.organizationId, actorOrganizationId(actor)),
+      ),
+    ))
     .orderBy(desc(auditLogs.createdAt))
     .limit(100);
 }

@@ -34,10 +34,13 @@ vi.mock("@/admin/data", () => ({
 
 import { DELETE, GET, PATCH } from "@/app/api/admin/users/[userId]/route";
 
-const context = { params: Promise.resolve({ userId: "user-1" }) };
+const USER_ID = "00000000-0000-4000-8000-000000000201";
+const TEAM_ID = "00000000-0000-4000-8000-000000000101";
+const TARGET_TEAM_ID = "00000000-0000-4000-8000-000000000102";
+const context = { params: Promise.resolve({ userId: USER_ID }) };
 
 function patchRequest(body: unknown, origin = "http://localhost:3000") {
-  return new Request("http://localhost:3000/api/admin/users/user-1", {
+  return new Request(`http://localhost:3000/api/admin/users/${USER_ID}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -73,7 +76,7 @@ describe("admin user inline API", () => {
     });
     mocks.moveUserToTeam.mockResolvedValue({
       field: "teamId",
-      value: "team-2",
+      value: TARGET_TEAM_ID,
       teamName: "Team Two",
       changed: true,
     });
@@ -84,13 +87,13 @@ describe("admin user inline API", () => {
     });
     mocks.getAdminUserDetails.mockResolvedValue({
       profile: {
-        id: "user-1",
+        id: USER_ID,
         name: "Example User",
         email: "example@test.local",
         role: "agent",
         shift: "Evening",
       },
-      activeMembership: { teamId: "team-1", teamName: "Team One" },
+      activeMembership: { teamId: TEAM_ID, teamName: "Team One" },
       overrides: [
         { permissionKey: "imports.preview", allowed: true },
       ],
@@ -108,14 +111,14 @@ describe("admin user inline API", () => {
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(mocks.updateUserEmail).toHaveBeenCalledWith(
       expect.objectContaining({ id: "admin-1", role: "admin" }),
-      { userId: "user-1", email: " NEW@example.test " },
+      { userId: USER_ID, email: " NEW@example.test " },
     );
     expect(mocks.updateUserPrimaryDialerName).not.toHaveBeenCalled();
     expect(mocks.moveUserToTeam).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/users");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/teams");
     expect(mocks.revalidatePath).toHaveBeenCalledWith(
-      "/admin/users/user-1",
+      `/admin/users/${USER_ID}`,
     );
   });
 
@@ -129,20 +132,20 @@ describe("admin user inline API", () => {
       context,
     );
     await PATCH(
-      patchRequest({ field: "teamId", value: "team-2" }),
+      patchRequest({ field: "teamId", value: TARGET_TEAM_ID }),
       context,
     );
 
     expect(mocks.updateUserPrimaryDialerName).toHaveBeenCalledWith(
       expect.anything(),
-      { userId: "user-1", dialerName: "New Dialer" },
+      { userId: USER_ID, dialerName: "New Dialer" },
     );
     expect(mocks.moveUserToTeam).toHaveBeenCalledWith(expect.anything(), {
-      userId: "user-1",
-      teamId: "team-2",
+      userId: USER_ID,
+      teamId: TARGET_TEAM_ID,
     });
     expect(mocks.updateUserShift).toHaveBeenCalledWith(expect.anything(), {
-      userId: "user-1",
+      userId: USER_ID,
       shift: "Evening",
     });
   });
@@ -205,7 +208,7 @@ describe("admin user inline API", () => {
   it("returns an administrator-only quick preview using trusted user details", async () => {
     mocks.getAdminUserDetails.mockResolvedValue({
       profile: {
-        id: "user-1",
+        id: USER_ID,
         name: "Example User",
         email: "example@test.local",
         role: "agent",
@@ -216,7 +219,7 @@ describe("admin user inline API", () => {
         updatedAt: new Date("2026-08-02T10:00:00Z"),
         lastLoginAt: new Date("2026-08-03T10:00:00Z"),
       },
-      activeMembership: { teamId: "team-1", teamName: "Team One" },
+      activeMembership: { teamId: TEAM_ID, teamName: "Team One" },
       invitationStatus: "accepted",
       activeSessionCount: 2,
       mappings: [{ active: true, isPrimary: true, sourceAgentName: "Example" }],
@@ -224,13 +227,13 @@ describe("admin user inline API", () => {
       audits: [{ id: "audit-1", action: "user_updated", metadata: null, createdAt: new Date("2026-08-03T11:00:00Z") }],
     });
 
-    const response = await GET(new Request("http://localhost:3000/api/admin/users/user-1"), context);
+    const response = await GET(new Request(`http://localhost:3000/api/admin/users/${USER_ID}`), context);
     const payload = await response.json();
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(mocks.getAdminUserDetails).toHaveBeenCalledWith(expect.objectContaining({ role: "admin" }), "user-1");
-    expect(payload.user).toMatchObject({ id: "user-1", americanName: "Example", team: "Team One", activeSessionCount: 2 });
+    expect(mocks.getAdminUserDetails).toHaveBeenCalledWith(expect.objectContaining({ role: "admin" }), USER_ID);
+    expect(payload.user).toMatchObject({ id: USER_ID, americanName: "Example", team: "Team One", activeSessionCount: 2 });
     expect(payload.overrides).toEqual([{ permissionKey: "imports.preview", allowed: true }]);
     expect(payload.activity).toHaveLength(1);
   });
@@ -238,7 +241,7 @@ describe("admin user inline API", () => {
   it("rejects a non-admin quick-preview request before reading user details", async () => {
     mocks.getCurrentUser.mockResolvedValue({ id: "agent-1", role: "agent", teamIds: [] });
 
-    const response = await GET(new Request("http://localhost:3000/api/admin/users/user-1"), context);
+    const response = await GET(new Request(`http://localhost:3000/api/admin/users/${USER_ID}`), context);
 
     expect(response.status).toBe(403);
     expect(mocks.getAdminUserDetails).not.toHaveBeenCalled();
@@ -254,11 +257,11 @@ describe("admin user inline API", () => {
     expect(mocks.updateAdminUser).toHaveBeenCalledWith(
       expect.objectContaining({ id: "admin-1", role: "admin" }),
       {
-        userId: "user-1",
+        userId: USER_ID,
         name: "Example User",
         email: "example@test.local",
         role: "manager",
-        teamId: "team-1",
+        teamId: TEAM_ID,
         shift: "Evening",
         permissionOverrides: [
           { permissionKey: "imports.preview", value: "allow" },
@@ -280,7 +283,7 @@ describe("admin user inline API", () => {
 
   it("permanently deletes without requiring a confirmation email body", async () => {
     const response = await DELETE(
-      new Request("http://localhost:3000/api/admin/users/user-1", {
+      new Request(`http://localhost:3000/api/admin/users/${USER_ID}`, {
         method: "DELETE",
         headers: { Origin: "http://localhost:3000" },
       }),
@@ -291,7 +294,7 @@ describe("admin user inline API", () => {
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(mocks.permanentlyDeleteUser).toHaveBeenCalledWith(
       expect.objectContaining({ id: "admin-1", role: "admin" }),
-      { userId: "user-1" },
+      { userId: USER_ID },
     );
   });
 
@@ -301,7 +304,7 @@ describe("admin user inline API", () => {
     );
 
     const response = await DELETE(
-      new Request("http://localhost:3000/api/admin/users/user-1", {
+      new Request(`http://localhost:3000/api/admin/users/${USER_ID}`, {
         method: "DELETE",
         headers: { Origin: "http://localhost:3000" },
       }),

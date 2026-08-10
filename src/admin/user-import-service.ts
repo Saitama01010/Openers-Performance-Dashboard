@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { createAdminUser } from "@/admin/data";
 import { roleRequiresTeam } from "@/admin/policy";
@@ -37,7 +37,13 @@ async function validationContext(actor: Actor) {
     getDb()
       .select({ name: sourceUserMappings.normalizedAgentName })
       .from(sourceUserMappings)
-      .where(eq(sourceUserMappings.active, true)),
+      .innerJoin(profiles, eq(profiles.id, sourceUserMappings.profileId))
+      .where(
+        and(
+          eq(sourceUserMappings.active, true),
+          eq(profiles.organizationId, actorOrganizationId(actor)),
+        ),
+      ),
     getDb()
       .select({ id: teams.id, name: teams.name, active: teams.active })
       .from(teams)
@@ -75,6 +81,7 @@ export async function createUserImportPreview(input: {
   const batchId = newId();
   await getDb().insert(userImportBatches).values({
     id: batchId,
+    organizationId: actorOrganizationId(input.actor),
     fileName: input.fileName,
     fileHash: createHash("sha256").update(input.content).digest("hex"),
     uploadedById: input.actor.id,
@@ -114,30 +121,65 @@ export async function confirmUserImport(input: {
     }
     assignmentByRow.set(assignment.rowNumber, assignment);
   }
+  const confirmationHash = createHash("sha256")
+    .update(
+      JSON.stringify(
+        [...input.assignments]
+          .sort((left, right) => left.rowNumber - right.rowNumber)
+          .map(({ rowNumber, selected, role, teamId }) => ({
+            rowNumber,
+            selected,
+            role,
+            teamId,
+          })),
+      ),
+    )
+    .digest("hex");
+  const staleBefore = new Date(now.getTime() - 10 * 60 * 1000);
 
-  const batch = await getDb().transaction(async (tx) => {
+  const claimed = await getDb().transaction(async (tx) => {
     const batchRows = await tx
       .select()
       .from(userImportBatches)
       .where(
         and(
           eq(userImportBatches.id, input.batchId),
+          eq(userImportBatches.organizationId, actorOrganizationId(input.actor)),
           eq(userImportBatches.uploadedById, input.actor.id),
-          eq(userImportBatches.status, "previewed"),
-          gt(userImportBatches.expiresAt, now),
         ),
       )
       .limit(1)
       .for("update");
-    const claimed = batchRows[0];
-    if (!claimed) return null;
+    const batch = batchRows[0];
+    if (!batch) return null;
+    if (batch.status === "confirmed") {
+      return batch.confirmationHash === confirmationHash
+        ? { batch, replay: true as const }
+        : null;
+    }
+    const recoverable =
+      batch.status === "processing" &&
+      batch.confirmationHash === confirmationHash &&
+      Boolean(batch.processingStartedAt && batch.processingStartedAt < staleBefore);
+    if (
+      batch.expiresAt <= now ||
+      (batch.status !== "previewed" && !recoverable)
+    ) {
+      return null;
+    }
     await tx
       .update(userImportBatches)
-      .set({ status: "processing" })
-      .where(eq(userImportBatches.id, claimed.id));
-    return claimed;
+      .set({
+        status: "processing",
+        processingStartedAt: now,
+        confirmationHash,
+        resultSummary: batch.resultSummary ?? { outcomes: [] },
+      })
+      .where(eq(userImportBatches.id, batch.id));
+    return { batch, replay: false as const };
   });
-  if (!batch) throw new Error("This import preview is invalid or expired.");
+  if (!claimed) throw new Error("This import preview is invalid, busy, or expired.");
+  const batch = claimed.batch;
 
   const context = await validationContext(input.actor);
   const preview = parseUserImportCsv({
@@ -161,42 +203,87 @@ export async function confirmUserImport(input: {
     status: "created" | "skipped" | "failed";
     reason?: string;
   }[] = [];
+  const existingOutcomes = new Map(
+    (batch.resultSummary?.outcomes ?? []).map((outcome) => [outcome.rowNumber, outcome]),
+  );
+
+  if (claimed.replay) {
+    const replayOutcomes = Array.from(existingOutcomes.values()).sort(
+      (left, right) => left.rowNumber - right.rowNumber,
+    );
+    return {
+      preview,
+      outcomes: replayOutcomes,
+      summary: {
+        created: replayOutcomes.filter((outcome) => outcome.status === "created").length,
+        skipped: replayOutcomes.filter((outcome) => outcome.status === "skipped").length,
+        failed: replayOutcomes.filter((outcome) => outcome.status === "failed").length,
+      },
+    };
+  }
+
+  async function checkpoint(outcome: (typeof outcomes)[number]) {
+    existingOutcomes.set(outcome.rowNumber, outcome);
+    await getDb()
+      .update(userImportBatches)
+      .set({ resultSummary: { outcomes: Array.from(existingOutcomes.values()) } })
+      .where(
+        and(
+          eq(userImportBatches.id, batch.id),
+          eq(userImportBatches.status, "processing"),
+          eq(userImportBatches.confirmationHash, confirmationHash),
+        ),
+      );
+  }
 
   for (const row of preview.rows) {
+    const previousOutcome = existingOutcomes.get(row.rowNumber);
+    if (previousOutcome) {
+      outcomes.push(previousOutcome);
+      continue;
+    }
     const assignment = assignmentByRow.get(row.rowNumber);
     if (!assignment?.selected) {
-      outcomes.push({
+      const outcome = {
         rowNumber: row.rowNumber,
-        status: "skipped",
+        status: "skipped" as const,
         reason: "Not selected for import.",
-      });
+      };
+      outcomes.push(outcome);
+      await checkpoint(outcome);
       continue;
     }
     if (!row.validForAssignment) {
-      outcomes.push({
+      const outcome = {
         rowNumber: row.rowNumber,
-        status: "skipped",
+        status: "skipped" as const,
         reason: row.errors.join(" "),
-      });
+      };
+      outcomes.push(outcome);
+      await checkpoint(outcome);
       continue;
     }
     if (
       !assignment.role ||
       (roleRequiresTeam(assignment.role) && !assignment.teamId)
     ) {
-      outcomes.push({
+      const outcome = {
         rowNumber: row.rowNumber,
-        status: "skipped",
+        status: "skipped" as const,
         reason: "Assign a valid role and, when required, an active team before import.",
-      });
+      };
+      outcomes.push(outcome);
+      await checkpoint(outcome);
       continue;
     }
     if (assignment.teamId && !activeTeams.has(assignment.teamId)) {
-      outcomes.push({
+      const outcome = {
         rowNumber: row.rowNumber,
-        status: "skipped",
+        status: "skipped" as const,
         reason: "The selected team is inactive or no longer exists.",
-      });
+      };
+      outcomes.push(outcome);
+      await checkpoint(outcome);
       continue;
     }
 
@@ -212,18 +299,36 @@ export async function confirmUserImport(input: {
         permissionOverrides: [],
         importBatchId: batch.id,
       });
-      outcomes.push({
+      const outcome = {
         rowNumber: row.rowNumber,
         userId: created.profileId,
-        status: "created",
-      });
-    } catch (error) {
-      outcomes.push({
-        rowNumber: row.rowNumber,
-        status: "failed",
-        reason:
-          error instanceof Error ? error.message : "User creation failed.",
-      });
+        status: "created" as const,
+      };
+      outcomes.push(outcome);
+      await checkpoint(outcome);
+    } catch {
+      const [recovered] = await getDb()
+        .select({ id: profiles.id })
+        .from(profiles)
+        .innerJoin(auditLogs, eq(auditLogs.entityId, profiles.id))
+        .where(
+          and(
+            eq(profiles.organizationId, actorOrganizationId(input.actor)),
+            eq(profiles.email, row.email),
+            eq(auditLogs.action, "user.imported"),
+            sql`json_unquote(json_extract(${auditLogs.metadata}, '$.after.importBatchId')) = ${batch.id}`,
+          ),
+        )
+        .limit(1);
+      const outcome = recovered
+        ? { rowNumber: row.rowNumber, userId: recovered.id, status: "created" as const }
+        : {
+            rowNumber: row.rowNumber,
+            status: "failed" as const,
+            reason: "The user could not be created.",
+          };
+      outcomes.push(outcome);
+      await checkpoint(outcome);
     }
   }
 
@@ -234,7 +339,12 @@ export async function confirmUserImport(input: {
   await getDb().transaction(async (tx) => {
     await tx
       .update(userImportBatches)
-      .set({ status: "confirmed", confirmedAt: now })
+      .set({
+        status: "confirmed",
+        confirmedAt: now,
+        processingStartedAt: null,
+        resultSummary: { outcomes },
+      })
       .where(eq(userImportBatches.id, batch.id));
     await tx.insert(auditLogs).values({
       id: newId(),

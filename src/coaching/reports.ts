@@ -252,7 +252,8 @@ export async function listCoachingReportsForCurrentActor(actor: CurrentActor) {
       ),
     )
     .where(and(...conditions))
-    .orderBy(desc(coachingSessions.sessionDate), desc(coachingReports.updatedAt));
+    .orderBy(desc(coachingSessions.sessionDate), desc(coachingReports.updatedAt))
+    .limit(200);
   const coachIds = Array.from(new Set(rows.map((row) => row.coachProfileId)));
   const coachRows = coachIds.length
     ? await getDb()

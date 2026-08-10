@@ -27,10 +27,13 @@ vi.mock("@/admin/data", () => ({
 import { GET, PATCH } from "./route";
 
 const actor = { id: "admin-1", role: "admin", teamIds: [], organizationId: "org-1" };
-const context = { params: Promise.resolve({ teamId: "team-1" }) };
+const TEAM_ID = "00000000-0000-4000-8000-000000000101";
+const TARGET_TEAM_ID = "00000000-0000-4000-8000-000000000102";
+const USER_ID = "00000000-0000-4000-8000-000000000201";
+const context = { params: Promise.resolve({ teamId: TEAM_ID }) };
 
 function patch(body: unknown) {
-  return new Request("http://localhost:3000/api/admin/teams/team-1", {
+  return new Request(`http://localhost:3000/api/admin/teams/${TEAM_ID}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Origin: "http://localhost:3000" },
     body: JSON.stringify(body),
@@ -45,13 +48,13 @@ describe("admin team details API", () => {
   });
 
   it("returns administrator-scoped details without caching", async () => {
-    mocks.getAdminTeamDetails.mockResolvedValue({ team: { id: "team-1", name: "East Openers" } });
+    mocks.getAdminTeamDetails.mockResolvedValue({ team: { id: TEAM_ID, name: "East Openers" } });
 
-    const response = await GET(new Request("http://localhost:3000/api/admin/teams/team-1"), context);
+    const response = await GET(new Request(`http://localhost:3000/api/admin/teams/${TEAM_ID}`), context);
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(mocks.getAdminTeamDetails).toHaveBeenCalledWith(actor, "team-1", {
+    expect(mocks.getAdminTeamDetails).toHaveBeenCalledWith(actor, TEAM_ID, {
       memberPage: 1,
       memberPageSize: 25,
       memberQuery: "",
@@ -61,17 +64,17 @@ describe("admin team details API", () => {
   it("rejects non-admin reads before loading details", async () => {
     mocks.getCurrentUser.mockResolvedValue({ ...actor, role: "manager" });
 
-    const response = await GET(new Request("http://localhost:3000/api/admin/teams/team-1"), context);
+    const response = await GET(new Request(`http://localhost:3000/api/admin/teams/${TEAM_ID}`), context);
 
     expect(response.status).toBe(403);
     expect(mocks.getAdminTeamDetails).not.toHaveBeenCalled();
   });
 
   it("dispatches authoritative member moves to the selected destination", async () => {
-    const response = await PATCH(patch({ action: "move-member", userId: "user-1", targetTeamId: "team-2" }), context);
+    const response = await PATCH(patch({ action: "move-member", userId: USER_ID, targetTeamId: TARGET_TEAM_ID }), context);
 
     expect(response.status).toBe(200);
-    expect(mocks.moveTeamMember).toHaveBeenCalledWith(actor, { userId: "user-1", teamId: "team-2" });
+    expect(mocks.moveTeamMember).toHaveBeenCalledWith(actor, { userId: USER_ID, teamId: TARGET_TEAM_ID });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/teams");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/teams/performance");
   });

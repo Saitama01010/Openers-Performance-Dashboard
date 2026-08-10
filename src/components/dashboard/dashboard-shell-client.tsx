@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -47,16 +48,21 @@ function pageName(pathname: string) {
 
 function Brand() {
   return (
-    <Link className="dashboard-brand" href="/dashboard">
-      <svg
-        aria-hidden="true"
-        className="dashboard-brand__mark"
-        fill="none"
-        viewBox="0 0 32 32"
-      >
-        <path d="m5 16 8-10 5 4-5 6 5 6-5 4z" />
-        <path d="m15 16 7-9 5 4-4 5 4 5-5 4z" />
-      </svg>
+    <Link
+      aria-label="Openers Performance overview"
+      className="dashboard-brand"
+      href="/dashboard"
+    >
+      <span aria-hidden="true" className="dashboard-brand__image-frame">
+        <Image
+          alt=""
+          className="dashboard-brand__image"
+          height={1080}
+          loading="eager"
+          src="/brand/openers-performance-logo.png"
+          width={1080}
+        />
+      </span>
       <span>
         <span className="dashboard-brand__name">Openers</span>
         <span className="dashboard-brand__product">Performance</span>
@@ -82,7 +88,9 @@ function UserProfile({
         {initials}
       </span>
       <span className="dashboard-profile__identity">
-        <span className="dashboard-profile__name">{user.name}</span>
+        <span className="dashboard-profile__name" title={user.name}>
+          {user.name}
+        </span>
         <span className="dashboard-profile__role">
           {roleLabel(user.role)}
         </span>

@@ -4,11 +4,16 @@ import { parseBulkUserIds } from "@/admin/bulk-user-deletion";
 import { permanentlyDeleteUsers } from "@/admin/data";
 import { assertTrustedMutationOrigin } from "@/auth/request-security";
 import { getCurrentUser } from "@/auth/session";
+import { parseJsonBody, uuidSchema } from "@/http/input";
+import { z } from "zod";
 
 const HEADERS = {
   "Cache-Control": "no-store, max-age=0",
   Pragma: "no-cache",
 } as const;
+const bodySchema = z.object({
+  userIds: z.array(uuidSchema).min(1).max(100),
+}).strict();
 
 const SAFE_ERRORS = new Set([
   "One or more selected user IDs are invalid.",
@@ -21,6 +26,12 @@ const SAFE_ERRORS = new Set([
 ]);
 
 function errorResponse(error: unknown) {
+  if (error instanceof z.ZodError) {
+    return Response.json(
+      { error: "One or more selected user IDs are invalid." },
+      { status: 400, headers: HEADERS },
+    );
+  }
   const message =
     error instanceof Error && SAFE_ERRORS.has(error.message)
       ? error.message
@@ -49,8 +60,8 @@ export async function DELETE(request: Request) {
 
   try {
     assertTrustedMutationOrigin(request);
-    const body = (await request.json()) as { userIds?: unknown };
-    const userIds = parseBulkUserIds(body?.userIds);
+    const body = await parseJsonBody(request, bodySchema, 8 * 1024);
+    const userIds = parseBulkUserIds(body.userIds);
     const result = await permanentlyDeleteUsers(actor, { userIds });
 
     revalidatePath("/admin/users");

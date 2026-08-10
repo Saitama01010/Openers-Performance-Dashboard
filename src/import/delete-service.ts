@@ -33,6 +33,7 @@ import {
   resolveActiveImportWithinTransaction,
 } from "@/import/active-lifecycle";
 import { newId } from "@/lib/ids";
+import { actorOrganizationId } from "@/teams/visibility";
 
 const ELIGIBLE_DELETION_STATUSES = new Set([
   "draft",
@@ -475,7 +476,13 @@ export async function deleteDialerImportBatch(input: {
         previousImportId: dialerImportBatches.previousImportId,
       })
       .from(dialerImportBatches)
-      .where(eq(dialerImportBatches.id, input.batchId))
+      .where(and(
+        eq(dialerImportBatches.id, input.batchId),
+        eq(
+          dialerImportBatches.organizationId,
+          actorOrganizationId(input.actor),
+        ),
+      ))
       .limit(1)
       .for("update");
 

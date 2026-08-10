@@ -1,8 +1,20 @@
 import { confirmUserImport } from "@/admin/user-import-service";
 import { assertTrustedMutationOrigin } from "@/auth/request-security";
 import { getCurrentUser } from "@/auth/session";
+import { parseJsonBody, uuidSchema } from "@/http/input";
+import { z } from "zod";
 
 const HEADERS = { "Cache-Control": "no-store, max-age=0" } as const;
+const assignmentSchema = z.object({
+  rowNumber: z.number().int().min(1).max(500),
+  selected: z.boolean(),
+  role: z.enum(["admin", "manager", "agent"]).nullable(),
+  teamId: uuidSchema.nullable(),
+}).strict();
+const confirmationSchema = z.object({
+  batchId: uuidSchema,
+  assignments: z.array(assignmentSchema).min(1).max(500),
+}).strict();
 
 export async function POST(request: Request) {
   const actor = await getCurrentUser();
@@ -11,45 +23,22 @@ export async function POST(request: Request) {
 
   try {
     assertTrustedMutationOrigin(request);
-    const body = (await request.json()) as {
-      batchId?: unknown;
-      assignments?: unknown;
-    };
-    if (typeof body.batchId !== "string" || !Array.isArray(body.assignments)) {
-      throw new Error("Invalid import confirmation.");
-    }
-    const assignments = body.assignments.map((value) => {
-      if (!value || typeof value !== "object") throw new Error("Invalid row assignment.");
-      const row = value as Record<string, unknown>;
-      if (
-        !Number.isInteger(row.rowNumber) ||
-        typeof row.selected !== "boolean" ||
-        !(
-          row.role === null ||
-          row.role === "admin" ||
-          row.role === "manager" ||
-          row.role === "agent"
-        ) ||
-        !(row.teamId === null || typeof row.teamId === "string")
-      ) {
-        throw new Error("Invalid row assignment.");
-      }
-      return {
-        rowNumber: row.rowNumber as number,
-        selected: row.selected,
-        role: row.role as "admin" | "manager" | "agent" | null,
-        teamId: row.teamId as string | null,
-      };
-    });
+    const body = await parseJsonBody(request, confirmationSchema, 128 * 1024);
     const result = await confirmUserImport({
       actor,
       batchId: body.batchId,
-      assignments,
+      assignments: body.assignments,
     });
     return Response.json(result, { headers: HEADERS });
   } catch (error) {
     return Response.json(
-      { error: error instanceof Error ? error.message : "User import failed." },
+      {
+        error:
+          error instanceof z.ZodError ||
+          (error instanceof Error && ["Invalid JSON body.", "Request body is too large."].includes(error.message))
+            ? "Invalid import confirmation."
+            : "User import failed.",
+      },
       { status: 400, headers: HEADERS },
     );
   }

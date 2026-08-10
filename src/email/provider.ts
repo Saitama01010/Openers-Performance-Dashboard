@@ -169,7 +169,7 @@ class ConsoleEmailProvider implements EmailProvider {
     }
 
     console.info(
-      `[development email] to=${message.to} subject=${message.subject}\n${message.text}`,
+      `[development email accepted] to=${message.to} subject=${message.subject} body=[redacted]`,
     );
 
     return {

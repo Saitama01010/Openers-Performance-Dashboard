@@ -405,11 +405,11 @@ input[type="file"]:not(:disabled) {
 }
 
 .dashboard-brand__image {
-  height: 7rem;
-  inset: -1.65rem auto auto -1.8rem;
+  height: 6rem;
+  inset: -1.33rem auto auto -1.65rem;
   max-width: none;
   position: absolute;
-  width: 7rem;
+  width: 6rem;
 }
 
 .dashboard-brand__name,

@@ -86,6 +86,21 @@ describe("dashboard shell navigation by role", () => {
     expect(shell).toContain('aria-label={`Sign out ${user.name}`}');
   });
 
+  it("fits the complete official mark inside the sidebar lockup", () => {
+    const styles = readFileSync(
+      resolve(process.cwd(), "src/app/globals.css"),
+      "utf8",
+    );
+    const logo = styles.slice(
+      styles.indexOf(".dashboard-brand__image {"),
+      styles.indexOf(".dashboard-brand__name,"),
+    );
+
+    expect(logo).toContain("height: 6rem");
+    expect(logo).toContain("inset: -1.33rem auto auto -1.65rem");
+    expect(logo).toContain("width: 6rem");
+  });
+
   it("keeps the redesigned rail scoped to sidebar selectors", () => {
     const styles = readFileSync(
       resolve(process.cwd(), "src/app/globals.css"),

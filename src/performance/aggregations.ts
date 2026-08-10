@@ -35,6 +35,28 @@ export type PerformanceSeriesPoint = Omit<DialerDailyAggregate, "loggedInSeconds
   loggedInSeconds: number | null;
 };
 
+export const PRODUCTIVITY_MIX_KEYS = [
+  "readySeconds",
+  "talkSeconds",
+  "ringingSeconds",
+  "wrapSeconds",
+  "pausedSeconds",
+  "systemPauseSeconds",
+  "idleSeconds",
+  "untrackedSeconds",
+] as const;
+
+export function sumProductivityMixSeconds(
+  totals: Record<(typeof PRODUCTIVITY_MIX_KEYS)[number], number | null> & {
+    netSeconds?: number | null;
+  },
+) {
+  return PRODUCTIVITY_MIX_KEYS.reduce(
+    (sum, key) => sum + (totals[key] ?? 0),
+    0,
+  );
+}
+
 export function calculateClosedDealRate(
   closedDeals: number | null,
   transfers: number | null,

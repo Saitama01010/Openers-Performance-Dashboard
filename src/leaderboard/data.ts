@@ -82,7 +82,9 @@ export type LeaderboardData =
       status: "ready";
       rows: LeaderboardRow[];
       totalTransfers: number;
-      totalClosedDeals: number;
+      totalClosedDeals: number | null;
+      closedMetricsAvailable: boolean;
+      closedMessage?: string;
       closedSourceEmpty: boolean;
       transferSourceRecordCount: number;
       transferDiagnosticCount: number;
@@ -90,14 +92,7 @@ export type LeaderboardData =
       latestSynchronization: string;
       stale: boolean;
       closedDiagnostics?: SafeClosedDiagnostics;
-    })
-  | (LeaderboardBase & {
-      status: "closed_error";
-      message: string;
-      rows: [];
-      transferSourceRecordCount: number;
-      transferDiagnosticCount: number;
-      closedDiagnostics?: SafeClosedErrorDiagnostics;
+      closedErrorDiagnostics?: SafeClosedErrorDiagnostics;
     })
   | (LeaderboardBase & {
       status: "source_error";
@@ -517,15 +512,34 @@ export async function getLeaderboardData(
   }
 
   if (ingestion.status === "closed_error") {
+    const rows = buildLeaderboardAnalyticsRows(
+      ingestion.users,
+      [],
+      filters,
+      ingestion.timeZone,
+      ingestion.transferMatches,
+      comparison,
+    );
     return {
-      status: "closed_error",
-      message: ingestion.message,
-      rows: [],
+      status: "ready",
+      rows,
       teams: teamRows,
       filters,
+      totalTransfers: countFilteredTransfers(
+        ingestion.transferMatches,
+        filters,
+        ingestion.timeZone,
+      ),
+      totalClosedDeals: null,
+      closedMetricsAvailable: false,
+      closedMessage: `${ingestion.message} Transfer rankings remain available.`,
+      closedSourceEmpty: false,
       transferSourceRecordCount: ingestion.transferRecords.length,
       transferDiagnosticCount: ingestion.transferDiagnostics.length,
-      closedDiagnostics:
+      closedDiagnosticCount: 0,
+      latestSynchronization: ingestion.fetchedAt,
+      stale: ingestion.stale,
+      closedErrorDiagnostics:
         actor.role === "admin"
           ? {
               connectionStatus:
@@ -551,6 +565,9 @@ export async function getLeaderboardData(
     (total, row) => total + row.closedDeals,
     0,
   );
+  const closedMetricsAvailable =
+    ingestion.totalNonEmptyClosedRows === 0 ||
+    ingestion.closedRecords.some((deal) => deal.matchStatus !== "invalid");
 
   return {
     status: "ready",
@@ -562,7 +579,11 @@ export async function getLeaderboardData(
       filters,
       ingestion.timeZone,
     ),
-    totalClosedDeals,
+    totalClosedDeals: closedMetricsAvailable ? totalClosedDeals : null,
+    closedMetricsAvailable,
+    closedMessage: closedMetricsAvailable
+      ? undefined
+      : "Closed worksheet rows cannot be attributed because none contains a valid Opener. Transfer rankings remain available.",
     closedSourceEmpty: ingestion.totalNonEmptyClosedRows === 0,
     transferSourceRecordCount: ingestion.transferRecords.length,
     transferDiagnosticCount: ingestion.transferDiagnostics.length,

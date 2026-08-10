@@ -50,6 +50,11 @@ describe("trend graph interaction contract", () => {
       "function DailyPerformanceChart(",
       "function ProductivityMix(",
     );
+    const overview = section(
+      source("src/components/dashboard/admin-overview/admin-overview-client.tsx"),
+      "function MonthlyTrends(",
+      "function DataHealth(",
+    );
 
     for (const chart of [flags, organizationCommissionTrend, personalCommissionTrend]) {
       expect(chart).toContain("setInspecting(false)");
@@ -63,6 +68,12 @@ describe("trend graph interaction contract", () => {
     expect(performance).toContain("onPointerLeave={() => onHighlight(null)}");
     expect(performance).toContain("onPointerCancel={() => onHighlight(null)}");
     expect(performance).not.toContain("setPinned");
+    expect(overview).toContain("useState<number | null>(null)");
+    expect(overview).toContain("onPointerLeave={clearActive}");
+    expect(overview).toContain("onPointerCancel={clearActive}");
+    expect(overview).toContain("onLostPointerCapture={clearActive}");
+    expect(overview).toContain("setActive((current) => current === nearest ? current : nearest)");
+    expect(overview).not.toContain("onMouseEnter");
   });
 
   it("keeps the overlaid Flags date controls from intercepting tab clicks", () => {

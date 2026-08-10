@@ -101,6 +101,21 @@ describe("dashboard shell navigation by role", () => {
     expect(logo).toContain("width: 6rem");
   });
 
+  it("gives the sidebar identity and sign-out action separate rows", () => {
+    const styles = readFileSync(
+      resolve(process.cwd(), "src/app/globals.css"),
+      "utf8",
+    );
+    const profile = styles.slice(
+      styles.indexOf(".dashboard-profile {"),
+      styles.indexOf(".dashboard-workspace"),
+    );
+
+    expect(profile).toContain("grid-template-columns: auto minmax(0, 1fr)");
+    expect(profile).toContain("grid-column: 1 / -1");
+    expect(profile).toContain("width: 100%");
+  });
+
   it("keeps the redesigned rail scoped to sidebar selectors", () => {
     const styles = readFileSync(
       resolve(process.cwd(), "src/app/globals.css"),

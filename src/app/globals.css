@@ -548,8 +548,13 @@ input[type="file"]:not(:disabled) {
   display: grid;
   flex: 0 0 auto;
   gap: 0.625rem;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   padding: 1rem 0.25rem 0;
+}
+
+.dashboard-profile form {
+  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .dashboard-profile__avatar {
@@ -597,6 +602,7 @@ input[type="file"]:not(:disabled) {
   min-height: 2.5rem !important;
   min-width: auto;
   padding-inline: 0.75rem;
+  width: 100%;
 }
 
 .dashboard-profile__signout:hover:not(:disabled) {

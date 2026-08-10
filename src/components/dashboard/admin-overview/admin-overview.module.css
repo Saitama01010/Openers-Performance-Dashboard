@@ -272,11 +272,10 @@
 
 .secondaryGrid { display: grid; gap: 0.75rem; grid-template-columns: minmax(18rem, 0.55fr) minmax(0, 1.45fr); margin-top: 0.75rem; }
 .talentBody { align-items: center; display: grid; gap: 0.9rem; grid-template-columns: minmax(8rem, 0.8fr) minmax(8rem, 1.1fr); padding: 0.4rem 0.85rem; }
-.donut { align-items: center; aspect-ratio: 1; border-radius: 50%; display: flex; justify-content: center; margin: auto; max-width: 8.3rem; position: relative; width: 100%; }
-.donut::after { background: white; border-radius: 50%; content: ""; inset: 27%; position: absolute; }
-.donut > div { display: grid; line-height: 1.1; place-items: center; position: relative; text-align: center; z-index: 1; }
-.donut strong { color: #102548; font-size: 1rem; }
-.donut span { color: #77859a; font-size: 0.48rem; margin-top: 0.12rem; }
+.donut { margin: auto; max-width: 8.3rem; width: 100%; }
+.donutCenter { display: grid; gap: 0.16rem; inset: 26%; line-height: 1.1; place-content: center; position: absolute; text-align: center; }
+.donutCenter strong { color: #102548; font-size: 1rem; }
+.donutCenter span { color: #77859a; font-size: 0.48rem; line-height: 1.25; overflow-wrap: anywhere; }
 .talentLegend { display: grid; gap: 0.15rem; }
 .talentLegend button { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 0.38rem; color: #354968; display: grid; gap: 0.36rem; grid-template-columns: auto 1fr; padding: 0.28rem; text-align: left; }
 .talentLegend button[aria-pressed="true"] { background: #f5f8fd; border-color: #dce4ef; }

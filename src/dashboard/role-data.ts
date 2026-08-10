@@ -443,6 +443,14 @@ async function agentDashboardData(actor: CurrentActor, now: Date, selectedRange:
   };
 }
 
+export function scopeManagerTeamCompetition<
+  T extends { teamId: string },
+>(rows: readonly T[], assignedTeamIds: readonly string[]) {
+  if (assignedTeamIds.length === 0) return [];
+  const assigned = new Set(assignedTeamIds);
+  return rows.filter((row) => assigned.has(row.teamId));
+}
+
 async function managerDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange, requestedPage = 1, timeZone = "Africa/Cairo") {
   const shared = await sharedInputs(actor, now, selectedRange, timeZone);
   const agentIds = shared.scopedAgents.map((agent) => agent.id);
@@ -566,7 +574,10 @@ async function managerDashboardData(actor: CurrentActor, now: Date, selectedRang
           : null,
       attention: rows.filter((row) => row.lowPerformance.isLowPerformer || row.manualFlagCount > 0 || row.coachingPending > 0 || row.shadowingPending > 0).length,
     },
-    teamCompetition: shared.competition,
+    teamCompetition: scopeManagerTeamCompetition(
+      shared.competition,
+      actor.teamIds,
+    ),
     coachingReports: shared.coachingReports,
     coachingSessions: coachingRoom.rows,
     rubricTemplates: shared.configuration.templates,

@@ -471,7 +471,7 @@ export function ManagerRoleDashboard({ data }: { data: ManagerData }) {
           </div>
         </Panel>
 
-        <Panel description="Other teams appear only as aggregate results." title="Team comparison">
+        <Panel description="Only your currently assigned teams are included." title="Team comparison">
           <TeamStanding rows={data.teamCompetition} />
         </Panel>
       </div>

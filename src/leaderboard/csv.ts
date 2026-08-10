@@ -7,7 +7,12 @@ function safeCell(value: string | number | null) {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export function leaderboardCsv(rows: readonly LeaderboardPreparedRow[], metric: LeaderboardMetric) {
+export function leaderboardCsv(
+  rows: readonly LeaderboardPreparedRow[],
+  metric: LeaderboardMetric,
+  options: { closedMetricsAvailable?: boolean } = {},
+) {
+  const closedMetricsAvailable = options.closedMetricsAvailable !== false;
   const header = [
     "Rank",
     "Real Name",
@@ -25,8 +30,10 @@ export function leaderboardCsv(rows: readonly LeaderboardPreparedRow[], metric: 
     row.americanName,
     row.teamName ?? "Unassigned",
     row.transferCount,
-    row.closedDeals,
-    row.conversion === null ? null : row.conversion.toFixed(2),
+    closedMetricsAvailable ? row.closedDeals : null,
+    closedMetricsAvailable && row.conversion !== null
+      ? row.conversion.toFixed(2)
+      : null,
     row.movement,
     metric,
   ]);

@@ -24,15 +24,22 @@ export async function GET(request: Request) {
   if (data.status !== "ready") {
     return privateResponse("Leaderboard sources are unavailable", 503);
   }
+  const closedMetricsAvailable = data.closedMetricsAvailable !== false;
+  if (!closedMetricsAvailable && view.metric !== "transfers") {
+    return privateResponse("Closed leaderboard metrics are unavailable", 503);
+  }
   const rows = prepareLeaderboardRows(data.rows, view);
-  return new Response(`\uFEFF${leaderboardCsv(rows, view.metric)}`, {
-    headers: {
-      "Cache-Control": "private, no-store",
-      "Content-Disposition": 'attachment; filename="leaderboard.csv"',
-      "Content-Type": "text/csv; charset=utf-8",
-      "X-Content-Type-Options": "nosniff",
+  return new Response(
+    `\uFEFF${leaderboardCsv(rows, view.metric, { closedMetricsAvailable })}`,
+    {
+      headers: {
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": 'attachment; filename="leaderboard.csv"',
+        "Content-Type": "text/csv; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+      },
     },
-  });
+  );
 }
 
 function privateResponse(message: string, status: number) {

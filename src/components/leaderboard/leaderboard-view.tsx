@@ -184,6 +184,7 @@ function KpiCard({
 
 function PodiumCard({
   active,
+  closedMetricsAvailable,
   dateRange,
   metric,
   onActive,
@@ -191,6 +192,7 @@ function PodiumCard({
   sourceNote,
 }: {
   active: boolean;
+  closedMetricsAvailable: boolean;
   dateRange: OverviewDateRange;
   metric: LeaderboardMetric;
   onActive: (profileId: string | null) => void;
@@ -234,8 +236,8 @@ function PodiumCard({
       {rank === 1 ? <span className={styles.topPerformer}>★ {labels.title}</span> : null}
       <dl className={styles.podiumStats}>
         <div><dt>Transfers</dt><dd>{formatNumber(row.transferCount)}</dd></div>
-        <div><dt>Closed Deals</dt><dd>{formatNumber(row.closedDeals)}</dd></div>
-        <div><dt>Conversion</dt><dd>{formatMetric(row.conversion, "conversion")}</dd></div>
+        <div><dt>Closed Deals</dt><dd>{closedMetricsAvailable ? formatNumber(row.closedDeals) : "N/A"}</dd></div>
+        <div><dt>Conversion</dt><dd>{closedMetricsAvailable ? formatMetric(row.conversion, "conversion") : "N/A"}</dd></div>
       </dl>
       <span className={styles.pedestal} aria-hidden="true" />
       {active ? (
@@ -279,7 +281,13 @@ export function LeaderboardView({
   dateRange: OverviewDateRange;
   initialView: LeaderboardViewState;
 }) {
-  const [view, setView] = useState(initialView);
+  const closedMetricsAvailable =
+    data.status === "ready" && data.closedMetricsAvailable !== false;
+  const [view, setView] = useState(() =>
+    !closedMetricsAvailable && initialView.metric !== "transfers"
+      ? { ...initialView, metric: "transfers" as const, sortBy: "transfers" as const }
+      : initialView,
+  );
   const deferredQuery = useDeferredValue(view.query);
   const effectiveView = useMemo(
     () => ({ ...view, query: deferredQuery }),
@@ -301,8 +309,10 @@ export function LeaderboardView({
   const scopeRows = preparedScope as LeaderboardRow[];
   const totals = leaderboardTotals(scopeRows);
   const trend = aggregateLeaderboardTrend(scopeRows);
-  const currentConversion = calculateLeaderboardConversion(totals.current.closedDeals, totals.current.transferCount);
-  const previousConversion = totals.comparison
+  const currentConversion = closedMetricsAvailable
+    ? calculateLeaderboardConversion(totals.current.closedDeals, totals.current.transferCount)
+    : null;
+  const previousConversion = closedMetricsAvailable && totals.comparison
     ? calculateLeaderboardConversion(totals.comparison.closedDeals, totals.comparison.transferCount)
     : null;
   const [activeKpi, setActiveKpi] = useState<LeaderboardMetric | null>(null);
@@ -346,6 +356,8 @@ export function LeaderboardView({
     : data.stale || data.transferDiagnosticCount > 0 ? "partial" as const : "healthy" as const;
   const closedStatus = data.status !== "ready"
     ? "unavailable" as const
+    : !closedMetricsAvailable
+      ? "unavailable" as const
     : data.stale || data.closedDiagnosticCount > 0 ? "partial" as const : "healthy" as const;
   const conversionStatus = transferStatus === "unavailable" || closedStatus === "unavailable"
     ? "unavailable" as const
@@ -385,15 +397,15 @@ export function LeaderboardView({
           trend={trend}
         />
         <KpiCard
-          current={data.status === "ready" ? totals.current.closedDeals : null}
+          current={closedMetricsAvailable ? totals.current.closedDeals : null}
           dateRange={dateRange}
           latestSync={latestSync}
           metric="closed-deals"
           onActive={setActiveKpi}
           open={activeKpi === "closed-deals"}
-          previous={totals.comparison?.closedDeals ?? null}
+          previous={closedMetricsAvailable ? totals.comparison?.closedDeals ?? null : null}
           sourceStatus={closedStatus}
-          trend={trend}
+          trend={closedMetricsAvailable ? trend : []}
         />
         <KpiCard
           current={data.status === "ready" ? currentConversion : null}
@@ -404,14 +416,17 @@ export function LeaderboardView({
           open={activeKpi === "conversion"}
           previous={previousConversion}
           sourceStatus={conversionStatus}
-          trend={trend}
+          trend={closedMetricsAvailable ? trend : []}
         />
       </section>
 
-      {data.status === "ready" && (data.stale || transferStatus === "partial" || closedStatus === "partial") ? (
+      {data.status === "ready" && (data.stale || transferStatus === "partial" || closedStatus !== "healthy") ? (
         <section className={styles.sourceBanner} role="status">
           <DashboardIcon name="info" />
-          <div><strong>Some source rows need attention</strong><span>{sourceNote}. Valid matched records remain authoritative.</span></div>
+          <div>
+            <strong>{closedMetricsAvailable ? "Some source rows need attention" : "Closed attribution needs attention"}</strong>
+            <span>{data.closedMessage ?? `${sourceNote}. Valid matched records remain authoritative.`}</span>
+          </div>
         </section>
       ) : null}
 
@@ -423,6 +438,7 @@ export function LeaderboardView({
             {[podium[1], podium[0], podium[2]].filter(Boolean).map((row) => (
               <PodiumCard
                 active={activePodium === row.profileId || highlightedRow === row.profileId}
+                closedMetricsAvailable={closedMetricsAvailable}
                 dateRange={dateRange}
                 key={row.profileId}
                 metric={view.metric}
@@ -458,9 +474,9 @@ export function LeaderboardView({
           <label className={styles.selectControl}>
             <span>Sort by</span>
             <select onChange={(event) => updateView((current) => ({ ...current, sortBy: event.target.value as LeaderboardSortColumn }))} value={view.sortBy}>
-              <option value="closed-deals">Closed Deals</option>
+              <option disabled={!closedMetricsAvailable} value="closed-deals">Closed Deals</option>
               <option value="transfers">Transfers</option>
-              <option value="conversion">Conversion</option>
+              <option disabled={!closedMetricsAvailable} value="conversion">Conversion</option>
             </select>
             <DashboardIcon name="chevronDown" />
           </label>
@@ -474,7 +490,13 @@ export function LeaderboardView({
           </label>
           <div aria-label="Ranking metric" className={styles.metricSelector} role="group">
             {(Object.keys(metricLabels) as LeaderboardMetric[]).map((metric) => (
-              <button aria-pressed={view.metric === metric} key={metric} onClick={() => updateMetric(metric)} type="button">
+              <button
+                aria-pressed={view.metric === metric}
+                disabled={!closedMetricsAvailable && metric !== "transfers"}
+                key={metric}
+                onClick={() => updateMetric(metric)}
+                type="button"
+              >
                 {metricLabels[metric]}
               </button>
             ))}
@@ -493,8 +515,6 @@ export function LeaderboardView({
           <EmptyState title="LeaderBoard is awaiting transfer data" description={data.message} />
         ) : data.status === "source_error" ? (
           <EmptyState title="Transfer source needs attention" description={data.message} />
-        ) : data.status === "closed_error" ? (
-          <EmptyState title="Closed source needs attention" description={data.message} />
         ) : displayedRows.length === 0 ? (
           <EmptyState title="No ranking data found" description="No authorized openers match the active search and team filters." />
         ) : (
@@ -513,8 +533,8 @@ export function LeaderboardView({
                     <th scope="col">American Name</th>
                     <th scope="col">Team</th>
                     <th aria-sort={view.sortBy === "transfers" ? (view.direction === "asc" ? "ascending" : "descending") : "none"} scope="col"><button onClick={() => updateSort("transfers")} type="button">Transfers ↕</button></th>
-                    <th aria-sort={view.sortBy === "closed-deals" ? (view.direction === "asc" ? "ascending" : "descending") : "none"} scope="col"><button onClick={() => updateSort("closed-deals")} type="button">Closed Deals ↕</button></th>
-                    <th aria-sort={view.sortBy === "conversion" ? (view.direction === "asc" ? "ascending" : "descending") : "none"} scope="col"><button onClick={() => updateSort("conversion")} type="button">Conversion % ↕</button></th>
+                    <th aria-sort={view.sortBy === "closed-deals" ? (view.direction === "asc" ? "ascending" : "descending") : "none"} scope="col"><button disabled={!closedMetricsAvailable} onClick={() => updateSort("closed-deals")} type="button">Closed Deals ↕</button></th>
+                    <th aria-sort={view.sortBy === "conversion" ? (view.direction === "asc" ? "ascending" : "descending") : "none"} scope="col"><button disabled={!closedMetricsAvailable} onClick={() => updateSort("conversion")} type="button">Conversion % ↕</button></th>
                     <th scope="col">Trend</th>
                   </tr>
                 </thead>
@@ -535,8 +555,8 @@ export function LeaderboardView({
                       <td>{row.americanName}</td>
                       <td><span className={styles.teamPill}>{row.teamName ?? "Unassigned"}</span></td>
                       <td className={styles.numeric}>{formatNumber(row.transferCount)}</td>
-                      <td className={`${styles.numeric} ${view.metric === "closed-deals" ? styles.activeMetric : ""}`}>{formatNumber(row.closedDeals)}</td>
-                      <td className={styles.numeric}><span className={styles.conversionPill} data-tone={(row.conversion ?? 0) >= 40 ? "high" : (row.conversion ?? 0) >= 25 ? "medium" : "low"}>{formatMetric(row.conversion, "conversion")}</span></td>
+                      <td className={`${styles.numeric} ${view.metric === "closed-deals" ? styles.activeMetric : ""}`}>{closedMetricsAvailable ? formatNumber(row.closedDeals) : "N/A"}</td>
+                      <td className={styles.numeric}><span className={styles.conversionPill} data-tone={(row.conversion ?? 0) >= 40 ? "high" : (row.conversion ?? 0) >= 25 ? "medium" : "low"}>{closedMetricsAvailable ? formatMetric(row.conversion, "conversion") : "N/A"}</span></td>
                       <td><TrendCell metric={view.metric} row={row} /></td>
                     </tr>
                   ))}
@@ -555,7 +575,7 @@ export function LeaderboardView({
         )}
       </section>
 
-      {data.status === "ready" && data.closedSourceEmpty ? (
+      {data.status === "ready" && closedMetricsAvailable && data.closedSourceEmpty ? (
         <p className={styles.quietStatus} role="status">The Closed source is connected, but no closed-deal submissions were found.</p>
       ) : null}
 
@@ -569,6 +589,17 @@ export function LeaderboardView({
             <div><dt>Matched rows</dt><dd>{formatNumber(data.closedDiagnostics.matchedRows)}</dd></div>
             <div><dt>Unmatched rows</dt><dd>{formatNumber(data.closedDiagnostics.unmatchedRows)}</dd></div>
             <div><dt>Invalid rows</dt><dd>{formatNumber(data.closedDiagnostics.invalidRows)}</dd></div>
+          </dl>
+        </details>
+      ) : null}
+
+      {data.status === "ready" && data.closedErrorDiagnostics ? (
+        <details className={styles.diagnostics}>
+          <summary>Administrator source diagnostics</summary>
+          <dl>
+            <div><dt>Connection</dt><dd>{data.closedErrorDiagnostics.connectionStatus}</dd></div>
+            <div><dt>Worksheet</dt><dd>{data.closedErrorDiagnostics.worksheet}</dd></div>
+            <div><dt>Headers</dt><dd>{data.closedErrorDiagnostics.headerValidationStatus}</dd></div>
           </dl>
         </details>
       ) : null}

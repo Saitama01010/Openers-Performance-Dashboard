@@ -22,7 +22,10 @@ import {
   uniqueScopedTeams,
 } from "@/agents/scope";
 import type { CoachingCategory } from "@/coaching/domain";
-import { buildCoachingLeaderboardRows } from "@/coaching/leaderboard";
+import {
+  applicableCoachingWeeks,
+  buildCoachingLeaderboardRows,
+} from "@/coaching/leaderboard";
 import type { DashboardDateWindow } from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
@@ -406,7 +409,11 @@ export async function getCoachingRoomData(
   };
 }
 
-export type CoachingLeaderboardSort = "coverage" | "coached" | "manager";
+export type CoachingLeaderboardSort =
+  | "oneToOne"
+  | "teamCoaching"
+  | "coached"
+  | "manager";
 
 export async function getCoachingLeaderboardData(
   actor: Actor,
@@ -458,16 +465,15 @@ export async function getCoachingLeaderboardData(
               input.dateRange.to
                 ? sql`${coachingSessions.sessionDate} <= ${input.dateRange.to}`
                 : undefined,
-              input.teamId
-                ? eq(coachingSessionParticipants.teamIdSnapshot, input.teamId)
-                : undefined,
             ),
           );
 
+  const applicableWeeks = applicableCoachingWeeks(input.dateRange);
   const rows = buildCoachingLeaderboardRows({
     managers,
     agents: allAgents,
     participants: participantRows,
+    applicableWeeks,
     teamId: input.teamId,
   });
 
@@ -476,17 +482,36 @@ export async function getCoachingLeaderboardData(
     if (input.sort === "manager") {
       return direction * left.managerName.localeCompare(right.managerName);
     }
-    const leftValue =
-      input.sort === "coached"
-        ? left.coachedAgents
-        : left.coveragePercentage ?? -1;
-    const rightValue =
-      input.sort === "coached"
-        ? right.coachedAgents
-        : right.coveragePercentage ?? -1;
+    const leftValue = input.sort === "coached"
+      ? left.coachedAgents
+      : input.sort === "teamCoaching"
+        ? left.teamCoachingPercentage ?? -1
+        : left.oneToOnePercentage ?? -1;
+    const rightValue = input.sort === "coached"
+      ? right.coachedAgents
+      : input.sort === "teamCoaching"
+        ? right.teamCoachingPercentage ?? -1
+        : right.oneToOnePercentage ?? -1;
     if (leftValue !== rightValue) return direction * (leftValue - rightValue);
+    if (input.sort !== "coached") {
+      const leftCompleted = input.sort === "teamCoaching"
+        ? left.teamCoachingCompleted
+        : left.oneToOneCompleted;
+      const rightCompleted = input.sort === "teamCoaching"
+        ? right.teamCoachingCompleted
+        : right.oneToOneCompleted;
+      if (leftCompleted !== rightCompleted) {
+        return direction * (leftCompleted - rightCompleted);
+      }
+    }
     return left.managerName.localeCompare(right.managerName);
   });
 
-  return { rows, teams: allTeams, managers: allManagers, filters: input };
+  return {
+    rows,
+    teams: allTeams,
+    managers: allManagers,
+    filters: input,
+    applicableWeeks,
+  };
 }

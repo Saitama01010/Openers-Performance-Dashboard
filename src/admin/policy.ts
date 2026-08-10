@@ -203,8 +203,8 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   "flags.raise_team_case": "Raise assigned-team manual flag cases",
   "flags.update_team_case": "Update assigned-team manual flag cases",
   "users.create_team_agent": "Create agents in assigned teams",
-  "users.deactivate_team_agent": "Deactivate agents in assigned teams",
-  "users.terminate_team_agent": "Terminate agents in assigned teams",
+  "users.deactivate_team_agent": "Deactivate agent access (administrators only)",
+  "users.terminate_team_agent": "Terminate agent employment (administrators only)",
   "leaderboard.view": "View leaderboards",
   "leaderboards.view": "View leaderboards",
   "audit.view": "View audit logs",
@@ -290,6 +290,8 @@ export const PERMISSION_PRESENTATION: Record<
 export const ADMIN_ONLY_PERMISSIONS = new Set([
   "users.manage_permissions",
   "users.assign_role",
+  "users.deactivate_team_agent",
+  "users.terminate_team_agent",
   "integrations.manage",
   "audit.view",
   "audit.view_company",
@@ -335,8 +337,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, string[]> = {
     "flags.raise_team_case",
     "flags.update_team_case",
     "users.create_team_agent",
-    "users.deactivate_team_agent",
-    "users.terminate_team_agent",
   ],
   agent: [
     "metrics.view_own",

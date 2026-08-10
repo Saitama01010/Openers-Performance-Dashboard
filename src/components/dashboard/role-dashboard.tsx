@@ -226,7 +226,7 @@ export function PersonalPerformanceSummary({ data }: { data: AgentData }) {
   );
 }
 
-function ManagerActions({ data }: { data: ManagerData }) {
+export function ManagerActions({ data }: { data: ManagerData }) {
   const destinations = data.teamCompetition;
   return (
     <Section title="Operational actions" description="Every mutation rechecks your current assigned-team scope on the server.">

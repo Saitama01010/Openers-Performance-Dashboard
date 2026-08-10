@@ -10,6 +10,7 @@ const featureFiles = [
   "src/dashboard/shift-coverage.ts",
   "src/dashboard/csv.ts",
   "src/components/dashboard/role-dashboard.tsx",
+  "src/components/dashboard/role-dashboard-modern.tsx",
   "src/components/dashboard/coaching-rubric-entry.tsx",
   "src/app/api/dashboard/export/route.ts",
 ];
@@ -31,12 +32,19 @@ describe("role dashboard feature boundary", () => {
       "src/components/dashboard/role-dashboard.tsx",
       "utf8",
     );
+    const modernComponent = readFileSync(
+      "src/components/dashboard/role-dashboard-modern.tsx",
+      "utf8",
+    );
 
     expect(agentData).toContain("wasTopPerformerLastMonth:");
     expect(agentData).not.toContain("topPerformerLastMonth:");
     expect(component).not.toContain("performer.realName");
     expect(component).not.toContain("performer.americanName");
     expect(component).toContain("Another employee&apos;s identity and outcomes are not exposed");
+    expect(modernComponent).not.toContain("performer.realName");
+    expect(modernComponent).not.toContain("performer.americanName");
+    expect(modernComponent).toContain("without exposing another employee's private records");
   });
 
   it("removes employee transfer-request controls while preserving sales-transfer reporting", () => {
@@ -47,6 +55,7 @@ describe("role dashboard feature boundary", () => {
       "src/dashboard/actions.ts",
       "src/dashboard/role-data.ts",
       "src/components/dashboard/role-dashboard.tsx",
+      "src/components/dashboard/role-dashboard-modern.tsx",
       "src/admin/policy.ts",
     ];
     for (const file of workflowFiles) {
@@ -62,6 +71,10 @@ describe("role dashboard feature boundary", () => {
     expect(component).toContain('Metric label="Transfers"');
     expect(component).toContain('Metric label="Transfers today"');
     expect(component).toContain('Metric label="Transfer flags"');
+    const modernComponent = readFileSync("src/components/dashboard/role-dashboard-modern.tsx", "utf8");
+    expect(modernComponent).toContain('label="Transfers"');
+    expect(modernComponent).toContain('label="Transfers today"');
+    expect(modernComponent).toContain("Transfer flags");
     expect(roleData).toContain("getTransferFlagsData");
     expect(roleData).toContain("transferCount");
   });

@@ -96,9 +96,9 @@ describe("dashboard shell navigation by role", () => {
       styles.indexOf(".dashboard-brand__name,"),
     );
 
-    expect(logo).toContain("height: 6rem");
-    expect(logo).toContain("inset: -1.33rem auto auto -1.65rem");
-    expect(logo).toContain("width: 6rem");
+    expect(logo).toContain("height: 5.4rem");
+    expect(logo).toContain("inset: -1.2rem auto auto -1.49rem");
+    expect(logo).toContain("width: 5.4rem");
   });
 
   it("gives the sidebar identity and sign-out action separate rows", () => {

@@ -266,7 +266,7 @@ function AttentionMenu() {
     <div className="dashboard-attention">
       <button aria-expanded={open} aria-label={`${items.length} operational attention categories`} className="dashboard-icon-button ui-button--sweep" onClick={() => setOpen((value) => !value)} type="button">
         <DashboardIcon name="bell" />
-        {items.length ? <span>{items.length}</span> : null}
+        {items.length ? <span className="dashboard-attention__count">{items.length}</span> : null}
       </button>
       {open ? <div className="dashboard-attention__popover"><strong>Operational attention</strong>{items.length ? items.map((item) => <Link href={item.href} key={item.title} onClick={() => setOpen(false)}><span>{item.title}</span><b>{item.count}</b></Link>) : <p>No current attention categories on this page.</p>}</div> : null}
     </div>

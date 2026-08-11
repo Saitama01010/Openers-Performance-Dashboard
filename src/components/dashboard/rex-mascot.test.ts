@@ -127,6 +127,7 @@ describe("Rex authenticated shell integration", () => {
     );
     expect(shell).toContain("dashboard-topbar__import ui-button ui-button--secondary ui-button--sweep");
     expect(shell).toContain("dashboard-icon-button ui-button--sweep");
+    expect(shell).toContain('className="dashboard-attention__count"');
   });
 
   it("keeps preference, motion, cleanup, and accessibility behavior client-only", () => {
@@ -199,6 +200,7 @@ describe("Rex authenticated shell integration", () => {
     expect(sweepStyles).toContain("transform: scaleX(1)");
     expect(sweepStyles).toContain("@keyframes ui-button-sweep-scale");
     expect(sweepStyles).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(sweepStyles).toContain("span:not(.dashboard-attention__count)");
   });
 
   it("uses an exact five-cell transparent sprite sheet", () => {

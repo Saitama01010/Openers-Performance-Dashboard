@@ -852,21 +852,27 @@ input[type="file"]:not(:disabled) {
   width: 2.45rem;
 }
 
-.dashboard-attention > button > span {
+.dashboard-attention > button > .dashboard-attention__count {
   align-items: center;
   background: #ef355d;
   border: 2px solid #fff;
   border-radius: 999px;
   color: #fff;
   display: inline-flex;
-  font-size: 0.55rem;
+  font-size: 0.625rem;
   font-weight: 800;
-  height: 1.05rem;
+  height: 1.1rem;
   justify-content: center;
+  line-height: 1;
+  min-width: 1.1rem;
+  padding-inline: 0.18rem;
   position: absolute;
   right: -0.25rem;
   top: -0.3rem;
-  width: 1.05rem;
+  transform: none;
+  transition: none;
+  width: auto;
+  z-index: 2;
 }
 
 .dashboard-attention__popover {
@@ -1348,7 +1354,7 @@ input[type="file"]:not(:disabled) {
   transform-origin: left center;
 }
 
-.ui-button--sweep:hover:not(:disabled) > span {
+.ui-button--sweep:hover:not(:disabled) > span:not(.dashboard-attention__count) {
   animation: ui-button-sweep-scale 300ms ease-in-out;
 }
 
@@ -4239,7 +4245,7 @@ button.overview-date-filter__option {
     transition: none;
   }
 
-  .ui-button--sweep:hover:not(:disabled) > span {
+  .ui-button--sweep:hover:not(:disabled) > span:not(.dashboard-attention__count) {
     animation: none;
   }
 }

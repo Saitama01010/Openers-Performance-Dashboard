@@ -102,7 +102,7 @@ export function RexToggle() {
     <button
       aria-label={label}
       aria-pressed={enabled}
-      className={`${styles.toggle} ui-button ui-button--secondary ui-button--compact`}
+      className={`${styles.toggle} ui-button ui-button--secondary ui-button--compact ui-button--sweep`}
       data-rex-control
       disabled={!hydrated}
       onClick={toggle}

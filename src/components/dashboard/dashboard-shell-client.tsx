@@ -447,7 +447,7 @@ export function DashboardShellClient({
           <ShellSearch navigation={navigation} />
           <div className="dashboard-topbar__actions">
             {user.role !== "agent" ? (
-              <Link className="dashboard-topbar__import ui-button ui-button--secondary" href="/import">
+              <Link className="dashboard-topbar__import ui-button ui-button--secondary ui-button--sweep" href="/import">
                 <DashboardIcon name="import" />
                 <span>Import data</span>
               </Link>

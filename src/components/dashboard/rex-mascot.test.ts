@@ -125,6 +125,7 @@ describe("Rex authenticated shell integration", () => {
     expect(actions.indexOf("<RexToggle />")).toBeGreaterThan(
       actions.indexOf(") : null}"),
     );
+    expect(shell).toContain("dashboard-topbar__import ui-button ui-button--secondary ui-button--sweep");
   });
 
   it("keeps preference, motion, cleanup, and accessibility behavior client-only", () => {
@@ -136,6 +137,7 @@ describe("Rex authenticated shell integration", () => {
     expect(component.startsWith('"use client"')).toBe(true);
     expect(component).toContain('"openers.rex.enabled"');
     expect(component).toContain("aria-pressed={enabled}");
+    expect(component).toContain("ui-button--compact ui-button--sweep");
     expect(component).toContain('window.matchMedia("(prefers-reduced-motion: reduce)")');
     expect(component).toContain('document.addEventListener("visibilitychange"');
     expect(component).toContain('document.removeEventListener("visibilitychange"');
@@ -182,6 +184,20 @@ describe("Rex authenticated shell integration", () => {
 
     expect(tabletRule).toContain(".dashboard-topbar__rex-lane");
     expect(tabletRule).toContain("display: none");
+  });
+
+  it("uses a scoped, reduced-motion-safe sweep animation for both topbar controls", () => {
+    const globals = readFileSync(
+      resolve(process.cwd(), "src/app/globals.css"),
+      "utf8",
+    );
+    const sweepStyles = globals.slice(globals.indexOf(".ui-button--sweep"));
+
+    expect(sweepStyles).toContain(".ui-button--sweep::after");
+    expect(sweepStyles).toContain("transform: scaleX(0)");
+    expect(sweepStyles).toContain("transform: scaleX(1)");
+    expect(sweepStyles).toContain("@keyframes ui-button-sweep-scale");
+    expect(sweepStyles).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
   it("uses an exact five-cell transparent sprite sheet", () => {

@@ -31,6 +31,8 @@ yarn-error.log*
 .pnpm-debug.log*
 .codex-dev.log
 .codex-dev-error.log
+.codex-*.log
+.next-dev-*.log
 cleanup-local-test-users-dry-run.txt
 .playwright-mcp/
 

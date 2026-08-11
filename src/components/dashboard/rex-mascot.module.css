@@ -16,6 +16,7 @@
   padding: 0;
   position: fixed;
   touch-action: manipulation;
+  visibility: hidden;
   width: var(--rex-size);
   z-index: 25;
 }
@@ -49,7 +50,9 @@
 }
 
 .seated .sprite,
-.static .sprite {
+.static .sprite,
+.mascot[data-rex-direction="stationary"] .sprite {
+  animation: none;
   background-position: 100% 0;
 }
 

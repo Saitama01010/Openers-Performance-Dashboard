@@ -626,7 +626,11 @@ input[type="file"]:not(:disabled) {
   border-bottom: 1px solid var(--border);
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: minmax(8rem, auto) minmax(12rem, 22rem) minmax(0, auto);
+  grid-template-columns:
+    minmax(8rem, auto)
+    minmax(5rem, 1fr)
+    minmax(12rem, 22rem)
+    minmax(0, auto);
   justify-content: space-between;
   min-height: 3.75rem;
   padding:
@@ -637,6 +641,12 @@ input[type="file"]:not(:disabled) {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+}
+
+.dashboard-topbar__rex-lane {
+  align-self: stretch;
+  min-width: 5rem;
+  pointer-events: none;
 }
 
 .dashboard-topbar__leading,
@@ -3892,7 +3902,21 @@ button.overview-date-filter__option {
   }
 
   .dashboard-topbar {
+    grid-template-columns:
+      minmax(7rem, auto)
+      minmax(4rem, 0.5fr)
+      minmax(10rem, 1fr)
+      auto;
+  }
+}
+
+@media (max-width: 52rem) {
+  .dashboard-topbar {
     grid-template-columns: minmax(7rem, auto) minmax(10rem, 1fr) auto;
+  }
+
+  .dashboard-topbar__rex-lane {
+    display: none;
   }
 }
 
@@ -3927,6 +3951,10 @@ button.overview-date-filter__option {
     gap: 0.45rem;
     grid-template-columns: auto minmax(7rem, 1fr) auto;
     padding-inline: 0.65rem;
+  }
+
+  .dashboard-topbar__rex-lane {
+    display: none;
   }
 
   .dashboard-topbar__leading > div {

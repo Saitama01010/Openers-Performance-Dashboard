@@ -19,6 +19,10 @@ export type RexWalkingLane = RexHorizontalBounds & {
   top: number;
 };
 
+export type RexNavbarLane = RexWalkingLane & {
+  canWalk: boolean;
+};
+
 export type RexDirection = -1 | 1;
 
 function paddedRect(rect: RexPlacementRect, padding: number): RexPlacementRect {
@@ -174,69 +178,62 @@ function freeIntervals(bounds: RexHorizontalBounds, blocked: Interval[]) {
   return free.filter((interval) => interval.right > interval.left);
 }
 
-export function chooseRexWalkingLane(input: {
-  bottom: number;
+export function chooseRexNavbarLane(input: {
   bounds: RexHorizontalBounds;
-  gap?: number;
-  maxLanes?: number;
+  height: number;
+  minTravel?: number;
   obstacles: RexPlacementRect[];
   padding?: number;
   preferredX?: number;
   size: number;
   top: number;
-}): RexWalkingLane {
-  const gap = input.gap ?? 8;
-  const maxLanes = input.maxLanes ?? 4;
+}): RexNavbarLane | null {
   const padding = input.padding ?? 8;
+  const minTravel = input.minTravel ?? 24;
   const preferredX = input.preferredX ?? input.bounds.left;
-  let best: RexWalkingLane | null = null;
+  const mascotBottom = input.top + input.height;
+  const blocked = input.obstacles
+    .filter(
+      (obstacle) =>
+        obstacle.top < mascotBottom + padding &&
+        obstacle.top + obstacle.height > input.top - padding,
+    )
+    .map((obstacle) => ({
+      left: Math.max(input.bounds.left, obstacle.left - padding),
+      right: Math.min(
+        input.bounds.right,
+        obstacle.left + obstacle.width + padding,
+      ),
+    }))
+    .filter((interval) => interval.right > interval.left);
+  let best: RexNavbarLane | null = null;
   let bestScore = Number.NEGATIVE_INFINITY;
 
-  for (let laneIndex = 0; laneIndex < maxLanes; laneIndex += 1) {
-    const laneTop = input.bottom - input.size - laneIndex * (input.size + gap);
-    if (laneTop < input.top) break;
-    const laneBottom = laneTop + input.size;
-    const blocked = input.obstacles
-      .filter(
-        (obstacle) =>
-          obstacle.top < laneBottom + padding &&
-          obstacle.top + obstacle.height > laneTop - padding,
-      )
-      .map((obstacle) => ({
-        left: Math.max(input.bounds.left, obstacle.left - padding),
-        right: Math.min(
-          input.bounds.right,
-          obstacle.left + obstacle.width + padding,
-        ),
-      }))
-      .filter((interval) => interval.right > interval.left);
+  for (const available of freeIntervals(input.bounds, blocked)) {
+    const availableWidth = available.right - available.left;
+    if (availableWidth < input.size) continue;
+    const maximumLeft = available.right - input.size;
+    const travelDistance = maximumLeft - available.left;
+    const keepsCurrentPosition =
+      preferredX >= available.left && preferredX <= maximumLeft;
+    const canWalk = travelDistance >= minTravel;
+    const score =
+      travelDistance +
+      (canWalk ? 10_000 : 0) +
+      (keepsCurrentPosition ? Math.min(80, travelDistance * 0.2 + 10) : 0);
 
-    for (const available of freeIntervals(input.bounds, blocked)) {
-      const availableWidth = available.right - available.left;
-      if (availableWidth < input.size * 2) continue;
-      const maximumLeft = available.right - input.size;
-      const travelDistance = maximumLeft - available.left;
-      const keepsCurrentPosition =
-        preferredX >= available.left && preferredX <= maximumLeft;
-      const score =
-        travelDistance +
-        (keepsCurrentPosition ? Math.min(40, travelDistance * 0.15) : 0) -
-        laneIndex * 2;
-
-      if (score > bestScore) {
-        bestScore = score;
-        best = { left: available.left, right: maximumLeft, top: laneTop };
-      }
+    if (score > bestScore) {
+      bestScore = score;
+      best = {
+        canWalk,
+        left: available.left,
+        right: maximumLeft,
+        top: input.top + (input.height - input.size) / 2,
+      };
     }
   }
 
-  return (
-    best ?? {
-      left: input.bounds.left,
-      right: Math.max(input.bounds.left, input.bounds.right - input.size),
-      top: Math.max(input.top, input.bottom - input.size),
-    }
-  );
+  return best;
 }
 
 export function rexScaleForDirection(direction: RexDirection) {

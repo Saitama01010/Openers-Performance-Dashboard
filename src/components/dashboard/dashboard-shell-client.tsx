@@ -439,6 +439,11 @@ export function DashboardShellClient({
               <p className="dashboard-topbar__context">{pageName(pathname)}</p>
             </div>
           </div>
+          <div
+            aria-hidden="true"
+            className="dashboard-topbar__rex-lane"
+            data-rex-navbar-lane
+          />
           <ShellSearch navigation={navigation} />
           <div className="dashboard-topbar__actions">
             {user.role !== "agent" ? (

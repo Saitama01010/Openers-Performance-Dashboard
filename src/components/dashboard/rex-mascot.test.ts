@@ -5,8 +5,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  chooseRexNavbarLane,
   chooseRexPlacement,
-  chooseRexWalkingLane,
   createRexSeatCandidates,
   rexOverlapArea,
   rexScaleForDirection,
@@ -61,17 +61,46 @@ describe("Rex safe placement", () => {
     ]);
   });
 
-  it("moves Rex above a blocked bottom lane while keeping content bounds", () => {
+  it("keeps the walking segment clear of the title, search, and actions", () => {
     expect(
-      chooseRexWalkingLane({
-        bottom: 500,
-        bounds: { left: 200, right: 1000 },
-        maxLanes: 2,
-        obstacles: [{ height: 50, left: 200, top: 450, width: 800 }],
+      chooseRexNavbarLane({
+        bounds: { left: 100, right: 900 },
+        height: 58,
+        obstacles: [
+          { height: 40, left: 100, top: 9, width: 120 },
+          { height: 40, left: 420, top: 9, width: 230 },
+          { height: 40, left: 720, top: 9, width: 180 },
+        ],
+        padding: 10,
+        preferredX: 260,
         size: 50,
-        top: 80,
+        top: 0,
       }),
-    ).toEqual({ left: 200, right: 950, top: 392 });
+    ).toEqual({ canWalk: true, left: 230, right: 360, top: 4 });
+  });
+
+  it("stops in place when a navbar gap fits Rex but has no travel room", () => {
+    expect(
+      chooseRexNavbarLane({
+        bounds: { left: 100, right: 150 },
+        height: 60,
+        obstacles: [],
+        size: 50,
+        top: 0,
+      }),
+    ).toEqual({ canWalk: false, left: 100, right: 100, top: 5 });
+  });
+
+  it("returns no placement instead of overlapping a crowded navbar", () => {
+    expect(
+      chooseRexNavbarLane({
+        bounds: { left: 100, right: 180 },
+        height: 60,
+        obstacles: [{ height: 60, left: 100, top: 0, width: 80 }],
+        size: 50,
+        top: 0,
+      }),
+    ).toBeNull();
   });
 
   it("mirrors the left-facing source only for rightward travel", () => {
@@ -89,6 +118,7 @@ describe("Rex authenticated shell integration", () => {
     const actions = shell.slice(shell.indexOf('className="dashboard-topbar__actions"'));
 
     expect(shell).toContain("<RexMascot />");
+    expect(shell).toContain("data-rex-navbar-lane");
     expect(actions.indexOf("<RexToggle />")).toBeGreaterThan(
       actions.indexOf('user.role !== "agent"'),
     );
@@ -112,10 +142,24 @@ describe("Rex authenticated shell integration", () => {
     expect(component).toContain("observer.disconnect()");
     expect(component).toContain("animation.cancel()");
     expect(component).toContain("usePathname()");
-    expect(component).toContain("chooseRexWalkingLane");
+    expect(component).toContain("chooseRexNavbarLane");
+    expect(component).toContain('".dashboard-topbar__leading"');
+    expect(component).toContain('".dashboard-search"');
+    expect(component).toContain('".dashboard-topbar__actions"');
     expect(component).toContain("[role='tab']");
     expect(component).toContain("button.dataset.rexDirection");
     expect(component).not.toContain("fetch(");
+  });
+
+  it("hides the navbar lane before tablet controls can become crowded", () => {
+    const globals = readFileSync(
+      resolve(process.cwd(), "src/app/globals.css"),
+      "utf8",
+    );
+    const tabletRule = globals.slice(globals.indexOf("@media (max-width: 52rem)"));
+
+    expect(tabletRule).toContain(".dashboard-topbar__rex-lane");
+    expect(tabletRule).toContain("display: none");
   });
 
   it("uses an exact five-cell transparent sprite sheet", () => {

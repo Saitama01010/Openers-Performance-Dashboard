@@ -10,8 +10,8 @@ import {
 } from "react";
 
 import {
+  chooseRexNavbarLane,
   chooseRexPlacement,
-  chooseRexWalkingLane,
   createRexSeatCandidates,
   rexScaleForDirection,
   type RexDirection,
@@ -31,6 +31,9 @@ const SEAT_PADDING = 14;
 const SMALL_VIEWPORT_WIDTH = 360;
 const SMALL_VIEWPORT_HEIGHT = 420;
 const PAGE_GEOMETRY_DEBOUNCE = 180;
+const NAVBAR_REX_MIN_SIZE = 32;
+const NAVBAR_REX_MAX_SIZE = 52;
+const NAVBAR_OBSTACLE_PADDING = 8;
 
 type RexMode = "idle" | "seated" | "walking";
 
@@ -172,6 +175,35 @@ function obstacleRects(headerBottom: number) {
     });
 }
 
+function navbarObstacleRects(header: HTMLElement) {
+  const selector = [
+    ".dashboard-topbar__leading",
+    ".dashboard-search",
+    ".dashboard-topbar__actions",
+    "button",
+    "a",
+    "input",
+    "select",
+    "textarea",
+    "[role='button']",
+    "[role='link']",
+  ].join(",");
+  const seen = new Set<string>();
+
+  return Array.from(header.querySelectorAll<HTMLElement>(selector))
+    .filter((element) => !element.closest("[data-rex-navbar-lane]"))
+    .filter(isVisibleElement)
+    .map(toPlacementRect)
+    .filter((rect) => {
+      const key = [rect.left, rect.top, rect.width, rect.height]
+        .map((value) => Math.round(value))
+        .join(":");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function rexSize() {
   return window.innerWidth <= 672 ? MOBILE_REX_SIZE : DESKTOP_REX_SIZE;
 }
@@ -261,6 +293,50 @@ function measurePageGeometry(): RexPageGeometry {
   };
 }
 
+type RexNavbarGeometry = {
+  bounds: RexHorizontalBounds;
+  height: number;
+  obstacles: RexPlacementRect[];
+  size: number;
+  top: number;
+};
+
+function measureNavbarGeometry(): RexNavbarGeometry | null {
+  const header = document.querySelector<HTMLElement>(".dashboard-topbar");
+  const reservedLane = header?.querySelector<HTMLElement>(
+    "[data-rex-navbar-lane]",
+  );
+  if (
+    !header ||
+    !reservedLane ||
+    !isVisibleElement(header) ||
+    !isVisibleElement(reservedLane)
+  ) {
+    return null;
+  }
+
+  const headerRect = header.getBoundingClientRect();
+  const laneRect = reservedLane.getBoundingClientRect();
+  const left = Math.max(headerRect.left, laneRect.left);
+  const right = Math.min(headerRect.right, laneRect.right);
+  const size = Math.floor(
+    clamp(
+      headerRect.height - NAVBAR_OBSTACLE_PADDING,
+      NAVBAR_REX_MIN_SIZE,
+      NAVBAR_REX_MAX_SIZE,
+    ),
+  );
+  if (right - left < size) return null;
+
+  return {
+    bounds: { left, right },
+    height: headerRect.height,
+    obstacles: navbarObstacleRects(header),
+    size,
+    top: headerRect.top,
+  };
+}
+
 function findTopPlacement(geometry: RexPageGeometry): RexPlacement {
   const size = rexSize();
   const top = geometry.headerBottom + SEAT_PADDING;
@@ -332,8 +408,11 @@ export function RexMascot() {
     const placement = findTopPlacement(geometry);
     const shellRect = shell.getBoundingClientRect();
     seatAnimationRef.current?.cancel();
+    button.hidden = false;
+    button.style.visibility = "visible";
     button.dataset.rexPage = pathname;
     button.dataset.rexPosition = "resting";
+    button.style.setProperty("--rex-size", `${rexSize()}px`);
     button.style.setProperty("--rex-facing", "1");
     button.style.bottom = "auto";
     button.style.left = `${placement.left - shellRect.left}px`;
@@ -384,6 +463,12 @@ export function RexMascot() {
     };
     const observer = new ResizeObserver(onLayoutChange);
     const header = document.querySelector<HTMLElement>(".dashboard-topbar");
+    const navbarLane = header?.querySelector<HTMLElement>(
+      "[data-rex-navbar-lane]",
+    );
+    const navbarGroups = header?.querySelectorAll<HTMLElement>(
+      ".dashboard-topbar__leading, .dashboard-search, .dashboard-topbar__actions",
+    );
     const content = document.querySelector<HTMLElement>("#dashboard-content");
     const sidebar = document.querySelector<HTMLElement>(
       ".dashboard-sidebar--desktop",
@@ -404,6 +489,8 @@ export function RexMascot() {
       if (modeRef.current !== "seated") onLayoutChange();
     };
     if (header) observer.observe(header);
+    if (navbarLane) observer.observe(navbarLane);
+    navbarGroups?.forEach((group) => observer.observe(group));
     if (content) observer.observe(content);
     if (sidebar) observer.observe(sidebar);
     if (firstPageElement instanceof HTMLElement) {
@@ -438,29 +525,38 @@ export function RexMascot() {
       return;
     }
 
-    const geometry = measurePageGeometry();
-    const size = rexSize();
-    const lane = chooseRexWalkingLane({
-      bottom: geometry.bottom,
+    const geometry = measureNavbarGeometry();
+    if (!geometry) {
+      button.hidden = true;
+      return;
+    }
+    const lane = chooseRexNavbarLane({
       bounds: geometry.bounds,
-      gap: 10,
-      maxLanes: 4,
+      height: geometry.height,
       obstacles: geometry.obstacles,
-      padding: 8,
+      padding: NAVBAR_OBSTACLE_PADDING,
       preferredX: currentXRef.current,
-      size,
-      top: geometry.headerBottom + SEAT_PADDING,
+      size: geometry.size,
+      top: geometry.top,
     });
+    if (!lane) {
+      button.hidden = true;
+      return;
+    }
     const minimumX = lane.left;
     const maximumX = lane.right;
     currentXRef.current = clamp(currentXRef.current, minimumX, maximumX);
+    button.hidden = false;
+    button.style.visibility = "visible";
     button.dataset.rexPage = pathname;
-    button.dataset.rexPosition = mode === "idle" ? "idle" : "walking";
+    button.dataset.rexPosition =
+      mode === "idle" ? "navbar-idle" : "navbar-walking";
+    button.style.setProperty("--rex-size", `${geometry.size}px`);
     button.style.bottom = "auto";
     button.style.left = "0px";
     button.style.top = `${lane.top}px`;
 
-    if (staticMascot) {
+    if (staticMascot || !lane.canWalk) {
       button.dataset.rexDirection = "stationary";
       button.style.setProperty("--rex-facing", "1");
       button.style.transform = `translate3d(${currentXRef.current}px, 0, 0)`;

@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -10,6 +11,11 @@ import {
 
 import {
   chooseRexPlacement,
+  chooseRexWalkingLane,
+  createRexSeatCandidates,
+  rexScaleForDirection,
+  type RexDirection,
+  type RexHorizontalBounds,
   type RexPlacement,
   type RexPlacementRect,
 } from "@/components/dashboard/rex-placement";
@@ -24,6 +30,7 @@ const VIEWPORT_PADDING = 12;
 const SEAT_PADDING = 14;
 const SMALL_VIEWPORT_WIDTH = 360;
 const SMALL_VIEWPORT_HEIGHT = 420;
+const PAGE_GEOMETRY_DEBOUNCE = 180;
 
 type RexMode = "idle" | "seated" | "walking";
 
@@ -121,7 +128,7 @@ function toPlacementRect(element: HTMLElement): RexPlacementRect {
   };
 }
 
-function obstacleRects() {
+function obstacleRects(headerBottom: number) {
   const selector = [
     "button",
     "a",
@@ -130,6 +137,8 @@ function obstacleRects() {
     "textarea",
     "[role='button']",
     "[role='link']",
+    "[role='tab']",
+    "summary",
     "h1",
     "h2",
     "h3",
@@ -139,13 +148,28 @@ function obstacleRects() {
     "[class*='card']",
     "[class*='panel']",
     "[class*='toolbar']",
+    "[class*='tabs']",
+    "[class*='filter']",
     "[data-rex-protected]",
   ].join(",");
+  const seen = new Set<string>();
 
   return Array.from(document.querySelectorAll<HTMLElement>(selector))
     .filter((element) => !element.closest("[data-rex-control]"))
     .filter(isVisibleElement)
-    .map(toPlacementRect);
+    .map(toPlacementRect)
+    .filter(
+      (rect) =>
+        rect.top + rect.height > headerBottom && rect.top < window.innerHeight,
+    )
+    .filter((rect) => {
+      const key = [rect.left, rect.top, rect.width, rect.height]
+        .map((value) => Math.round(value))
+        .join(":");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function rexSize() {
@@ -156,45 +180,20 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 }
 
-function findTopPlacement(): RexPlacement {
-  const size = rexSize();
-  const header = document.querySelector<HTMLElement>(".dashboard-topbar");
-  const content = document.querySelector<HTMLElement>("#dashboard-content");
-  const headerRect = header?.getBoundingClientRect();
-  const contentRect = content?.getBoundingClientRect();
-  const minimumLeft = Math.max(
-    VIEWPORT_PADDING,
-    (contentRect?.left ?? VIEWPORT_PADDING) + SEAT_PADDING,
-  );
-  const maximumLeft = Math.min(
-    window.innerWidth - size - VIEWPORT_PADDING,
-    (contentRect?.right ?? window.innerWidth) - size - SEAT_PADDING,
-  );
-  const top = Math.max(
-    VIEWPORT_PADDING,
-    (headerRect?.bottom ?? 0) + SEAT_PADDING,
-  );
-  const center = clamp(
-    minimumLeft + (maximumLeft - minimumLeft) / 2,
-    minimumLeft,
-    maximumLeft,
-  );
-  const candidates = [
-    { left: minimumLeft, top },
-    { left: center, top },
-    { left: maximumLeft, top },
-  ];
-
-  return (
-    chooseRexPlacement(candidates, obstacleRects(), size, SEAT_PADDING) ??
-    { left: center, top }
-  );
-}
-
 function fixedBottomInset() {
   let inset = VIEWPORT_PADDING;
   const candidates = document.querySelectorAll<HTMLElement>(
-    "[data-fixed-footer], [data-bottom-navigation], footer",
+    [
+      "[data-fixed-footer]",
+      "[data-bottom-navigation]",
+      "footer",
+      "[role='status']",
+      "[role='alert']",
+      "[class*='toast']",
+      "[class*='pending']",
+      "[class*='bottomNav']",
+      "[class*='bottom-nav']",
+    ].join(","),
   );
 
   for (const element of candidates) {
@@ -209,12 +208,94 @@ function fixedBottomInset() {
   return inset;
 }
 
+type RexPageGeometry = {
+  bottom: number;
+  bounds: RexHorizontalBounds;
+  headerBottom: number;
+  obstacles: RexPlacementRect[];
+};
+
+function measurePageGeometry(): RexPageGeometry {
+  const size = rexSize();
+  const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  const header = document.querySelector<HTMLElement>(".dashboard-topbar");
+  const workspace = document.querySelector<HTMLElement>(".dashboard-workspace");
+  const content = document.querySelector<HTMLElement>("#dashboard-content");
+  const sidebar = document.querySelector<HTMLElement>(
+    ".dashboard-sidebar--desktop",
+  );
+  const headerRect = header?.getBoundingClientRect();
+  const workspaceRect = workspace?.getBoundingClientRect();
+  const contentRect = content?.getBoundingClientRect();
+  const sidebarRect = sidebar?.getBoundingClientRect();
+  const sidebarVisible = sidebar ? isVisibleElement(sidebar) : false;
+  const left = Math.max(
+    VIEWPORT_PADDING,
+    (workspaceRect?.left ?? 0) + VIEWPORT_PADDING,
+    (contentRect?.left ?? 0) + VIEWPORT_PADDING,
+    sidebarVisible ? (sidebarRect?.right ?? 0) + VIEWPORT_PADDING : 0,
+  );
+  const right = Math.max(
+    left + size,
+    Math.min(
+      viewportWidth - VIEWPORT_PADDING,
+      (workspaceRect?.right ?? viewportWidth) - VIEWPORT_PADDING,
+      (contentRect?.right ?? viewportWidth) - VIEWPORT_PADDING,
+    ),
+  );
+  const headerBottom = Math.max(
+    VIEWPORT_PADDING,
+    headerRect?.bottom ?? VIEWPORT_PADDING,
+  );
+  const bottom = Math.max(
+    headerBottom + size + SEAT_PADDING,
+    viewportHeight - fixedBottomInset(),
+  );
+
+  return {
+    bottom,
+    bounds: { left, right },
+    headerBottom,
+    obstacles: obstacleRects(headerBottom),
+  };
+}
+
+function findTopPlacement(geometry: RexPageGeometry): RexPlacement {
+  const size = rexSize();
+  const top = geometry.headerBottom + SEAT_PADDING;
+  const candidates = createRexSeatCandidates({
+    bottom: geometry.bottom,
+    bounds: geometry.bounds,
+    gap: SEAT_PADDING,
+    maxRows: 4,
+    size,
+    top,
+  });
+  const fallbackLeft =
+    geometry.bounds.left +
+    (Math.max(geometry.bounds.left, geometry.bounds.right - size) -
+      geometry.bounds.left) /
+      2;
+
+  return (
+    chooseRexPlacement(
+      candidates,
+      geometry.obstacles,
+      size,
+      SEAT_PADDING,
+    ) ?? { left: fallbackLeft, top }
+  );
+}
+
 export function RexMascot() {
+  const pathname = usePathname();
   const { enabled, hydrated } = useRexPreference();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const currentXRef = useRef(VIEWPORT_PADDING);
-  const facingRef = useRef<1 | -1>(1);
+  const directionRef = useRef<RexDirection>(1);
   const idleCountRef = useRef(0);
+  const modeRef = useRef<RexMode>("walking");
   const seatAnimationRef = useRef<Animation | null>(null);
   const seatOriginRef = useRef<DOMRect | null>(null);
   const [mode, setMode] = useState<RexMode>("walking");
@@ -222,6 +303,10 @@ export function RexMascot() {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [smallViewport, setSmallViewport] = useState(false);
   const staticMascot = reducedMotion || smallViewport;
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -243,9 +328,13 @@ export function RexMascot() {
     const shell = document.querySelector<HTMLElement>(".dashboard-shell");
     if (!button || !shell) return;
 
-    const placement = findTopPlacement();
+    const geometry = measurePageGeometry();
+    const placement = findTopPlacement(geometry);
     const shellRect = shell.getBoundingClientRect();
     seatAnimationRef.current?.cancel();
+    button.dataset.rexPage = pathname;
+    button.dataset.rexPosition = "resting";
+    button.style.setProperty("--rex-facing", "1");
     button.style.bottom = "auto";
     button.style.left = `${placement.left - shellRect.left}px`;
     button.style.top = `${placement.top - shellRect.top}px`;
@@ -270,7 +359,7 @@ export function RexMascot() {
         easing: "cubic-bezier(0.22, 1, 0.36, 1)",
       },
     );
-  }, []);
+  }, [pathname]);
 
   useEffect(
     () => () => {
@@ -291,21 +380,54 @@ export function RexMascot() {
             window.innerHeight < SMALL_VIEWPORT_HEIGHT,
         );
         setLayoutEpoch((current) => current + 1);
-      }, 180);
+      }, PAGE_GEOMETRY_DEBOUNCE);
     };
     const observer = new ResizeObserver(onLayoutChange);
     const header = document.querySelector<HTMLElement>(".dashboard-topbar");
     const content = document.querySelector<HTMLElement>("#dashboard-content");
+    const sidebar = document.querySelector<HTMLElement>(
+      ".dashboard-sidebar--desktop",
+    );
+    const firstPageElement = content?.firstElementChild;
+    const onPotentialPageChange = (event: Event) => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          "[role='tab'], .section-tabs button, button[aria-expanded], summary",
+        )
+      ) {
+        onLayoutChange();
+      }
+    };
+    const onSettledScroll = () => {
+      if (modeRef.current !== "seated") onLayoutChange();
+    };
     if (header) observer.observe(header);
     if (content) observer.observe(content);
+    if (sidebar) observer.observe(sidebar);
+    if (firstPageElement instanceof HTMLElement) {
+      observer.observe(firstPageElement);
+    }
+    content?.addEventListener("click", onPotentialPageChange);
     window.addEventListener("resize", onLayoutChange, { passive: true });
+    window.addEventListener("scroll", onSettledScroll, {
+      capture: true,
+      passive: true,
+    });
+    window.visualViewport?.addEventListener("resize", onLayoutChange, {
+      passive: true,
+    });
 
     return () => {
       clearTimeout(debounceTimer);
       observer.disconnect();
+      content?.removeEventListener("click", onPotentialPageChange);
       window.removeEventListener("resize", onLayoutChange);
+      window.removeEventListener("scroll", onSettledScroll, true);
+      window.visualViewport?.removeEventListener("resize", onLayoutChange);
     };
-  }, [enabled, hydrated]);
+  }, [enabled, hydrated, pathname]);
 
   useEffect(() => {
     const button = buttonRef.current;
@@ -316,18 +438,31 @@ export function RexMascot() {
       return;
     }
 
+    const geometry = measurePageGeometry();
     const size = rexSize();
-    const minimumX = VIEWPORT_PADDING;
-    const maximumX = Math.max(
-      minimumX,
-      window.innerWidth - size - VIEWPORT_PADDING,
-    );
+    const lane = chooseRexWalkingLane({
+      bottom: geometry.bottom,
+      bounds: geometry.bounds,
+      gap: 10,
+      maxLanes: 4,
+      obstacles: geometry.obstacles,
+      padding: 8,
+      preferredX: currentXRef.current,
+      size,
+      top: geometry.headerBottom + SEAT_PADDING,
+    });
+    const minimumX = lane.left;
+    const maximumX = lane.right;
     currentXRef.current = clamp(currentXRef.current, minimumX, maximumX);
-    button.style.bottom = `${fixedBottomInset()}px`;
+    button.dataset.rexPage = pathname;
+    button.dataset.rexPosition = mode === "idle" ? "idle" : "walking";
+    button.style.bottom = "auto";
     button.style.left = "0px";
-    button.style.top = "auto";
+    button.style.top = `${lane.top}px`;
 
     if (staticMascot) {
+      button.dataset.rexDirection = "stationary";
+      button.style.setProperty("--rex-facing", "1");
       button.style.transform = `translate3d(${currentXRef.current}px, 0, 0)`;
       return;
     }
@@ -342,12 +477,17 @@ export function RexMascot() {
       return () => window.clearTimeout(idleTimer);
     }
 
-    let targetX = facingRef.current === 1 ? maximumX : minimumX;
+    let targetX = directionRef.current === 1 ? maximumX : minimumX;
     if (Math.abs(targetX - currentXRef.current) < 2) {
-      facingRef.current = facingRef.current === 1 ? -1 : 1;
-      targetX = facingRef.current === 1 ? maximumX : minimumX;
+      directionRef.current = directionRef.current === 1 ? -1 : 1;
+      targetX = directionRef.current === 1 ? maximumX : minimumX;
     }
-    button.style.setProperty("--rex-facing", String(facingRef.current));
+    button.dataset.rexDirection =
+      directionRef.current === 1 ? "right" : "left";
+    button.style.setProperty(
+      "--rex-facing",
+      String(rexScaleForDirection(directionRef.current)),
+    );
     const distance = Math.abs(targetX - currentXRef.current);
     const duration = clamp((distance / 42) * 1000, 7000, 42000);
     let finished = false;
@@ -367,7 +507,7 @@ export function RexMascot() {
     animation.onfinish = () => {
       finished = true;
       currentXRef.current = targetX;
-      facingRef.current = facingRef.current === 1 ? -1 : 1;
+      directionRef.current = directionRef.current === 1 ? -1 : 1;
       setMode("idle");
     };
 
@@ -379,7 +519,15 @@ export function RexMascot() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       animation.cancel();
     };
-  }, [enabled, hydrated, layoutEpoch, mode, placeAtTop, staticMascot]);
+  }, [
+    enabled,
+    hydrated,
+    layoutEpoch,
+    mode,
+    pathname,
+    placeAtTop,
+    staticMascot,
+  ]);
 
   if (!hydrated || !enabled) return null;
 

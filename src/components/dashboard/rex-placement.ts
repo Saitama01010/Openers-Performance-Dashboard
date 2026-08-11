@@ -10,6 +10,17 @@ export type RexPlacement = {
   top: number;
 };
 
+export type RexHorizontalBounds = {
+  left: number;
+  right: number;
+};
+
+export type RexWalkingLane = RexHorizontalBounds & {
+  top: number;
+};
+
+export type RexDirection = -1 | 1;
+
 function paddedRect(rect: RexPlacementRect, padding: number): RexPlacementRect {
   return {
     height: rect.height + padding * 2,
@@ -40,6 +51,27 @@ export function rexOverlapArea(
   return overlapWidth * overlapHeight;
 }
 
+function rexClearance(
+  placement: RexPlacement,
+  size: number,
+  obstacle: RexPlacementRect,
+  padding: number,
+) {
+  const padded = paddedRect(obstacle, padding);
+  const horizontalGap = Math.max(
+    0,
+    padded.left - (placement.left + size),
+    placement.left - (padded.left + padded.width),
+  );
+  const verticalGap = Math.max(
+    0,
+    padded.top - (placement.top + size),
+    placement.top - (padded.top + padded.height),
+  );
+
+  return Math.hypot(horizontalGap, verticalGap);
+}
+
 export function chooseRexPlacement(
   candidates: RexPlacement[],
   obstacles: RexPlacementRect[],
@@ -50,6 +82,7 @@ export function chooseRexPlacement(
 
   let best = candidates[0];
   let bestScore = Number.POSITIVE_INFINITY;
+  let bestClearance = Number.NEGATIVE_INFINITY;
 
   for (const candidate of candidates) {
     const score = obstacles.reduce(
@@ -57,13 +90,156 @@ export function chooseRexPlacement(
         total + rexOverlapArea(candidate, size, obstacle, padding),
       0,
     );
+    const clearance = obstacles.reduce(
+      (nearest, obstacle) =>
+        Math.min(nearest, rexClearance(candidate, size, obstacle, padding)),
+      Number.POSITIVE_INFINITY,
+    );
 
-    if (score === 0) return candidate;
-    if (score < bestScore) {
+    if (
+      score < bestScore ||
+      (score === bestScore && clearance > bestClearance)
+    ) {
       best = candidate;
       bestScore = score;
+      bestClearance = clearance;
     }
   }
 
   return best;
+}
+
+export function createRexSeatCandidates(input: {
+  bounds: RexHorizontalBounds;
+  bottom: number;
+  gap?: number;
+  maxRows?: number;
+  size: number;
+  top: number;
+}) {
+  const gap = input.gap ?? 14;
+  const maxRows = input.maxRows ?? 4;
+  const maximumLeft = Math.max(
+    input.bounds.left,
+    input.bounds.right - input.size,
+  );
+  const center =
+    input.bounds.left + (maximumLeft - input.bounds.left) / 2;
+  const columns = [center, input.bounds.left, maximumLeft].filter(
+    (value, index, values) =>
+      values.findIndex((candidate) => Math.abs(candidate - value) < 1) === index,
+  );
+  const candidates: RexPlacement[] = [];
+
+  for (let row = 0; row < maxRows; row += 1) {
+    const top = input.top + row * (input.size + gap);
+    if (top + input.size > input.bottom) break;
+    for (const left of columns) candidates.push({ left, top });
+  }
+
+  return candidates;
+}
+
+type Interval = { left: number; right: number };
+
+function mergeIntervals(intervals: Interval[]) {
+  const sorted = [...intervals].sort((a, b) => a.left - b.left);
+  const merged: Interval[] = [];
+
+  for (const interval of sorted) {
+    const previous = merged.at(-1);
+    if (!previous || interval.left > previous.right) {
+      merged.push({ ...interval });
+      continue;
+    }
+    previous.right = Math.max(previous.right, interval.right);
+  }
+
+  return merged;
+}
+
+function freeIntervals(bounds: RexHorizontalBounds, blocked: Interval[]) {
+  const free: Interval[] = [];
+  let cursor = bounds.left;
+
+  for (const interval of mergeIntervals(blocked)) {
+    if (interval.left > cursor) {
+      free.push({ left: cursor, right: Math.min(interval.left, bounds.right) });
+    }
+    cursor = Math.max(cursor, interval.right);
+    if (cursor >= bounds.right) break;
+  }
+
+  if (cursor < bounds.right) free.push({ left: cursor, right: bounds.right });
+  return free.filter((interval) => interval.right > interval.left);
+}
+
+export function chooseRexWalkingLane(input: {
+  bottom: number;
+  bounds: RexHorizontalBounds;
+  gap?: number;
+  maxLanes?: number;
+  obstacles: RexPlacementRect[];
+  padding?: number;
+  preferredX?: number;
+  size: number;
+  top: number;
+}): RexWalkingLane {
+  const gap = input.gap ?? 8;
+  const maxLanes = input.maxLanes ?? 4;
+  const padding = input.padding ?? 8;
+  const preferredX = input.preferredX ?? input.bounds.left;
+  let best: RexWalkingLane | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (let laneIndex = 0; laneIndex < maxLanes; laneIndex += 1) {
+    const laneTop = input.bottom - input.size - laneIndex * (input.size + gap);
+    if (laneTop < input.top) break;
+    const laneBottom = laneTop + input.size;
+    const blocked = input.obstacles
+      .filter(
+        (obstacle) =>
+          obstacle.top < laneBottom + padding &&
+          obstacle.top + obstacle.height > laneTop - padding,
+      )
+      .map((obstacle) => ({
+        left: Math.max(input.bounds.left, obstacle.left - padding),
+        right: Math.min(
+          input.bounds.right,
+          obstacle.left + obstacle.width + padding,
+        ),
+      }))
+      .filter((interval) => interval.right > interval.left);
+
+    for (const available of freeIntervals(input.bounds, blocked)) {
+      const availableWidth = available.right - available.left;
+      if (availableWidth < input.size * 2) continue;
+      const maximumLeft = available.right - input.size;
+      const travelDistance = maximumLeft - available.left;
+      const keepsCurrentPosition =
+        preferredX >= available.left && preferredX <= maximumLeft;
+      const score =
+        travelDistance +
+        (keepsCurrentPosition ? Math.min(40, travelDistance * 0.15) : 0) -
+        laneIndex * 2;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = { left: available.left, right: maximumLeft, top: laneTop };
+      }
+    }
+  }
+
+  return (
+    best ?? {
+      left: input.bounds.left,
+      right: Math.max(input.bounds.left, input.bounds.right - input.size),
+      top: Math.max(input.top, input.bottom - input.size),
+    }
+  );
+}
+
+export function rexScaleForDirection(direction: RexDirection) {
+  // The source artwork faces left, so rightward travel must mirror it.
+  return direction === 1 ? -1 : 1;
 }

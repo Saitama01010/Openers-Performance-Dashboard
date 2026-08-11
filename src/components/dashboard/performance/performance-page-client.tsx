@@ -14,6 +14,7 @@ import {
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import { AreaTrend } from "@/components/ui/area-trend";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { metricCardForeground, metricCardStyle } from "@/components/ui/statistics-card";
 import {
   calculatePerformanceDelta,
   PRODUCTIVITY_MIX_KEYS,
@@ -209,7 +210,7 @@ function MetricCard({
   return (
     <article
       aria-describedby={`${id}-description`}
-      className={styles.metricCard}
+      className={`${styles.metricCard} metric-color-card`}
       data-open={pinned || undefined}
       id={id}
       onClick={() => setPinned((value) => !value)}
@@ -220,29 +221,29 @@ function MetricCard({
         }
         if (event.key === "Escape") setPinned(false);
       }}
-      style={{ "--metric-color": color } as CSSProperties}
+      style={{ ...metricCardStyle(color), "--metric-color": color } as CSSProperties}
       tabIndex={0}
     >
       <div className={styles.metricTop}>
-        <span className={styles.metricIcon}><DashboardIcon name={icon} /></span>
-        <strong>{label}</strong>
+        <span className={`${styles.metricIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
+        <strong className="metric-card-label">{label}</strong>
         <ActionMenu label={`${label} actions`}>
           {(close) => <MenuButton onClick={() => { void copyValue(); close(); }}>Copy formatted value</MenuButton>}
         </ActionMenu>
       </div>
-      <p className={styles.metricValue}>{format(current)}</p>
-      <p className={styles.metricTrend} data-tone={trendTone}>
+      <p className={`${styles.metricValue} metric-card-value`}>{format(current)}</p>
+      <p className={`${styles.metricTrend} metric-card-detail`} data-tone={trendTone}>
         <span>{trend}</span> vs {data.comparison?.label ?? "previous period"}
       </p>
       <AreaTrend
         ariaLabel={`${label} trend`}
-        className={styles.sparkline}
-        color={color}
+        className={`${styles.sparkline} metric-card-trend`}
+        color={metricCardForeground(color)}
         emptyLabel="No trend history"
         formatValue={(value) => format(value)}
         points={series}
       />
-      <p className={styles.metricDescription} id={`${id}-description`}>{description}</p>
+      <p className={`${styles.metricDescription} metric-card-detail`} id={`${id}-description`}>{description}</p>
       <div className={styles.metricTooltip} role="tooltip">
         <strong>{label}</strong>
         <dl>

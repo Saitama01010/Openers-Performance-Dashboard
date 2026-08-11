@@ -12,6 +12,7 @@ import {
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { AreaTrend } from "@/components/ui/area-trend";
 import { Badge, BadgeDot } from "@/components/ui/base-badge";
+import { metricCardStyle } from "@/components/ui/statistics-card";
 import styles from "@/components/dashboard/agents/agents-page.module.css";
 
 const SORT_OPTIONS: Array<{ value: AgentDirectorySortKey; label: string }> = [
@@ -59,10 +60,10 @@ function relativeChange(current: number | null, previous: number | null, suffix 
 
 function Comparison({ current, previous, suffix }: { current: number | null; previous: number | null; suffix?: string }) {
   const change = relativeChange(current, previous, suffix);
-  if (!change) return <span className={styles.mutedComparison}>No period comparison</span>;
+  if (!change) return <span className={`${styles.mutedComparison} metric-card-detail`}>No period comparison</span>;
   const direction = change.value > 0 ? "up" : change.value < 0 ? "down" : "flat";
   return (
-    <span className={styles.comparison} data-direction={direction}>
+    <span className={`${styles.comparison} metric-card-comparison`} data-direction={direction}>
       <span aria-hidden="true">{direction === "up" ? "↑" : direction === "down" ? "↓" : "—"}</span>
       {change.label} vs prior period
     </span>
@@ -94,12 +95,12 @@ function trendValues(row: AgentDirectoryRow, sortBy: AgentDirectorySortKey) {
 
 function KpiCard({ tone, icon, label, value, detail, comparison }: { tone: string; icon: "users" | "agent" | "freshness" | "talk"; label: string; value: string; detail: string; comparison?: React.ReactNode }) {
   return (
-    <article className={styles.kpiCard}>
-      <span className={styles.kpiIcon} style={{ backgroundColor: `${tone}16`, color: tone }}><DashboardIcon name={icon} /></span>
+    <article className={`${styles.kpiCard} metric-color-card`} style={metricCardStyle(tone)}>
+      <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
       <div>
-        <span className={styles.kpiLabel}>{label}</span>
-        <strong>{value}</strong>
-        {comparison ?? <span className={styles.kpiDetail}>{detail}</span>}
+        <span className={`${styles.kpiLabel} metric-card-label`}>{label}</span>
+        <strong className="metric-card-value">{value}</strong>
+        {comparison ?? <span className={`${styles.kpiDetail} metric-card-detail`}>{detail}</span>}
       </div>
     </article>
   );

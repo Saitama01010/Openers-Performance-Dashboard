@@ -25,6 +25,7 @@ import styles from "@/components/admin/users-access.module.css";
 import { UserImportWizard } from "@/components/admin/user-import-wizard";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { SubmitButton } from "@/components/dashboard/action-controls";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import { importStatusLabel } from "@/presentation/labels";
 
 export const dynamic = "force-dynamic";
@@ -199,7 +200,8 @@ export default async function AdminUsersPage({
 }
 
 function Kpi({ label, value, meta, detail, icon }: { label: string; value: number; meta: string; detail: string; icon: "users" | "permissions" | "teams" | "agent" }) {
-  return <article className={styles.kpi} tabIndex={0}><p className={styles.kpiLabel}>{label}</p><p className={styles.kpiValue}>{value}</p><p className={styles.kpiMeta}>{meta}</p><span className={styles.kpiIcon}><DashboardIcon name={icon} /></span><span className={styles.kpiDetails} role="tooltip">{detail}. {meta}.</span></article>;
+  const tone = label === "Active users" ? METRIC_CARD_TONES.green : label === "Admins" ? METRIC_CARD_TONES.purple : label === "Managers" ? METRIC_CARD_TONES.orange : label === "Agents" ? METRIC_CARD_TONES.cyan : METRIC_CARD_TONES.blue;
+  return <article className={`${styles.kpi} metric-color-card`} style={metricCardStyle(tone)} tabIndex={0}><p className={`${styles.kpiLabel} metric-card-label`}>{label}</p><p className={`${styles.kpiValue} metric-card-value`}>{value}</p><p className={`${styles.kpiMeta} metric-card-detail`}>{meta}</p><span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span><span className={styles.kpiDetails} role="tooltip">{detail}. {meta}.</span></article>;
 }
 
 function StatusMessage({ error, ok, warning }: { error?: string; ok?: string; warning?: string }) {

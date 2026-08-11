@@ -6,6 +6,7 @@ import Link from "next/link";
 import { TemporaryPasswordControls } from "@/components/admin/temporary-password-controls";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { Badge } from "@/components/ui/base-badge";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import styles from "./users-access.module.css";
 
 type Role = "admin" | "manager" | "agent";
@@ -406,13 +407,14 @@ export function UserImportWizard({ teams }: { teams: Team[] }) {
 }
 
 function Summary({ active = false, detail, label, onActivate, total = 0, value }: { active?: boolean; detail?: string; label: string; onActivate?: () => void; total?: number; value: number }) {
+  const tone = /failed|error|invalid/i.test(label) ? METRIC_CARD_TONES.pink : /created|valid|ready/i.test(label) ? METRIC_CARD_TONES.green : /skipped|warning/i.test(label) ? METRIC_CARD_TONES.orange : METRIC_CARD_TONES.blue;
   const content = <>
-      <p>{label}</p>
-      <strong>{value}</strong>
-      {total > 0 ? <span className={styles.sectionCopy}>{Math.round((value / total) * 100)}% of CSV</span> : null}
-      {detail ? <span className={styles.summaryDetail}>{detail}</span> : null}
+      <p className="metric-card-label">{label}</p>
+      <strong className="metric-card-value">{value}</strong>
+      {total > 0 ? <span className={`${styles.sectionCopy} metric-card-detail`}>{Math.round((value / total) * 100)}% of CSV</span> : null}
+      {detail ? <span className={`${styles.summaryDetail} metric-card-detail`}>{detail}</span> : null}
     </>;
-  return onActivate ? <button aria-pressed={active} className={`${styles.summaryCard} ${active ? styles.summaryCardActive : ""}`} onClick={onActivate} type="button">{content}</button> : <div className={styles.summaryCard}>{content}</div>;
+  return onActivate ? <button aria-pressed={active} className={`${styles.summaryCard} ${active ? styles.summaryCardActive : ""} metric-color-card`} onClick={onActivate} style={metricCardStyle(tone)} type="button">{content}</button> : <div className={`${styles.summaryCard} metric-color-card`} style={metricCardStyle(tone)}>{content}</div>;
 }
 
 function ValidationPreviewTable({ filter, preview }: { filter: ValidationFilter; preview: Preview }) {

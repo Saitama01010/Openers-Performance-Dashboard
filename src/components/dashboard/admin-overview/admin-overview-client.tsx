@@ -17,6 +17,7 @@ import { OverviewDateFilter } from "@/components/dashboard/overview-date-filter"
 import { AreaTrend } from "@/components/ui/area-trend";
 import { Badge, BadgeDot } from "@/components/ui/base-badge";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { metricCardForeground, metricCardStyle } from "@/components/ui/statistics-card";
 import {
   createRubricTemplateDialogAction,
   createTargetDialogAction,
@@ -136,27 +137,28 @@ function KpiCard({
   const deltaTone = !delta || delta.absolute === 0 ? "neutral" : delta.absolute > 0 ? "positive" : "negative";
   return (
     <article
-      className={styles.kpi}
+      className={`${styles.kpi} metric-color-card`}
       data-attention-count={attention?.count || undefined}
       data-attention-href={attention?.href}
       data-attention-title={attention?.title}
       data-overview-search-label={`${label} metric`}
       id={id}
+      style={metricCardStyle(tone)}
     >
       <button aria-expanded={open} className={styles.kpiButton} onClick={() => setOpen((value) => !value)} type="button">
         <span className={styles.kpiTop}>
-          <span className={styles.kpiIcon} style={{ backgroundColor: `${tone}18`, color: tone }}><DashboardIcon name={icon} /></span>
-          <span className={styles.kpiLabel}>{label}</span>
+          <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
+          <span className={`${styles.kpiLabel} metric-card-label`}>{label}</span>
         </span>
-        <strong>{format(current)}</strong>
-        <span className={`${styles.delta} ${styles[`delta_${deltaTone}`]}`}>
+        <strong className="metric-card-value">{format(current)}</strong>
+        <span className={`${styles.delta} ${styles[`delta_${deltaTone}`]} metric-card-comparison`}>
           {delta ? `${delta.absolute > 0 ? "↑" : delta.absolute < 0 ? "↓" : "—"} ${formatNumber(Math.abs(delta.absolute))}${delta.percentage === null ? "" : ` (${formatPercent(Math.abs(delta.percentage))})`}` : "—"}
         </span>
-        <span className={styles.comparison}>{comparisonLabel ? `vs ${comparisonLabel}` : "No comparable period"}</span>
+        <span className={`${styles.comparison} metric-card-detail`}>{comparisonLabel ? `vs ${comparisonLabel}` : "No comparable period"}</span>
         <AreaTrend
           ariaLabel={`${label} monthly trend`}
-          className={styles.sparkline}
-          color={tone}
+          className={`${styles.sparkline} metric-card-trend`}
+          color={metricCardForeground(tone)}
           emptyLabel="No monthly trend"
           formatValue={(value) => format(value)}
           interactive={false}

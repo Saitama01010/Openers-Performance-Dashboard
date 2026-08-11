@@ -5,6 +5,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import styles from "@/components/leaderboard/leaderboard-page.module.css";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { metricCardForeground, metricCardStyle } from "@/components/ui/statistics-card";
 import type { OverviewDateRange } from "@/dashboard/date-range";
 import {
   aggregateLeaderboardTrend,
@@ -135,7 +136,7 @@ function KpiCard({
     <article
       aria-label={`${details.label} details`}
       aria-describedby={open ? tooltipId : undefined}
-      className={styles.kpiCard}
+      className={`${styles.kpiCard} metric-color-card`}
       data-open={open ? "" : undefined}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) onActive(null); }}
       onClick={() => onActive(metric)}
@@ -148,22 +149,22 @@ function KpiCard({
         if (!event.currentTarget.contains(document.activeElement)) onActive(null);
       }}
       role="group"
-      style={{ "--leader-color": details.color } as React.CSSProperties}
+      style={{ ...metricCardStyle(details.color), "--leader-color": details.color } as React.CSSProperties}
       tabIndex={0}
     >
       <div className={styles.kpiIdentity}>
-        <span className={styles.kpiIcon}><DashboardIcon name={details.icon} /></span>
+        <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={details.icon} /></span>
         <div>
-          <p>{details.label}</p>
-          <strong>{formatMetric(current, metric)}</strong>
-          <span className={styles.kpiDelta} data-tone={deltaTone}>
+          <p className="metric-card-label">{details.label}</p>
+          <strong className="metric-card-value">{formatMetric(current, metric)}</strong>
+          <span className={`${styles.kpiDelta} metric-card-comparison`} data-tone={deltaTone}>
             {previous === null || delta.absolute === null
               ? "No equivalent-period comparison"
               : `${delta.absolute >= 0 ? "↑" : "↓"} ${formatMetric(Math.abs(delta.absolute), metric)}${delta.percentage === null ? "" : ` · ${Math.abs(delta.percentage).toFixed(1)}%`}`}
           </span>
         </div>
       </div>
-      <Sparkline color={details.color} label={details.label} metric={metric} points={trend} />
+      <span className="metric-card-trend"><Sparkline color={metricCardForeground(details.color)} label={details.label} metric={metric} points={trend} /></span>
       {open ? (
         <div className={styles.detailPopover} id={tooltipId} role="tooltip">
           <strong>{details.label}</strong>

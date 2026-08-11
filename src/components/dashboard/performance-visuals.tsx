@@ -7,6 +7,7 @@ import {
   AnimatedProductivityMix,
   type AnimatedMetricFormat,
 } from "@/components/dashboard/overview-animations";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import type {
   DashboardData,
   DashboardHourlyBreakdownRow,
@@ -18,6 +19,13 @@ import {
   formatOptionalNumber,
   formatPercentage,
 } from "@/import/format";
+
+const METRIC_PANEL_TONES = {
+  blue: METRIC_CARD_TONES.blue,
+  green: METRIC_CARD_TONES.green,
+  orange: METRIC_CARD_TONES.orange,
+  violet: METRIC_CARD_TONES.purple,
+} as const;
 
 export function formatCompactDuration(seconds: number | null) {
   if (seconds === null) return "N/A";
@@ -47,14 +55,14 @@ export function MetricPanel({
   value: string;
 }) {
   return (
-    <article className={`metric-panel metric-panel--${tone}`}>
+    <article className={`metric-panel metric-panel--${tone} metric-color-card`} style={metricCardStyle(METRIC_PANEL_TONES[tone])}>
       <div className="metric-panel__heading">
-        <span className="metric-panel__icon">
+        <span className="metric-panel__icon metric-card-icon">
           <DashboardIcon name={icon} />
         </span>
-        <p className="metric-panel__label">{label}</p>
+        <p className="metric-panel__label metric-card-label">{label}</p>
       </div>
-      <p className="metric-panel__value">
+      <p className="metric-panel__value metric-card-value">
         {animatedValue ? (
           <AnimatedMetricValue
             format={animatedValue.format}
@@ -64,7 +72,7 @@ export function MetricPanel({
           value
         )}
       </p>
-      <p className="metric-panel__detail">{detail}</p>
+      <p className="metric-panel__detail metric-card-detail">{detail}</p>
     </article>
   );
 }

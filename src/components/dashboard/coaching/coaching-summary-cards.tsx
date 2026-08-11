@@ -3,6 +3,7 @@
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import styles from "@/components/dashboard/coaching/coaching-page.module.css";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { metricCardForeground, metricCardStyle } from "@/components/ui/statistics-card";
 
 export type CoachingMetricCard = {
   label: string;
@@ -40,20 +41,20 @@ export function CoachingSummaryCards({ cards, columns = 5 }: { cards: CoachingMe
       {cards.map((card) => {
         const delta = comparison(card);
         return (
-          <article className={styles.kpiCard} key={card.label}>
-            <span className={styles.kpiIcon} data-tone={card.tone}><DashboardIcon name={card.icon} /></span>
+          <article className={`${styles.kpiCard} metric-color-card`} key={card.label} style={metricCardStyle(TREND_COLORS[card.tone])}>
+            <span className={`${styles.kpiIcon} metric-card-icon`} data-tone={card.tone}><DashboardIcon name={card.icon} /></span>
             <div className={styles.kpiContent}>
-              <span className={styles.kpiLabel}>{card.label}</span>
-              <strong className={styles.kpiValue}>{card.display ?? (card.value === null ? "N/A" : card.value.toLocaleString("en-US"))}</strong>
-              <span className={styles.kpiComparison} data-direction={delta?.direction}>
+              <span className={`${styles.kpiLabel} metric-card-label`}>{card.label}</span>
+              <strong className={`${styles.kpiValue} metric-card-value`}>{card.display ?? (card.value === null ? "N/A" : card.value.toLocaleString("en-US"))}</strong>
+              <span className={`${styles.kpiComparison} metric-card-comparison`} data-direction={delta?.direction}>
                 {card.value === null ? card.unavailableLabel ?? "Not tracked" : delta?.text ?? "No comparable period"}
               </span>
             </div>
-            {card.value === null ? <span className={styles.muted}>The current data model does not store this state.</span> : (
+            {card.value === null ? <span className={`${styles.muted} metric-card-detail`}>The current data model does not store this state.</span> : (
               <AreaTrend
                 ariaLabel={`${card.label} daily trend`}
-                className={styles.spark}
-                color={TREND_COLORS[card.tone]}
+                className={`${styles.spark} metric-card-trend`}
+                color={metricCardForeground(TREND_COLORS[card.tone])}
                 emptyLabel="Not enough daily data"
                 points={card.trend.map((point) => ({ label: point.date, value: point.value }))}
                 size="standard"

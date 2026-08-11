@@ -20,6 +20,7 @@ import type {
 } from "@/commissions/view-model";
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import styles from "@/components/dashboard/commissions/commissions-page.module.css";
 
 type SharedData = {
@@ -95,6 +96,14 @@ function comparison(current: number, previous: number | null) {
   return { absolute, ratio };
 }
 
+const COMMISSION_CARD_TONES = {
+  blue: METRIC_CARD_TONES.blue,
+  cyan: METRIC_CARD_TONES.cyan,
+  green: METRIC_CARD_TONES.green,
+  orange: METRIC_CARD_TONES.orange,
+  violet: METRIC_CARD_TONES.purple,
+} as const;
+
 function MetricCard({
   title,
   value,
@@ -129,7 +138,7 @@ function MetricCard({
   return (
     <button
       aria-expanded={open}
-      className={styles.metricCard}
+      className={`${styles.metricCard} metric-color-card`}
       data-tone={tone}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget) && !pinned) setOpen(false);
@@ -143,10 +152,11 @@ function MetricCard({
       onPointerLeave={() => {
         if (!pinned) setOpen(false);
       }}
+      style={metricCardStyle(COMMISSION_CARD_TONES[tone])}
       type="button"
     >
-      <span className={styles.metricIcon}><DashboardIcon name={icon} /></span>
-      <span className={styles.metricCopy}><span>{title}</span><strong>{value}</strong><small>{support}</small></span>
+      <span className={`${styles.metricIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
+      <span className={styles.metricCopy}><span className="metric-card-label">{title}</span><strong className="metric-card-value">{value}</strong><small className="metric-card-detail">{support}</small></span>
       {open ? (
         <span className={styles.metricTooltip} role="tooltip">
           <strong>{title}</strong>

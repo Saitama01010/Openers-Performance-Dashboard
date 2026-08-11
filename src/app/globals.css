@@ -37,6 +37,73 @@
   --z-dialog: 100;
 }
 
+/* Shared saturated statistics-card treatment. Foreground is selected in TypeScript per tone. */
+.metric-color-card {
+  --metric-card-background: #1767f2;
+  --metric-card-foreground: #ffffff;
+  --metric-card-muted: color-mix(in srgb, var(--metric-card-foreground) 76%, transparent);
+  background:
+    radial-gradient(circle at 91% 18%, color-mix(in srgb, var(--metric-card-foreground) 13%, transparent) 0 2.55rem, transparent 2.62rem),
+    radial-gradient(circle at 76% 112%, color-mix(in srgb, var(--metric-card-foreground) 10%, transparent) 0 4.2rem, transparent 4.28rem),
+    linear-gradient(145deg, transparent 58%, color-mix(in srgb, var(--metric-card-foreground) 7%, transparent)),
+    var(--metric-card-background) !important;
+  border-color: color-mix(in srgb, var(--metric-card-foreground) 20%, transparent) !important;
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--metric-card-background) 24%, transparent) !important;
+  color: var(--metric-card-foreground) !important;
+}
+
+.metric-color-card:hover,
+.metric-color-card:focus-visible,
+.metric-color-card:focus-within {
+  border-color: color-mix(in srgb, var(--metric-card-foreground) 42%, transparent) !important;
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--metric-card-background) 34%, transparent) !important;
+}
+
+.metric-color-card .metric-card-icon {
+  background: color-mix(in srgb, var(--metric-card-foreground) 16%, transparent) !important;
+  border-color: color-mix(in srgb, var(--metric-card-foreground) 18%, transparent) !important;
+  color: var(--metric-card-foreground) !important;
+}
+
+.metric-color-card .metric-card-label,
+.metric-color-card .metric-card-value {
+  color: var(--metric-card-foreground) !important;
+}
+
+.metric-color-card .metric-card-label {
+  opacity: 0.88;
+}
+
+.metric-color-card .metric-card-value {
+  text-shadow: 0 1px 1px color-mix(in srgb, var(--metric-card-background) 60%, transparent);
+}
+
+.metric-color-card .metric-card-detail,
+.metric-color-card .metric-card-trend {
+  color: var(--metric-card-muted) !important;
+}
+
+.metric-color-card .metric-card-comparison {
+  align-items: center;
+  background: color-mix(in srgb, var(--metric-card-foreground) 15%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--metric-card-foreground) 18%, transparent);
+  border-radius: 999px;
+  color: var(--metric-card-foreground) !important;
+  display: inline-flex;
+  font-weight: 720;
+  line-height: 1.25;
+  margin-top: 0.36rem;
+  max-width: 100%;
+  padding: 0.2rem 0.42rem;
+  width: max-content;
+}
+
+.metric-color-card .metric-card-trend {
+  display: block;
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--metric-card-background) 55%, transparent));
+  min-width: 0;
+}
+
 /* Role-specific dashboard operations */
 .role-dashboard {
   gap: 1.25rem;

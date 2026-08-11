@@ -10,6 +10,7 @@ import { useFormStatus } from "react-dom";
 
 import styles from "@/app/import/import-page.module.css";
 import { Badge } from "@/components/ui/base-badge";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import {
   filterPreviewAgents,
   getPreviewTeams,
@@ -323,23 +324,25 @@ function KpiCard({
   publishes: string;
   total: number;
 }) {
+  const tone = /invalid|excluded|warning/i.test(label) ? METRIC_CARD_TONES.orange : /mapped|publish/i.test(label) ? METRIC_CARD_TONES.green : /unmapped/i.test(label) ? METRIC_CARD_TONES.pink : METRIC_CARD_TONES.blue;
   return (
     <button
       aria-pressed={active}
-      className={`${styles.kpiCard}${active ? ` ${styles.kpiActive}` : ""}${muted ? ` ${styles.kpiMuted}` : ""}`}
+      className={`${styles.kpiCard}${active ? ` ${styles.kpiActive}` : ""}${muted ? ` ${styles.kpiMuted}` : ""} metric-color-card`}
       onBlur={() => onHover(null)}
       onClick={() => onActivate(highlight)}
       onFocus={() => onHover(highlight)}
       onMouseEnter={() => onHover(highlight)}
       onMouseLeave={() => onHover(null)}
+      style={metricCardStyle(tone)}
       type="button"
     >
-      <span className={styles.kpiIcon} aria-hidden="true">{icon}</span>
+      <span className={`${styles.kpiIcon} metric-card-icon`} aria-hidden="true">{icon}</span>
       <span className={styles.kpiCopy}>
-        <span>{label}</span>
+        <span className="metric-card-label">{label}</span>
         <span className={styles.kpiValueLine}>
-          <strong>{formatNumber(count)}</strong>
-          <small>{percentage(count, total)}</small>
+          <strong className="metric-card-value">{formatNumber(count)}</strong>
+          <small className="metric-card-comparison">{percentage(count, total)}</small>
         </span>
       </span>
       <span className={styles.kpiPopover} role="tooltip">

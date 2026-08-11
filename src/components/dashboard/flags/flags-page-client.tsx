@@ -8,6 +8,7 @@ import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/da
 import styles from "@/components/dashboard/flags/flags-page.module.css";
 import { AreaTrend } from "@/components/ui/area-trend";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { metricCardForeground, metricCardStyle } from "@/components/ui/statistics-card";
 import type { getPerformanceFlagsData, getTransferFlagsData } from "@/flags/data";
 import { TRANSFER_FLAG_LABELS } from "@/flags/domain";
 import { formatDurationSeconds } from "@/import/format";
@@ -67,20 +68,20 @@ function KpiCard({
 }) {
   const change = current === null ? null : comparison(current, previous);
   return (
-    <details className={styles.kpiCard} style={{ "--accent": color } as React.CSSProperties}>
+    <details className={`${styles.kpiCard} metric-color-card`} style={{ ...metricCardStyle(color), "--accent": color } as React.CSSProperties}>
       <summary>
-        <span className={styles.kpiIcon}><DashboardIcon name={icon} /></span>
+        <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
         <span className={styles.kpiCopy}>
-          <small>{label}</small>
-          <strong>{current === null ? "N/A" : number(current)}</strong>
-          <span className={styles.kpiComparison} data-direction={change ? (change.delta > 0 ? "up" : change.delta < 0 ? "down" : "flat") : "flat"}>
+          <small className="metric-card-label">{label}</small>
+          <strong className="metric-card-value">{current === null ? "N/A" : number(current)}</strong>
+          <span className={`${styles.kpiComparison} metric-card-comparison`} data-direction={change ? (change.delta > 0 ? "up" : change.delta < 0 ? "down" : "flat") : "flat"}>
             {change ? `${change.delta > 0 ? "↑" : change.delta < 0 ? "↓" : "—"} ${Math.abs(change.delta)}${change.percentage === null ? "" : ` (${Math.abs(change.percentage).toFixed(1)}%)`} vs ${range.comparison?.label ?? "prior period"}` : source === "ready" ? "No comparable period" : "Source unavailable"}
           </span>
         </span>
         <AreaTrend
           ariaLabel={`${label} weekly trend`}
-          className={styles.sparkline}
-          color={color}
+          className={`${styles.sparkline} metric-card-trend`}
+          color={metricCardForeground(color)}
           emptyLabel="No trend history"
           interactive={false}
           points={trend.map((value, index) => ({ label: `Period ${index + 1}`, value }))}

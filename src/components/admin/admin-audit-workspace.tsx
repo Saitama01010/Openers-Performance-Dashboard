@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AuditCategory } from "@/admin/audit-format";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { Badge } from "@/components/ui/base-badge";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import { roleLabel } from "@/presentation/labels";
 import styles from "./audit-admin.module.css";
 
@@ -248,7 +249,8 @@ export function AdminAuditWorkspace({ data, filters, stats, timeZone, now }: Pro
 }
 
 function Kpi({ active, detail, icon, label, meta, onActivate, onPreview, preview, value }: { active: boolean; detail: string; icon: "audit" | "calendar" | "users" | "import" | "agent"; label: string; meta: string; onActivate: () => void; onPreview: (value: "today" | "admin" | "import" | "actors" | null) => void; preview: "today" | "admin" | "import" | "actors" | null; value: number }) {
-  return <button aria-pressed={active} className={styles.kpi} onBlur={() => onPreview(null)} onClick={onActivate} onFocus={() => onPreview(preview)} onPointerEnter={() => onPreview(preview)} onPointerLeave={() => onPreview(null)} type="button"><span>{label}</span><strong>{value.toLocaleString()}</strong><small>{meta}</small><i><DashboardIcon name={icon} /></i><span className={styles.kpiDetail} role="tooltip">{detail}</span></button>;
+  const tone = icon === "calendar" ? METRIC_CARD_TONES.cyan : icon === "users" ? METRIC_CARD_TONES.purple : icon === "import" ? METRIC_CARD_TONES.orange : icon === "agent" ? METRIC_CARD_TONES.green : METRIC_CARD_TONES.blue;
+  return <button aria-pressed={active} className={`${styles.kpi} metric-color-card`} onBlur={() => onPreview(null)} onClick={onActivate} onFocus={() => onPreview(preview)} onPointerEnter={() => onPreview(preview)} onPointerLeave={() => onPreview(null)} style={metricCardStyle(tone)} type="button"><span className="metric-card-label">{label}</span><strong className="metric-card-value">{value.toLocaleString()}</strong><small className="metric-card-detail">{meta}</small><i className="metric-card-icon"><DashboardIcon name={icon} /></i><span className={styles.kpiDetail} role="tooltip">{detail}</span></button>;
 }
 
 function PageLink({ active, children, disabled, label, page, searchParams }: { active?: boolean; children: React.ReactNode; disabled?: boolean; label: string; page: number; searchParams: URLSearchParams }) {

@@ -7,6 +7,7 @@ import { useMemo, useState, useTransition } from "react";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { AreaTrend } from "@/components/ui/area-trend";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { metricCardStyle } from "@/components/ui/statistics-card";
 import {
   metricValue,
   type TeamPerformanceData,
@@ -63,9 +64,9 @@ function change(current: number | null, previous: number | null, points = false)
 
 function Comparison({ current, previous, points = false }: { current: number | null; previous: number | null; points?: boolean }) {
   const result = change(current, previous, points);
-  if (!result) return <span className={styles.noComparison}>No period comparison</span>;
+  if (!result) return <span className={`${styles.noComparison} metric-card-detail`}>No period comparison</span>;
   const direction = result.value > 0 ? "up" : result.value < 0 ? "down" : "flat";
-  return <span className={styles.comparison} data-direction={direction}>{direction === "up" ? "↑" : direction === "down" ? "↓" : "—"} {result.label} vs prior period</span>;
+  return <span className={`${styles.comparison} metric-card-comparison`} data-direction={direction}>{direction === "up" ? "↑" : direction === "down" ? "↓" : "—"} {result.label} vs prior period</span>;
 }
 
 function MiniTrend({ row, metric, color = "#1769ef" }: { row: TeamPerformanceRow; metric: TeamPerformanceMetric; color?: string }) {
@@ -86,7 +87,7 @@ function MiniTrend({ row, metric, color = "#1769ef" }: { row: TeamPerformanceRow
 }
 
 function KpiCard({ label, value, icon, color, children }: { label: string; value: string; icon: "teams" | "calls" | "leaderboard" | "performance" | "freshness"; color: string; children: React.ReactNode }) {
-  return <article className={styles.kpiCard}><span className={styles.kpiIcon} style={{ backgroundColor: `${color}16`, color }}><DashboardIcon name={icon} /></span><div><span>{label}</span><strong>{value}</strong>{children}</div></article>;
+  return <article className={`${styles.kpiCard} metric-color-card`} style={metricCardStyle(color)}><span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span><div><span className="metric-card-label">{label}</span><strong className="metric-card-value">{value}</strong>{children}</div></article>;
 }
 
 function Standings({ data, navigate }: { data: TeamPerformanceData; navigate: (changes: Record<string, string | null>) => void }) {
@@ -180,5 +181,5 @@ export function TeamPerformanceClient({ data, exportHref }: { data: TeamPerforma
     if (!("page" in changes)) next.delete("page");
     startTransition(() => router.replace(`/teams/performance?${next.toString()}`, { scroll: false }));
   }
-  return <div aria-busy={isPending || undefined} className={styles.content}><section aria-label="Team performance summary" className={styles.kpiGrid}><KpiCard color="#1769ef" icon="teams" label="Total teams" value={formatNumber(data.kpis.totalTeams)}><span className={styles.kpiDetail}>In your active reporting scope</span></KpiCard><KpiCard color="#22a65a" icon="calls" label="Transfers" value={formatNumber(data.kpis.transfers)}><Comparison current={data.kpis.transfers} previous={data.kpis.previousTransfers} /></KpiCard><KpiCard color="#7c3aed" icon="leaderboard" label="Closed deals" value={formatNumber(data.kpis.closedDeals)}><Comparison current={data.kpis.closedDeals} previous={data.kpis.previousClosedDeals} /></KpiCard><KpiCard color="#f97316" icon="performance" label="Conversion rate" value={formatPercent(data.kpis.conversion)}><Comparison current={data.kpis.conversion} points previous={data.kpis.previousConversion} /></KpiCard><KpiCard color="#1558c0" icon="freshness" label="Avg logged-in time" value={formatDuration(data.kpis.averageLoggedInSeconds)}><Comparison current={data.kpis.averageLoggedInSeconds} previous={data.kpis.previousAverageLoggedInSeconds} /></KpiCard></section>{data.sources.message ? <div className={styles.sourceNotice} role="status"><DashboardIcon name="info" /><span>{data.sources.message}</span></div> : null}<div className={styles.topGrid}><Standings data={data} navigate={navigate} /><div className={styles.spotlightGrid}><Spotlight data={data} /><Attention data={data} navigate={navigate} /></div></div><div className={styles.trendGrid}><TrendChart data={data} /><HealthMix data={data} /></div><Directory data={data} exportHref={exportHref} navigate={navigate} />{isPending ? <div aria-live="polite" className={styles.pending}>Updating team performance…</div> : null}</div>;
+  return <div aria-busy={isPending || undefined} className={styles.content}><section aria-label="Team performance summary" className={styles.kpiGrid}><KpiCard color="#1769ef" icon="teams" label="Total teams" value={formatNumber(data.kpis.totalTeams)}><span className={`${styles.kpiDetail} metric-card-detail`}>In your active reporting scope</span></KpiCard><KpiCard color="#22a65a" icon="calls" label="Transfers" value={formatNumber(data.kpis.transfers)}><Comparison current={data.kpis.transfers} previous={data.kpis.previousTransfers} /></KpiCard><KpiCard color="#7c3aed" icon="leaderboard" label="Closed deals" value={formatNumber(data.kpis.closedDeals)}><Comparison current={data.kpis.closedDeals} previous={data.kpis.previousClosedDeals} /></KpiCard><KpiCard color="#f97316" icon="performance" label="Conversion rate" value={formatPercent(data.kpis.conversion)}><Comparison current={data.kpis.conversion} points previous={data.kpis.previousConversion} /></KpiCard><KpiCard color="#1558c0" icon="freshness" label="Avg logged-in time" value={formatDuration(data.kpis.averageLoggedInSeconds)}><Comparison current={data.kpis.averageLoggedInSeconds} previous={data.kpis.previousAverageLoggedInSeconds} /></KpiCard></section>{data.sources.message ? <div className={styles.sourceNotice} role="status"><DashboardIcon name="info" /><span>{data.sources.message}</span></div> : null}<div className={styles.topGrid}><Standings data={data} navigate={navigate} /><div className={styles.spotlightGrid}><Spotlight data={data} /><Attention data={data} navigate={navigate} /></div></div><div className={styles.trendGrid}><TrendChart data={data} /><HealthMix data={data} /></div><Directory data={data} exportHref={exportHref} navigate={navigate} />{isPending ? <div aria-live="polite" className={styles.pending}>Updating team performance…</div> : null}</div>;
 }

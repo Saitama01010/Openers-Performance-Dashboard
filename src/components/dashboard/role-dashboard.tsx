@@ -23,6 +23,7 @@ import {
   updateManualFlagAction,
 } from "@/dashboard/actions";
 import { formatCompactDuration } from "@/components/dashboard/performance-visuals";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 
 type AgentData = Extract<RoleDashboardData, { role: "agent" }>["data"];
 type ManagerData = Extract<RoleDashboardData, { role: "manager" }>["data"];
@@ -55,11 +56,12 @@ function SourceMetric({ metric }: { metric: { status: "ready" | "unavailable"; v
 }
 
 function Metric({ label, value, detail }: { label: string; value: React.ReactNode; detail?: string }) {
+  const tone = /closed|active|coaching/i.test(label) ? METRIC_CARD_TONES.green : /conversion|tier|target/i.test(label) ? METRIC_CARD_TONES.purple : /commission|salary|coverage|attention/i.test(label) ? METRIC_CARD_TONES.orange : METRIC_CARD_TONES.blue;
   return (
-    <article className="role-metric">
-      <p>{label}</p>
-      <strong>{value}</strong>
-      {detail ? <span>{detail}</span> : null}
+    <article className="role-metric metric-color-card" style={metricCardStyle(tone)}>
+      <p className="metric-card-label">{label}</p>
+      <strong className="metric-card-value">{value}</strong>
+      {detail ? <span className="metric-card-detail">{detail}</span> : null}
     </article>
   );
 }

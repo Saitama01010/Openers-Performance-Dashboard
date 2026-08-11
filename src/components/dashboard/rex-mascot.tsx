@@ -212,6 +212,10 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 }
 
+function rexTranslateX(left: number) {
+  return `translate3d(${left}px, 0, 0)`;
+}
+
 function fixedBottomInset() {
   let inset = VIEWPORT_PADDING;
   const candidates = document.querySelectorAll<HTMLElement>(
@@ -555,11 +559,11 @@ export function RexMascot() {
     button.style.bottom = "auto";
     button.style.left = "0px";
     button.style.top = `${lane.top}px`;
+    button.style.transform = rexTranslateX(currentXRef.current);
 
     if (staticMascot || !lane.canWalk) {
       button.dataset.rexDirection = "stationary";
       button.style.setProperty("--rex-facing", "1");
-      button.style.transform = `translate3d(${currentXRef.current}px, 0, 0)`;
       return;
     }
 
@@ -589,8 +593,8 @@ export function RexMascot() {
     let finished = false;
     const animation = button.animate(
       [
-        { transform: `translate3d(${currentXRef.current}px, 0, 0)` },
-        { transform: `translate3d(${targetX}px, 0, 0)` },
+        { transform: rexTranslateX(currentXRef.current) },
+        { transform: rexTranslateX(targetX) },
       ],
       { duration, easing: "linear", fill: "forwards" },
     );
@@ -603,6 +607,8 @@ export function RexMascot() {
     animation.onfinish = () => {
       finished = true;
       currentXRef.current = targetX;
+      // Keep the endpoint as the WAAPI fill is canceled during the idle rerender.
+      button.style.transform = rexTranslateX(targetX);
       directionRef.current = directionRef.current === 1 ? -1 : 1;
       setMode("idle");
     };
@@ -612,6 +618,7 @@ export function RexMascot() {
         const rect = button.getBoundingClientRect();
         currentXRef.current = clamp(rect.left, minimumX, maximumX);
       }
+      button.style.transform = rexTranslateX(currentXRef.current);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       animation.cancel();
     };

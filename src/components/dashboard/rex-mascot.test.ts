@@ -151,6 +151,28 @@ describe("Rex authenticated shell integration", () => {
     expect(component).not.toContain("fetch(");
   });
 
+  it("anchors Rex at the lane endpoint before idle rerender and animation cleanup", () => {
+    const component = readFileSync(
+      resolve(process.cwd(), "src/components/dashboard/rex-mascot.tsx"),
+      "utf8",
+    );
+    const finishHandler = component.slice(
+      component.indexOf("animation.onfinish"),
+      component.indexOf("return () =>", component.indexOf("animation.onfinish")),
+    );
+    const cleanup = component.slice(
+      component.indexOf("return () =>", component.indexOf("animation.onfinish")),
+      component.indexOf("  }, [", component.indexOf("animation.onfinish")),
+    );
+
+    expect(finishHandler.indexOf("button.style.transform")).toBeLessThan(
+      finishHandler.indexOf('setMode("idle")'),
+    );
+    expect(cleanup.indexOf("button.style.transform")).toBeLessThan(
+      cleanup.indexOf("animation.cancel()"),
+    );
+  });
+
   it("hides the navbar lane before tablet controls can become crowded", () => {
     const globals = readFileSync(
       resolve(process.cwd(), "src/app/globals.css"),

@@ -5,13 +5,13 @@ STORY: Scan five trustworthy counts, narrow the authorized record set, inspect a
 FIRST VIEWPORT: Header, five KPIs, full filter rail, and the first audit rows should establish control without decorative analytics.
 FORM: Crisp borders, restrained shadows, compact type, category color used with labels, and a right-edge evidence drawer that becomes a mobile sheet.
 */
-.page { --audit-ink:#12213d; --audit-muted:#5c6b82; --audit-line:#d7dfeb; --audit-blue:#1f5eff; --audit-soft:#f8faff; --audit-blue-soft:#eef4ff; max-width:none; }
+.page { --audit-ink:var(--foreground); --audit-muted:var(--muted); --audit-line:var(--border); --audit-blue:#1f5eff; --audit-soft:var(--surface-subtle); --audit-blue-soft:var(--primary-subtle); max-width:none; }
 .pageHeader { margin-bottom:20px; }
 .eyebrow { margin:0 0 7px; color:var(--audit-blue); font-size:.6875rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
 .pageHeader h1 { margin:0; color:var(--audit-ink); font-size:clamp(1.5rem,2vw,2rem); line-height:1.15; letter-spacing:-.025em; }
 .pageHeader > p:last-child { margin:10px 0 0; color:var(--audit-muted); font-size:.8125rem; }
 .kpis { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; margin-bottom:18px; }
-.kpi { position:relative; min-height:112px; display:grid; align-content:center; justify-items:start; overflow:visible; border:1px solid var(--audit-line); border-radius:10px; padding:16px 58px 14px 16px; background:#fff; color:var(--audit-ink); text-align:left; cursor:pointer; transition:border-color 140ms ease,box-shadow 140ms ease; }
+.kpi { position:relative; min-height:112px; display:grid; align-content:center; justify-items:start; overflow:visible; border:1px solid var(--audit-line); border-radius:10px; padding:16px 58px 14px 16px; background:var(--surface); color:var(--audit-ink); text-align:left; cursor:pointer; transition:border-color 140ms ease,box-shadow 140ms ease; }
 .kpi:hover,.kpi:focus-visible,.kpi[aria-pressed="true"] { border-color:#4b7cff; box-shadow:0 1px 2px rgb(6 21 47 / 5%); }
 .kpi > span:first-child { color:var(--audit-ink); font-size:.6875rem; font-weight:700; text-transform:uppercase; }
 .kpi > strong { margin-top:7px; font-size:1.5rem; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
@@ -19,25 +19,25 @@ FORM: Crisp borders, restrained shadows, compact type, category color used with 
 .kpi > i { position:absolute; top:50%; right:16px; display:grid; width:40px; height:40px; place-items:center; border-radius:50%; background:var(--audit-blue-soft); color:var(--audit-blue); transform:translateY(-50%); }
 .kpiDetail { position:absolute; z-index:10; top:calc(100% + 7px); left:8px; width:min(250px,calc(100vw - 40px)); border:1px solid #b9c6d8; border-radius:8px; padding:9px 11px; background:#06152f; color:#fff; font-size:.6875rem; font-weight:500; line-height:1.45; opacity:0; pointer-events:none; transform:translateY(-3px); transition:opacity 120ms ease,transform 120ms ease; }
 .kpi:hover .kpiDetail,.kpi:focus-visible .kpiDetail { opacity:1; transform:none; }
-.workspace { border:1px solid var(--audit-line); border-radius:10px; background:#fff; box-shadow:0 1px 2px rgb(6 21 47 / 5%); }
+.workspace { border:1px solid var(--audit-line); border-radius:10px; background:var(--surface); box-shadow:0 1px 2px rgb(6 21 47 / 5%); }
 .filters { display:grid; grid-template-columns:minmax(260px,1.45fr) repeat(5,minmax(135px,.75fr)); gap:12px; padding:16px; border-bottom:1px solid var(--audit-line); }
 .filters label { display:grid; gap:6px; color:var(--audit-ink); font-size:.6875rem; font-weight:650; }
-.filters input,.filters select,.pagination select { min-width:0; height:44px; border:1px solid var(--audit-line); border-radius:6px; padding:0 11px; background:#fff; color:var(--audit-ink); font:inherit; }
+.filters input,.filters select,.pagination select { min-width:0; height:44px; border:1px solid var(--audit-line); border-radius:6px; padding:0 11px; background:var(--surface); color:var(--audit-ink); font:inherit; }
 .filters input:focus,.filters select:focus,.pagination select:focus { border-color:var(--audit-blue); outline:3px solid rgb(13 92 255 / 14%); }
 .search { position:relative; align-self:end; }
 .search svg { position:absolute; left:12px; bottom:11px; width:18px; color:var(--audit-muted); pointer-events:none; }
 .search input { width:100%; padding-left:38px; font-size:.75rem; }
 .filterActions { grid-column:1/-1; display:flex; align-items:center; gap:9px; }
 .button,.buttonSecondary,.sortButton,.copyButton { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--audit-blue); border-radius:6px; padding:0 14px; background:var(--audit-blue); color:#fff; font-size:.6875rem; font-weight:750; text-decoration:none; cursor:pointer; }
-.buttonSecondary,.sortButton,.copyButton { border-color:var(--audit-line); background:#fff; color:var(--audit-ink); }
+.buttonSecondary,.sortButton,.copyButton { border-color:var(--audit-line); background:var(--surface); color:var(--audit-ink); }
 .button:focus-visible,.buttonSecondary:focus-visible,.sortButton:focus-visible,.copyButton:focus-visible,.savedView button:focus-visible,.drawer button:focus-visible,.pageLink:focus-visible { outline:3px solid rgb(31 94 255 / 20%); outline-offset:2px; }
 .buttonSecondary[aria-disabled="true"] { opacity:.5; pointer-events:none; }
 .buttonSecondary svg,.copyButton svg { width:16px; }
 .savedView { position:relative; }
 .savedView summary { list-style:none; cursor:pointer; }
 .savedView summary::-webkit-details-marker { display:none; }
-.savedView > div { position:absolute; z-index:12; top:calc(100% + 6px); left:0; min-width:180px; display:grid; overflow:hidden; border:1px solid var(--audit-line); border-radius:8px; background:#fff; box-shadow:0 16px 40px rgb(6 21 47 / 18%); }
-.savedView > div button { min-height:40px; border:0; border-bottom:1px solid var(--audit-line); padding:0 12px; background:#fff; color:var(--audit-ink); font-size:.6875rem; text-align:left; cursor:pointer; }
+.savedView > div { position:absolute; z-index:12; top:calc(100% + 6px); left:0; min-width:180px; display:grid; overflow:hidden; border:1px solid var(--audit-line); border-radius:8px; background:var(--surface); box-shadow:0 16px 40px rgb(6 21 47 / 18%); }
+.savedView > div button { min-height:40px; border:0; border-bottom:1px solid var(--audit-line); padding:0 12px; background:var(--surface); color:var(--audit-ink); font-size:.6875rem; text-align:left; cursor:pointer; }
 .savedView > div button:hover,.savedView > div button:focus-visible { background:var(--audit-blue-soft); }
 .tableHeading { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:52px; padding:8px 16px; border-bottom:1px solid var(--audit-line); color:var(--audit-muted); font-size:.6875rem; }
 .sortButton { min-height:34px; padding-inline:11px; }
@@ -66,15 +66,15 @@ FORM: Crisp borders, restrained shadows, compact type, category color used with 
 .pagination { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 16px; border-top:1px solid var(--audit-line); color:var(--audit-muted); font-size:.6875rem; }
 .pagination nav { display:flex; align-items:center; gap:5px; }
 .pagination nav > span { display:flex; align-items:center; gap:5px; }
-.pageLink { min-width:36px; height:36px; display:grid; place-items:center; border:1px solid var(--audit-line); border-radius:6px; background:#fff; color:var(--audit-ink); text-decoration:none; }
+.pageLink { min-width:36px; height:36px; display:grid; place-items:center; border:1px solid var(--audit-line); border-radius:6px; background:var(--surface); color:var(--audit-ink); text-decoration:none; }
 .pageLink[aria-current="page"] { border-color:var(--audit-blue); background:var(--audit-blue); color:#fff; }
 .pageLink[aria-disabled="true"] { opacity:.45; }
 .pagination label { display:flex; align-items:center; gap:9px; }
 .pagination select { height:38px; }
 .drawer { width:100%; max-width:none; height:100%; max-height:none; margin:0; border:0; padding:0; background:transparent; }
 .drawer::backdrop { background:rgb(5 17 40 / 30%); }
-.drawerPanel { position:absolute; top:0; right:0; width:min(430px,100%); min-height:100%; max-height:100%; overflow-y:auto; border-left:1px solid var(--audit-line); background:#fff; color:var(--audit-ink); box-shadow:-18px 0 42px rgb(7 26 61 / 13%); animation:drawer-in 160ms ease-out; }
-.drawerPanel > header { position:sticky; z-index:3; top:0; min-height:58px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--audit-line); padding:0 16px; background:#fff; }
+.drawerPanel { position:absolute; top:0; right:0; width:min(430px,100%); min-height:100%; max-height:100%; overflow-y:auto; border-left:1px solid var(--audit-line); background:var(--surface); color:var(--audit-ink); box-shadow:-18px 0 42px rgb(7 26 61 / 13%); animation:drawer-in 160ms ease-out; }
+.drawerPanel > header { position:sticky; z-index:3; top:0; min-height:58px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--audit-line); padding:0 16px; background:var(--surface); }
 .drawerPanel > header button { width:40px; height:40px; display:grid; place-items:center; border:0; border-radius:5px; background:transparent; color:var(--audit-ink); cursor:pointer; }
 .drawerState { padding:32px 18px; color:var(--audit-muted); }
 .details { padding-bottom:28px; }
@@ -91,7 +91,7 @@ FORM: Crisp borders, restrained shadows, compact type, category color used with 
 .technical summary { color:var(--audit-ink); font-size:.75rem; font-weight:750; cursor:pointer; }
 .technical p { margin:11px 0 0; color:var(--audit-muted); font-size:.6875rem; line-height:1.5; }
 .technicalActions { display:flex; justify-content:flex-end; margin:10px 0 6px; }
-.technicalActions button { min-height:36px; border:1px solid var(--audit-line); border-radius:6px; padding:0 10px; background:#fff; color:var(--audit-ink); font-size:.625rem; font-weight:700; cursor:pointer; }
+.technicalActions button { min-height:36px; border:1px solid var(--audit-line); border-radius:6px; padding:0 10px; background:var(--surface); color:var(--audit-ink); font-size:.625rem; font-weight:700; cursor:pointer; }
 .technical pre { max-height:340px; overflow:auto; margin:0; border:1px solid var(--audit-line); border-radius:6px; padding:12px; background:var(--audit-soft); color:var(--audit-ink); font: .6875rem/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
 .related { display:grid; gap:10px; margin:0; padding:0; list-style:none; }
 .related a { color:var(--audit-blue); font-size:.6875rem; font-weight:700; text-decoration:none; }

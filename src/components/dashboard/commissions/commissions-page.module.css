@@ -1,9 +1,9 @@
 .page {
-  --commission-ink: #0b1f44;
-  --commission-muted: #5f6f89;
-  --commission-border: #dbe4f0;
+  --commission-ink: var(--foreground);
+  --commission-muted: var(--muted);
+  --commission-border: var(--border);
   --commission-blue: #1768f2;
-  --commission-blue-soft: #edf4ff;
+  --commission-blue-soft: var(--primary-subtle);
   display: grid;
   gap: 16px;
   min-width: 0;
@@ -84,7 +84,7 @@
 .tableToolbar select,
 .tableFooter select,
 .tableToolbar input {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--commission-border);
   border-radius: 8px;
   color: var(--commission-ink);
@@ -180,14 +180,14 @@
 }
 
 .statusNotice[data-tone="warning"] {
-  background: #fff9ed;
+  background: var(--warning-subtle);
   border-color: #f3d08a;
   color: #995a00;
 }
 
 .scopeToolbar {
   align-items: end;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--commission-border);
   border-radius: 10px;
   display: flex;
@@ -206,10 +206,10 @@
 .tableFooter button,
 .rowAction,
 .preview header button {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--commission-border);
   border-radius: 8px;
-  color: #315070;
+  color: var(--foreground);
   cursor: pointer;
   font: inherit;
   min-height: 44px;
@@ -224,7 +224,7 @@
 
 .metricCard {
   align-items: center;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--commission-border);
   border-radius: 10px;
   color: inherit;
@@ -265,10 +265,10 @@
   transform: scale(1.06);
 }
 
-.metricCard[data-tone="green"] .metricIcon { background: #eaf9f1; color: #10a95d; }
+.metricCard[data-tone="green"] .metricIcon { background: var(--success-subtle); color: #10a95d; }
 .metricCard[data-tone="violet"] .metricIcon { background: #f2edff; color: #7c3aed; }
 .metricCard[data-tone="orange"] .metricIcon { background: #fff2e8; color: #ea6b1b; }
-.metricCard[data-tone="cyan"] .metricIcon { background: #e9f9fb; color: #0891b2; }
+.metricCard[data-tone="cyan"] .metricIcon { background: var(--primary-subtle); color: #0891b2; }
 
 .metricCopy {
   display: grid;
@@ -276,7 +276,7 @@
 }
 
 .metricCopy > span {
-  color: #4f6078;
+  color: var(--muted);
   font-size: .72rem;
   font-weight: 700;
 }
@@ -348,7 +348,7 @@
 }
 
 .panel {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--commission-border);
   border-radius: 10px;
   min-width: 0;
@@ -404,10 +404,10 @@
 .legend button,
 .metricSwitch button {
   align-items: center;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid transparent;
   border-radius: 6px;
-  color: #53627a;
+  color: var(--muted);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
@@ -483,7 +483,7 @@
 
 .chartTooltip,
 .personalChartTooltip {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid #d9e3ef;
   border-radius: 8px;
   box-shadow: 0 10px 28px rgb(22 42 78 / 14%);
@@ -590,7 +590,7 @@
 }
 
 .distributionList button:hover,
-.distributionList button[aria-pressed="true"] { background: #f7faff; border-color: #dbe7f8; }
+.distributionList button[aria-pressed="true"] { background: var(--surface-subtle); border-color: #dbe7f8; }
 .distributionList button > span { color: var(--commission-ink); display: grid; font-size: .67rem; min-width: 0; }
 .distributionList button small { color: var(--commission-muted); font-size: .56rem; font-weight: 500; margin-top: 2px; }
 .distributionList button > strong { color: var(--commission-ink); display: grid; font-size: .64rem; font-variant-numeric: tabular-nums; margin-left: auto; text-align: right; }
@@ -608,7 +608,7 @@
 
 .singleTeam {
   align-items: center;
-  background: #f7faff;
+  background: var(--surface-subtle);
   border: 1px solid #dce8f7;
   border-radius: 9px;
   display: flex;
@@ -649,13 +649,13 @@
 }
 
 .tierBars button:hover,
-.tierBars button:focus-visible { background: #f7faff; border-color: #dce7f6; }
+.tierBars button:focus-visible { background: var(--surface-subtle); border-color: #dce7f6; }
 .barPlot { align-items: end; background: linear-gradient(to top, #f3f6fa, #fff); border-bottom: 1px solid #d9e2ef; display: flex; flex: 1; justify-content: center; min-height: 112px; width: 100%; }
 .barPlot i { background: linear-gradient(180deg, #689dff, #1768f2); border-radius: 5px 5px 0 0; box-shadow: 0 5px 14px rgb(23 104 242 / 18%); display: block; max-width: 30px; min-height: 4px; transition: filter 160ms ease, transform 160ms ease; width: 62%; }
 .tierBars button:hover .barPlot i,
 .tierBars button:focus-visible .barPlot i { filter: saturate(1.15); transform: scaleX(1.08); }
 .tierBars button > strong { color: var(--commission-ink); font-size: .72rem; margin-top: 5px; }
-.tierBars button > span:not(.barPlot) { color: #4e6079; font-size: .58rem; font-weight: 700; }
+.tierBars button > span:not(.barPlot) { color: var(--muted); font-size: .58rem; font-weight: 700; }
 .tierBars button > small { color: var(--commission-muted); font-size: .51rem; white-space: nowrap; }
 .tierBars em { left: auto; right: 0; }
 
@@ -670,7 +670,7 @@
   text-align: left;
 }
 
-.emptyState > span { align-items: center; background: #eef3f9; border-radius: 50%; color: #6c7c92; display: flex; height: 40px; justify-content: center; width: 40px; }
+.emptyState > span { align-items: center; background: #eef3f9; border-radius: 50%; color: var(--muted); display: flex; height: 40px; justify-content: center; width: 40px; }
 .emptyState strong { color: var(--commission-ink); font-size: .76rem; }
 .emptyState p { font-size: .66rem; line-height: 1.45; margin: 3px 0 0; }
 
@@ -678,10 +678,10 @@
 .reportHeader { align-items: center; margin: 0; padding: 13px 15px; }
 .reportActions { display: flex; gap: 8px; }
 .reportActions details { position: relative; }
-.reportActions summary { align-items: center; border: 1px solid var(--commission-border); border-radius: 8px; color: #294564; cursor: pointer; display: flex; font-size: .68rem; font-weight: 700; gap: 6px; list-style: none; min-height: 44px; padding: 0 10px; }
+.reportActions summary { align-items: center; border: 1px solid var(--commission-border); border-radius: 8px; color: var(--foreground); cursor: pointer; display: flex; font-size: .68rem; font-weight: 700; gap: 6px; list-style: none; min-height: 44px; padding: 0 10px; }
 .reportActions summary::-webkit-details-marker { display: none; }
-.columnMenu { background: #fff; border: 1px solid var(--commission-border); border-radius: 8px; box-shadow: 0 14px 34px rgb(22 42 78 / 15%); display: grid; min-width: 190px; padding: 8px; position: absolute; right: 0; top: calc(100% + 6px); z-index: 25; }
-.columnMenu label { align-items: center; color: #40536d; display: flex; font-size: .68rem; gap: 8px; min-height: 44px; padding: 0 6px; }
+.columnMenu { background: var(--surface); border: 1px solid var(--commission-border); border-radius: 8px; box-shadow: 0 14px 34px rgb(22 42 78 / 15%); display: grid; min-width: 190px; padding: 8px; position: absolute; right: 0; top: calc(100% + 6px); z-index: 25; }
+.columnMenu label { align-items: center; color: var(--foreground); display: flex; font-size: .68rem; gap: 8px; min-height: 44px; padding: 0 6px; }
 
 .tableToolbar {
   align-items: end;
@@ -694,7 +694,7 @@
 
 .tableToolbar form { align-items: center; display: flex; gap: 7px; }
 .tableToolbar form label { align-items: center; border: 1px solid var(--commission-border); border-radius: 8px; display: flex; min-width: min(340px, 44vw); padding: 0 10px; }
-.tableToolbar form label svg { color: #75869c; flex: 0 0 auto; }
+.tableToolbar form label svg { color: var(--muted); flex: 0 0 auto; }
 .tableToolbar input { border: 0; min-width: 0; padding: 0 8px; width: 100%; }
 .tableToolbar > label { align-items: center; display: flex; flex-direction: row; }
 .tableToolbar select { font-size: .68rem; min-width: 150px; padding: 0 8px; }
@@ -708,7 +708,7 @@
 .tableScroll table {
   border-collapse: separate;
   border-spacing: 0;
-  color: #243b59;
+  color: var(--foreground);
   font-size: .65rem;
   min-width: 1160px;
   width: 100%;
@@ -717,7 +717,7 @@
 .tableScroll caption { height: 1px; margin: -1px; overflow: hidden; position: absolute; width: 1px; }
 .tableScroll th,
 .tableScroll td { border-bottom: 1px solid #e7edf5; height: 46px; padding: 8px 11px; text-align: left; vertical-align: middle; white-space: nowrap; }
-.tableScroll thead th { background: #f8faff; color: #53647d; font-size: .57rem; font-weight: 800; letter-spacing: .025em; position: sticky; text-transform: uppercase; top: 0; z-index: 2; }
+.tableScroll thead th { background: var(--surface-subtle); color: var(--muted); font-size: .57rem; font-weight: 800; letter-spacing: .025em; position: sticky; text-transform: uppercase; top: 0; z-index: 2; }
 .tableScroll thead button { background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; font-weight: inherit; padding: 0; text-transform: inherit; }
 .tableScroll thead button { align-items: center; display: inline-flex; min-height: 44px; }
 .tableScroll tbody tr { transition: background 140ms ease; }
@@ -729,7 +729,7 @@
 .tableScroll tbody tr:focus strong { color: var(--commission-blue); }
 .numeric { font-variant-numeric: tabular-nums; text-align: right !important; }
 .teamBadge,
-.tierBadge { align-items: center; background: #eef4ff; border: 1px solid transparent; border-radius: 0.25rem; color: #2559b7; display: inline-flex; font-size: .6875rem; font-weight: 600; height: 1.25rem; justify-content: center; min-width: 1.25rem; padding: 0 .325rem; }
+.tierBadge { align-items: center; background: var(--primary-subtle); border: 1px solid transparent; border-radius: 0.25rem; color: #2559b7; display: inline-flex; font-size: .6875rem; font-weight: 600; height: 1.25rem; justify-content: center; min-width: 1.25rem; padding: 0 .325rem; }
 .tierBadge { background: #f3edff; color: #6d3dc0; }
 .rowAction { align-items: center; display: inline-flex; height: 44px; justify-content: center; min-height: 44px; opacity: .45; padding: 0; width: 44px; }
 .tableScroll tr:hover .rowAction,
@@ -766,7 +766,7 @@
 }
 
 .preview {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--commission-border);
   border-radius: 12px;
   box-shadow: 0 24px 70px rgb(2 14 35 / 28%);
@@ -794,7 +794,7 @@
 
 .progressPanel { padding: 20px; }
 .currentTierBadge { align-items: center; background: var(--commission-blue-soft); border: 1px solid #c9daff; border-radius: 999px; color: #1854c4; display: inline-flex; font-size: .6875rem; font-weight: 600; height: 1.5rem; justify-content: center; min-width: 1.5rem; padding: 0 .45rem; }
-.progressInteractive { background: #f8faff; border: 1px solid #dce6f2; border-radius: 10px; color: inherit; cursor: pointer; display: block; font: inherit; min-height: 184px; padding: 18px; position: relative; text-align: left; width: 100%; }
+.progressInteractive { background: var(--surface-subtle); border: 1px solid #dce6f2; border-radius: 10px; color: inherit; cursor: pointer; display: block; font: inherit; min-height: 184px; padding: 18px; position: relative; text-align: left; width: 100%; }
 .progressInteractive:hover,
 .progressInteractive[aria-expanded="true"] { border-color: #a9c8ff; box-shadow: inset 0 0 0 1px #d7e5ff; }
 .progressLabels { display: flex; justify-content: space-between; }
@@ -806,7 +806,7 @@
 .progressTrack { background: #e4ebf5; border-radius: 99px; height: 12px; margin: 28px 0 18px; position: relative; }
 .progressTrack > i { background: linear-gradient(90deg, #1768f2, #55a1ff); border-radius: inherit; box-shadow: 0 4px 12px rgb(23 104 242 / 24%); display: block; height: 100%; transition: width 240ms ease; }
 .progressTrack > span { background: #1768f2; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 3px 9px rgb(23 104 242 / 24%); color: transparent; height: 20px; position: absolute; top: 50%; transform: translate(-50%, -50%); width: 20px; }
-.progressInteractive > p { color: #315070; font-size: .72rem; margin: 0; text-align: center; }
+.progressInteractive > p { color: var(--foreground); font-size: .72rem; margin: 0; text-align: center; }
 .progressTooltip { bottom: calc(100% - 14px); left: 50%; transform: translateX(-50%); }
 
 .personalTrend { padding: 18px; }
@@ -820,7 +820,7 @@
 }
 
 .tierReference button {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--commission-border);
   border-radius: 8px;
   color: inherit;

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
 
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import styles from "./login.module.css";
 
 function BrandLockup() {
@@ -81,6 +82,7 @@ const features = [
 export function LoginShell({ children }: { children: ReactNode }) {
   return (
     <main className={styles.shell}>
+      <ThemeToggle className="auth-theme-switch" />
       <aside className={styles.brandPanel} aria-label="Openers Performance">
         <div className={styles.brandContent}>
           <BrandLockup />

@@ -25,7 +25,7 @@
 }
 
 .hero h1 {
-  color: #102548;
+  color: var(--foreground);
   font-size: clamp(1.55rem, 2.2vw, 2.15rem);
   font-weight: 740;
   letter-spacing: -0.04em;
@@ -34,7 +34,7 @@
 }
 
 .heroDescription {
-  color: #60708a;
+  color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.55;
   margin-top: 0.36rem;
@@ -52,7 +52,7 @@
 
 .sourceNotice {
   align-items: center;
-  background: #fff9ee;
+  background: var(--warning-subtle);
   border: 1px solid #f0c36c;
   border-radius: 0.68rem;
   color: #945800;
@@ -65,7 +65,7 @@
 
 .sourceIcon {
   align-items: center;
-  background: #fff0ce;
+  background: var(--warning-subtle);
   border-radius: 999px;
   display: inline-flex;
   height: 2rem;
@@ -88,13 +88,13 @@
 }
 
 .sourceNotice span {
-  color: #9a6a25;
+  color: var(--foreground);
   font-size: 0.65rem;
   margin-top: 0.08rem;
 }
 
 .sourceNotice a {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid #e8d3b2;
   border-radius: 0.45rem;
   color: #1551d1;
@@ -111,8 +111,8 @@
 }
 
 .kpi {
-  background: #fff;
-  border: 1px solid #dce4ef;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 0.72rem;
   box-shadow: 0 1px 2px rgb(6 21 47 / 0.035);
   min-height: 7.15rem;
@@ -165,14 +165,14 @@
 }
 
 .kpiLabel {
-  color: #52627d;
+  color: var(--muted);
   font-size: 0.67rem;
   font-weight: 680;
   line-height: 1.2;
 }
 
 .kpiValue {
-  color: #102548;
+  color: var(--foreground);
   display: block;
   font-size: clamp(1.15rem, 1.7vw, 1.55rem);
   font-variant-numeric: tabular-nums;
@@ -185,7 +185,7 @@
 }
 
 .kpiDetail {
-  color: #7a879a;
+  color: var(--muted);
   display: block;
   font-size: 0.61rem;
   line-height: 1.35;
@@ -193,8 +193,8 @@
 }
 
 .panel {
-  background: #fff;
-  border: 1px solid #dce4ef;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 0.72rem;
   box-shadow: 0 1px 2px rgb(6 21 47 / 0.035);
   min-width: 0;
@@ -210,13 +210,13 @@
 }
 
 .panelHeader h2 {
-  color: #102548;
+  color: var(--foreground);
   font-size: 0.82rem;
   font-weight: 740;
 }
 
 .panelHeader p {
-  color: #6c7b91;
+  color: var(--muted);
   font-size: 0.63rem;
   line-height: 1.45;
   margin-top: 0.12rem;
@@ -261,13 +261,13 @@
 }
 
 .progressMeta span {
-  color: #52627d;
+  color: var(--muted);
   font-size: 0.65rem;
   font-weight: 650;
 }
 
 .progressMeta strong {
-  color: #203657;
+  color: var(--foreground);
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
 }
@@ -288,7 +288,7 @@
 }
 
 .progressDetail {
-  color: #7a879a;
+  color: var(--muted);
   font-size: 0.58rem;
 }
 
@@ -313,13 +313,13 @@
 
 .queueItem span,
 .queueItem small {
-  color: #75839a;
+  color: var(--muted);
   display: block;
   font-size: 0.6rem;
 }
 
 .queueItem strong {
-  color: #102548;
+  color: var(--foreground);
   display: block;
   font-size: 1.35rem;
   font-variant-numeric: tabular-nums;
@@ -342,17 +342,17 @@
 }
 
 .teamRow:hover {
-  background: #f6f9fd;
+  background: var(--surface-subtle);
 }
 
 .teamName {
-  color: #203657;
+  color: var(--foreground);
   font-size: 0.65rem;
   font-weight: 720;
 }
 
 .teamName small {
-  color: #7a879a;
+  color: var(--muted);
   display: block;
   font-size: 0.56rem;
   font-weight: 500;
@@ -380,14 +380,14 @@
 }
 
 .teamBar b {
-  color: #52627d;
+  color: var(--muted);
   font-size: 0.56rem;
   font-variant-numeric: tabular-nums;
 }
 
 .teamRank {
   align-items: center;
-  background: #eef4ff;
+  background: var(--primary-subtle);
   border-radius: 999px;
   color: #1767f2;
   display: inline-flex;
@@ -415,13 +415,13 @@
 
 .rankItem span,
 .rankItem small {
-  color: #75839a;
+  color: var(--muted);
   display: block;
   font-size: 0.6rem;
 }
 
 .rankItem strong {
-  color: #102548;
+  color: var(--foreground);
   display: block;
   font-size: 1.6rem;
   margin: 0.35rem 0 0.15rem;
@@ -443,13 +443,13 @@
 
 .comparisonItem span,
 .comparisonItem small {
-  color: #75839a;
+  color: var(--muted);
   display: block;
   font-size: 0.6rem;
 }
 
 .comparisonItem strong {
-  color: #102548;
+  color: var(--foreground);
   display: block;
   font-size: 1.2rem;
   margin: 0.28rem 0;
@@ -457,7 +457,7 @@
 
 .statusStrip {
   align-items: center;
-  background: #f7f9fc;
+  background: var(--surface-subtle);
   border-top: 1px solid #e7ecf3;
   display: flex;
   flex-wrap: wrap;
@@ -498,7 +498,7 @@
 }
 
 .commissionMeta div {
-  background: #f6f9fd;
+  background: var(--surface-subtle);
   border-radius: 0.5rem;
   padding: 0.58rem;
 }
@@ -510,11 +510,11 @@
 }
 
 .commissionMeta span {
-  color: #75839a;
+  color: var(--muted);
 }
 
 .commissionMeta strong {
-  color: #203657;
+  color: var(--foreground);
   margin-top: 0.2rem;
 }
 
@@ -547,20 +547,20 @@
 }
 
 .listItem strong {
-  color: #203657;
+  color: var(--foreground);
   font-size: 0.68rem;
 }
 
 .listItem p,
 .listItem span,
 .listItem small {
-  color: #6e7d93;
+  color: var(--muted);
   font-size: 0.62rem;
   line-height: 1.45;
 }
 
 .empty {
-  color: #75839a;
+  color: var(--muted);
   font-size: 0.7rem;
   padding: 1.5rem 0.9rem;
   text-align: center;
@@ -580,7 +580,7 @@
 }
 
 .agentIdentity small {
-  color: #7a879a;
+  color: var(--muted);
   font-size: 0.56rem;
   font-weight: 500;
 }
@@ -591,12 +591,12 @@
 }
 
 .metricPair small {
-  color: #7a879a;
+  color: var(--muted);
   font-size: 0.55rem;
 }
 
 .managerActions :global(.role-section) {
-  border: 1px solid #dce4ef;
+  border: 1px solid var(--border);
   border-radius: 0.72rem;
   box-shadow: 0 1px 2px rgb(6 21 47 / 0.035);
   overflow: hidden;

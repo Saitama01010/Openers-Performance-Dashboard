@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+
 function AuthBrand() {
   return (
     <Link className="auth-brand" href="/login">
@@ -28,6 +30,7 @@ export function AuthShell({
 }) {
   return (
     <main className="auth-shell">
+      <ThemeToggle className="auth-theme-switch" />
       <aside className="auth-shell__context">
         <AuthBrand />
         <div className="auth-shell__message">

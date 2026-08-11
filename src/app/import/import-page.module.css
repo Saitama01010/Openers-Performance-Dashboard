@@ -9,19 +9,19 @@ FORM: A precisely specified Operate surface, shaped directly from the two approv
 .importPage {
   --import-blue: #1f5eff;
   --import-blue-dark: #174bd2;
-  --import-blue-soft: #eef4ff;
-  --import-ink: #12213d;
-  --import-muted: #5c6b82;
-  --import-border: #d7dfeb;
-  --import-border-strong: #b9c6d8;
-  --import-surface: #ffffff;
-  --import-subtle: #f8faff;
+  --import-blue-soft: var(--primary-subtle);
+  --import-ink: var(--foreground);
+  --import-muted: var(--muted);
+  --import-border: var(--border);
+  --import-border-strong: var(--border);
+  --import-surface: var(--surface);
+  --import-subtle: var(--surface);
   --import-success: #087a57;
-  --import-success-soft: #eaf9f3;
+  --import-success-soft: var(--success-subtle);
   --import-warning: #925400;
-  --import-warning-soft: #fff7e6;
+  --import-warning-soft: var(--warning-subtle);
   --import-danger: #b42318;
-  --import-danger-soft: #fff0ee;
+  --import-danger-soft: var(--danger-subtle);
   max-width: 1440px;
   color: var(--import-ink);
 }
@@ -90,7 +90,7 @@ FORM: A precisely specified Operate surface, shaped directly from the two approv
   display: grid;
   min-width: 0;
   padding-right: 0.75rem;
-  background: var(--color-background, #f5f7fb);
+  background: var(--color-background, var(--background));
 }
 
 .stepCopy strong {
@@ -444,7 +444,7 @@ FORM: A precisely specified Operate surface, shaped directly from the two approv
   min-height: 2rem;
   padding: 0.25rem 0.5rem;
   border-color: var(--import-border);
-  background: white;
+  background: var(--surface);
   color: var(--import-blue);
   font-size: 0.7rem;
 }
@@ -463,7 +463,7 @@ FORM: A precisely specified Operate surface, shaped directly from the two approv
   margin-top: 1.25rem;
   border: 1px solid #cbdcff;
   border-radius: 7px;
-  background: #f5f8ff;
+  background: var(--surface-subtle);
   font-size: 0.75rem;
 }
 
@@ -758,7 +758,7 @@ FORM: A precisely specified Operate surface, shaped directly from the two approv
 
 .statusUnauthorized {
   border-color: #e0d5ff;
-  background: #f5f0ff;
+  background: var(--surface-subtle);
   color: #6c39bd;
 }
 
@@ -1227,7 +1227,7 @@ FORM: A precisely specified Operate surface, shaped directly from the two approv
 }
 
 .previewRowMatched {
-  background: #f5f8ff;
+  background: var(--surface-subtle);
 }
 
 .previewRowMuted {

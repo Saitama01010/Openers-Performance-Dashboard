@@ -19,6 +19,7 @@ import {
   RexMascot,
   RexToggle,
 } from "@/components/dashboard/rex-mascot";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { roleLabel } from "@/presentation/labels";
 
 type NavigationGroup = {
@@ -446,6 +447,7 @@ export function DashboardShellClient({
           />
           <ShellSearch navigation={navigation} />
           <div className="dashboard-topbar__actions">
+            <ThemeToggle />
             {user.role !== "agent" ? (
               <Link className="dashboard-topbar__import ui-button ui-button--secondary ui-button--sweep" href="/import">
                 <DashboardIcon name="import" />

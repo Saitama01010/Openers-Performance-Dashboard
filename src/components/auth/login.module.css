@@ -9,9 +9,9 @@ FORM: The approved split-screen comp fixes the structure; no concept seed was ne
 .shell {
   --login-blue: #135fff;
   --login-blue-dark: #074bd9;
-  --login-ink: #071634;
-  --login-muted: #53637b;
-  background: #f7f9fd;
+  --login-ink: var(--foreground);
+  --login-muted: var(--muted);
+  background: var(--background);
   color: var(--login-ink);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -201,7 +201,7 @@ FORM: The approved split-screen comp fixes the structure; no concept seed was ne
   background:
     radial-gradient(circle at 98% 4%, rgb(224 233 249 / 0.65), transparent 25%),
     radial-gradient(circle at 62% 100%, rgb(227 235 249 / 0.75), transparent 35%),
-    #f8fafd;
+    var(--surface-subtle);
   display: flex;
   justify-content: center;
   min-height: 100dvh;
@@ -221,8 +221,24 @@ FORM: The approved split-screen comp fixes the structure; no concept seed was ne
   width: 64%;
 }
 
+:global(html[data-theme="dark"]) .formPanel {
+  background:
+    radial-gradient(circle at 98% 4%, rgb(48 70 104 / 0.35), transparent 25%),
+    radial-gradient(circle at 62% 100%, rgb(35 55 87 / 0.45), transparent 35%),
+    var(--background);
+}
+
+:global(html[data-theme="dark"]) .formPanel::after {
+  background: rgb(23 37 59 / 0.72);
+}
+
+:global(html[data-theme="dark"]) .card {
+  border-color: var(--border);
+  box-shadow: 0 20px 52px rgb(0 0 0 / 0.34);
+}
+
 .card {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid #d5dfec;
   border-radius: 0.75rem;
   box-shadow: 0 18px 48px rgb(31 55 94 / 0.09), 0 2px 5px rgb(31 55 94 / 0.04);
@@ -304,7 +320,7 @@ FORM: The approved split-screen comp fixes the structure; no concept seed was ne
 }
 
 .input {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid #bdcadb;
   border-radius: 0.5rem;
   color: var(--login-ink);
@@ -323,7 +339,7 @@ FORM: The approved split-screen comp fixes the structure; no concept seed was ne
 }
 
 .input::placeholder {
-  color: #76859d;
+  color: var(--muted);
   opacity: 1;
 }
 
@@ -338,7 +354,7 @@ FORM: The approved split-screen comp fixes the structure; no concept seed was ne
 }
 
 .inputIcon {
-  color: #4f5c70;
+  color: var(--foreground);
   height: 1.2rem;
   left: 1rem;
   pointer-events: none;
@@ -358,7 +374,7 @@ FORM: The approved split-screen comp fixes the structure; no concept seed was ne
   background: transparent;
   border: 0;
   border-radius: 0.35rem;
-  color: #4d5a6e;
+  color: var(--foreground);
   cursor: pointer;
   display: inline-flex;
   height: 2.5rem;
@@ -465,7 +481,7 @@ FORM: The approved split-screen comp fixes the structure; no concept seed was ne
 }
 
 .footerDividerLabel {
-  color: #68778e;
+  color: var(--muted);
   font-size: 0.82rem;
 }
 

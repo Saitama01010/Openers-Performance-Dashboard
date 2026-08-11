@@ -5,7 +5,11 @@ import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { listScopedActiveAgents, type ScopedAgent } from "@/agents/scope";
 import type { Actor } from "@/auth/authorization";
 import { resolveCurrentActor } from "@/auth/current-actor";
-import { buildDashboardScope, getDashboardData } from "@/dashboard/data";
+import {
+  buildDashboardScope,
+  getDashboardAgentRowsData,
+  type DashboardAgentPerformanceRow,
+} from "@/dashboard/data";
 import type { DashboardDateWindow, OverviewDateRange } from "@/dashboard/date-range";
 import {
   loadRoleDashboardOutcomeSource,
@@ -50,18 +54,6 @@ type DialerPoint = {
   loggedInSeconds: number;
   talkSeconds: number;
 };
-
-function comparisonRange(range: OverviewDateRange): OverviewDateRange | null {
-  return range.comparison
-    ? {
-        key: "custom",
-        label: range.comparison.label,
-        from: range.comparison.from,
-        to: range.comparison.to,
-        comparison: null,
-      }
-    : null;
-}
 
 function sourceMessage(source: RoleDashboardOutcomeSource) {
   if (source.status === "unavailable" || source.status === "partial") return source.message;
@@ -119,7 +111,7 @@ function agentIdsByTeam(agents: readonly ScopedAgent[]) {
 
 function teamComparison(
   agentIds: readonly string[],
-  dashboardByAgent: ReadonlyMap<string, Awaited<ReturnType<typeof getDashboardData>>["agentRows"][number]>,
+  dashboardByAgent: ReadonlyMap<string, DashboardAgentPerformanceRow>,
   transferByAgent: ReadonlyMap<string, number>,
   closedByAgent: ReadonlyMap<string, number>,
   sources: { transfers: boolean; closedDeals: boolean },
@@ -288,14 +280,13 @@ async function teamTrends(
 async function loadBaseRows(actor: Actor, options: LoadOptions) {
   const currentActor = await resolveCurrentActor(actor);
   if (currentActor.role === "agent") throw new Error("Forbidden");
-  const previousRange = comparisonRange(options.dateRange);
-  const [visibleTeams, agents, current, previous, source, configuration] = await Promise.all([
+  const [visibleTeams, agents, current, source, configuration] = await Promise.all([
     listVisibleTeams(currentActor),
     listScopedActiveAgents(currentActor),
-    getDashboardData(currentActor, { dateRange: options.dateRange, showAgentsWithNoData: true }),
-    previousRange
-      ? getDashboardData(currentActor, { dateRange: previousRange, showAgentsWithNoData: true })
-      : null,
+    getDashboardAgentRowsData(currentActor, {
+      dateRange: options.dateRange,
+      showAgentsWithNoData: true,
+    }),
     loadRoleDashboardOutcomeSource(currentActor),
     listPerformanceConfigurationForCurrentActor(currentActor),
   ]);
@@ -305,7 +296,9 @@ async function loadBaseRows(actor: Actor, options: LoadOptions) {
     ? outcomeSnapshot(source, { kind: "date", window: options.dateRange.comparison }, allowedIds)
     : null;
   const currentByAgent = new Map(current.agentRows.map((row) => [row.profileId, row]));
-  const previousByAgent = new Map(previous?.agentRows.map((row) => [row.profileId, row]) ?? []);
+  const previousByAgent = new Map(
+    current.comparisonAgentRows?.map((row) => [row.profileId, row]) ?? [],
+  );
   const groupedAgents = agentIdsByTeam(agents);
   const targetMetric = metricTargetName(options.filters.metric);
   const asOf = options.dateRange.to ?? dateKeyInTimeZone(new Date(), source.timeZone);
@@ -342,7 +335,7 @@ async function loadBaseRows(actor: Actor, options: LoadOptions) {
     const health = healthForTarget(actualForMetric(base, options.filters.metric), target?.targetValue ?? null);
     return {
       ...base,
-      comparison: previousOutcomes && previous
+      comparison: previousOutcomes && current.comparisonAgentRows
         ? teamComparison(
             ids,
             previousByAgent,

@@ -16,7 +16,7 @@ vi.mock("@/agents/scope", () => ({
 }));
 vi.mock("@/dashboard/data", () => ({
   buildDashboardScope: vi.fn(),
-  getDashboardData: mocks.dashboard,
+  getDashboardAgentRowsData: mocks.dashboard,
 }));
 vi.mock("@/dashboard/outcome-source", () => ({
   loadRoleDashboardOutcomeSource: mocks.outcomeSource,
@@ -40,6 +40,7 @@ const identities = {
 function dashboardRows(ids: string[]) {
   return {
     status: "ACTIVE_IMPORT",
+    comparisonAgentRows: null,
     agentRows: ids.map((id) => ({
       profileId: id,
       accountStatus: "active",

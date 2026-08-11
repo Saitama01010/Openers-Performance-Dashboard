@@ -4,7 +4,11 @@ import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 
 import type { Actor, Role } from "@/auth/authorization";
 import { resolveCurrentActor } from "@/auth/current-actor";
-import { buildDashboardScope, getDashboardData, type DashboardTotals } from "@/dashboard/data";
+import {
+  buildDashboardScope,
+  getDashboardSummaryData,
+  type DashboardTotals,
+} from "@/dashboard/data";
 import type { DashboardDateWindow, OverviewDateRange } from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import { dialerAgentHourlyMetrics, dialerDatasetScopes, profiles } from "@/db/schema";
@@ -292,7 +296,7 @@ export async function getPerformancePageData(
 ): Promise<PerformancePageData> {
   const actor = await resolveCurrentActor(sessionActor);
   const [dashboard, dialerDaily, outcomes] = await Promise.all([
-    getDashboardData(actor, { dateRange: options.dateRange }),
+    getDashboardSummaryData(actor, { dateRange: options.dateRange }),
     getDialerDailyAggregates(actor, options.dateRange),
     loadOutcomeData(actor, options.timeZone),
   ]);

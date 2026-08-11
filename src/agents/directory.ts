@@ -14,7 +14,10 @@ import {
 import { listScopedActiveAgents, uniqueScopedTeams } from "@/agents/scope";
 import type { Actor } from "@/auth/authorization";
 import { resolveCurrentActor } from "@/auth/current-actor";
-import { buildDashboardScope, getDashboardData } from "@/dashboard/data";
+import {
+  buildDashboardScope,
+  getDashboardAgentRowsData,
+} from "@/dashboard/data";
 import type { DashboardDateWindow, OverviewDateRange } from "@/dashboard/date-range";
 import {
   loadRoleDashboardOutcomeSource,
@@ -33,17 +36,6 @@ type DirectoryLoadOptions = {
   pageSize?: number;
   includeTrends?: boolean;
 };
-
-function asComparisonRange(range: OverviewDateRange): OverviewDateRange | null {
-  if (!range.comparison) return null;
-  return {
-    key: "custom",
-    label: range.comparison.label,
-    from: range.comparison.from,
-    to: range.comparison.to,
-    comparison: null,
-  };
-}
 
 function ratio(talkSeconds: number, loggedInSeconds: number, hasMetrics: boolean) {
   return hasMetrics && loggedInSeconds > 0
@@ -207,13 +199,12 @@ function mergeTrends(
 
 async function loadBaseRows(actor: Actor, dateRange: OverviewDateRange) {
   const currentActor = await resolveCurrentActor(actor);
-  const comparisonRange = asComparisonRange(dateRange);
-  const [agents, current, previous, outcomeSource] = await Promise.all([
+  const [agents, current, outcomeSource] = await Promise.all([
     listScopedActiveAgents(currentActor),
-    getDashboardData(currentActor, { dateRange, showAgentsWithNoData: true }),
-    comparisonRange
-      ? getDashboardData(currentActor, { dateRange: comparisonRange, showAgentsWithNoData: true })
-      : null,
+    getDashboardAgentRowsData(currentActor, {
+      dateRange,
+      showAgentsWithNoData: true,
+    }),
     loadRoleDashboardOutcomeSource(currentActor),
   ]);
 
@@ -231,7 +222,9 @@ async function loadBaseRows(actor: Actor, dateRange: OverviewDateRange) {
       )
     : null;
   const currentById = new Map(current.agentRows.map((row) => [row.profileId, row]));
-  const previousById = new Map(previous?.agentRows.map((row) => [row.profileId, row]) ?? []);
+  const previousById = new Map(
+    current.comparisonAgentRows?.map((row) => [row.profileId, row]) ?? [],
+  );
   const transfersAvailable = currentOutcomes.transfers.status === "ready";
   const closedAvailable = currentOutcomes.closedDeals.status === "ready";
 

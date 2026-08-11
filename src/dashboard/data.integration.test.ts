@@ -4,7 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { inArray } from "drizzle-orm";
 
 import type { Actor } from "@/auth/authorization";
-import { getDashboardData } from "@/dashboard/data";
+import {
+  getDashboardAgentRowsData,
+  getDashboardData,
+  getDashboardSummaryData,
+} from "@/dashboard/data";
 import { resolveOverviewDateRange } from "@/dashboard/date-range";
 import { getDb } from "@/db";
 import {
@@ -540,8 +544,18 @@ describe("active-version dashboard scope", () => {
 
     for (const dateRange of ranges) {
       const dashboard = await getDashboardData(actor, { dateRange });
+      const summary = await getDashboardSummaryData(actor, { dateRange });
+      const agentRows = await getDashboardAgentRowsData(actor, { dateRange });
       expect(dashboard.totals.calls).toBe(28);
       expect(dashboard.totals.rowCount).toBe(1);
+      expect(summary).toMatchObject({
+        status: dashboard.status,
+        totals: dashboard.totals,
+        dataFreshness: dashboard.dataFreshness,
+        comparison: dashboard.comparison,
+      });
+      expect(agentRows.status).toBe(dashboard.status);
+      expect(agentRows.agentRows).toEqual(dashboard.agentRows);
     }
   });
 });

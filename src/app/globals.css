@@ -1316,6 +1316,7 @@ input[type="file"]:not(:disabled) {
   color: #ffffff;
   isolation: isolate;
   overflow: hidden;
+  position: relative;
 }
 
 .ui-button--sweep::after {

@@ -126,6 +126,7 @@ describe("Rex authenticated shell integration", () => {
       actions.indexOf(") : null}"),
     );
     expect(shell).toContain("dashboard-topbar__import ui-button ui-button--secondary ui-button--sweep");
+    expect(shell).toContain("dashboard-icon-button ui-button--sweep");
   });
 
   it("keeps preference, motion, cleanup, and accessibility behavior client-only", () => {
@@ -186,7 +187,7 @@ describe("Rex authenticated shell integration", () => {
     expect(tabletRule).toContain("display: none");
   });
 
-  it("uses a scoped, reduced-motion-safe sweep animation for both topbar controls", () => {
+  it("uses a scoped, reduced-motion-safe sweep animation for the topbar controls", () => {
     const globals = readFileSync(
       resolve(process.cwd(), "src/app/globals.css"),
       "utf8",

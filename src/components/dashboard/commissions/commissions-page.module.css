@@ -2,7 +2,7 @@
   --commission-ink: var(--foreground);
   --commission-muted: var(--muted);
   --commission-border: var(--border);
-  --commission-blue: #1768f2;
+  --commission-blue: var(--primary);
   --commission-blue-soft: var(--primary-subtle);
   display: grid;
   gap: 16px;
@@ -164,10 +164,10 @@
 
 .statusNotice {
   align-items: center;
-  background: #f5f9ff;
-  border: 1px solid #bdd5ff;
+  background: var(--surface-selected);
+  border: 1px solid var(--primary-border);
   border-radius: 8px;
-  color: #1854c4;
+  color: var(--primary);
   display: flex;
   font-size: .78rem;
   gap: 10px;
@@ -181,8 +181,8 @@
 
 .statusNotice[data-tone="warning"] {
   background: var(--warning-subtle);
-  border-color: #f3d08a;
-  color: #995a00;
+  border-color: var(--warning-border);
+  color: var(--warning);
 }
 
 .scopeToolbar {
@@ -242,7 +242,7 @@
 
 .metricCard:hover,
 .metricCard[aria-expanded="true"] {
-  border-color: #b8cae4;
+  border-color: var(--border-strong);
   box-shadow: 0 10px 26px rgb(40 65 100 / 11%);
   transform: translateY(-2px);
   z-index: 8;
@@ -265,10 +265,10 @@
   transform: scale(1.06);
 }
 
-.metricCard[data-tone="green"] .metricIcon { background: var(--success-subtle); color: #10a95d; }
-.metricCard[data-tone="violet"] .metricIcon { background: #f2edff; color: #7c3aed; }
-.metricCard[data-tone="orange"] .metricIcon { background: #fff2e8; color: #ea6b1b; }
-.metricCard[data-tone="cyan"] .metricIcon { background: var(--primary-subtle); color: #0891b2; }
+.metricCard[data-tone="green"] .metricIcon { background: var(--success-subtle); color: var(--success); }
+.metricCard[data-tone="violet"] .metricIcon { background: var(--accent-purple-subtle); color: var(--accent-purple); }
+.metricCard[data-tone="orange"] .metricIcon { background: var(--accent-orange-subtle); color: var(--accent-orange); }
+.metricCard[data-tone="cyan"] .metricIcon { background: var(--accent-teal-subtle); color: var(--accent-teal); }
 
 .metricCopy {
   display: grid;
@@ -425,8 +425,8 @@
 .legend button[data-active="true"],
 .metricSwitch button[aria-pressed="true"] {
   background: var(--commission-blue-soft);
-  border-color: #bfd4ff;
-  color: #1854c4;
+  border-color: var(--primary-border);
+  color: var(--primary);
 }
 
 .legend i,
@@ -459,7 +459,7 @@
 }
 
 .gridLine {
-  stroke: #e8eef6;
+  stroke: var(--border);
   stroke-width: 1;
 }
 
@@ -484,7 +484,7 @@
 .chartTooltip,
 .personalChartTooltip {
   background: var(--surface);
-  border: 1px solid #d9e3ef;
+  border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 10px 28px rgb(22 42 78 / 14%);
   color: var(--commission-muted);
@@ -540,7 +540,7 @@
   width: 100%;
 }
 
-.donutTrack { stroke: #edf1f6; }
+.donutTrack { stroke: var(--track); }
 .donutSegment { cursor: pointer; transition: opacity 160ms ease, stroke-width 160ms ease; }
 .donutSegment[data-dimmed="true"] { opacity: .18; }
 
@@ -590,7 +590,7 @@
 }
 
 .distributionList button:hover,
-.distributionList button[aria-pressed="true"] { background: var(--surface-subtle); border-color: #dbe7f8; }
+.distributionList button[aria-pressed="true"] { background: var(--surface-subtle); border-color: var(--border); }
 .distributionList button > span { color: var(--commission-ink); display: grid; font-size: .67rem; min-width: 0; }
 .distributionList button small { color: var(--commission-muted); font-size: .56rem; font-weight: 500; margin-top: 2px; }
 .distributionList button > strong { color: var(--commission-ink); display: grid; font-size: .64rem; font-variant-numeric: tabular-nums; margin-left: auto; text-align: right; }
@@ -609,7 +609,7 @@
 .singleTeam {
   align-items: center;
   background: var(--surface-subtle);
-  border: 1px solid #dce8f7;
+  border: 1px solid var(--border);
   border-radius: 9px;
   display: flex;
   gap: 12px;
@@ -649,8 +649,8 @@
 }
 
 .tierBars button:hover,
-.tierBars button:focus-visible { background: var(--surface-subtle); border-color: #dce7f6; }
-.barPlot { align-items: end; background: linear-gradient(to top, #f3f6fa, #fff); border-bottom: 1px solid #d9e2ef; display: flex; flex: 1; justify-content: center; min-height: 112px; width: 100%; }
+.tierBars button:focus-visible { background: var(--surface-subtle); border-color: var(--border); }
+.barPlot { align-items: end; background: linear-gradient(to top, #f3f6fa, #fff); border-bottom: 1px solid var(--border); display: flex; flex: 1; justify-content: center; min-height: 112px; width: 100%; }
 .barPlot i { background: linear-gradient(180deg, #689dff, #1768f2); border-radius: 5px 5px 0 0; box-shadow: 0 5px 14px rgb(23 104 242 / 18%); display: block; max-width: 30px; min-height: 4px; transition: filter 160ms ease, transform 160ms ease; width: 62%; }
 .tierBars button:hover .barPlot i,
 .tierBars button:focus-visible .barPlot i { filter: saturate(1.15); transform: scaleX(1.08); }
@@ -670,7 +670,7 @@
   text-align: left;
 }
 
-.emptyState > span { align-items: center; background: #eef3f9; border-radius: 50%; color: var(--muted); display: flex; height: 40px; justify-content: center; width: 40px; }
+.emptyState > span { align-items: center; background: var(--surface-hover); border-radius: 50%; color: var(--muted); display: flex; height: 40px; justify-content: center; width: 40px; }
 .emptyState strong { color: var(--commission-ink); font-size: .76rem; }
 .emptyState p { font-size: .66rem; line-height: 1.45; margin: 3px 0 0; }
 
@@ -685,7 +685,7 @@
 
 .tableToolbar {
   align-items: end;
-  border-top: 1px solid #e7edf5;
+  border-top: 1px solid var(--border);
   display: flex;
   gap: 12px;
   justify-content: space-between;
@@ -700,7 +700,7 @@
 .tableToolbar select { font-size: .68rem; min-width: 150px; padding: 0 8px; }
 
 .tableScroll {
-  border-top: 1px solid #e6edf6;
+  border-top: 1px solid var(--border);
   max-width: 100%;
   overflow: auto;
 }
@@ -716,21 +716,21 @@
 
 .tableScroll caption { height: 1px; margin: -1px; overflow: hidden; position: absolute; width: 1px; }
 .tableScroll th,
-.tableScroll td { border-bottom: 1px solid #e7edf5; height: 46px; padding: 8px 11px; text-align: left; vertical-align: middle; white-space: nowrap; }
+.tableScroll td { border-bottom: 1px solid var(--border); height: 46px; padding: 8px 11px; text-align: left; vertical-align: middle; white-space: nowrap; }
 .tableScroll thead th { background: var(--surface-subtle); color: var(--muted); font-size: .57rem; font-weight: 800; letter-spacing: .025em; position: sticky; text-transform: uppercase; top: 0; z-index: 2; }
 .tableScroll thead button { background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; font-weight: inherit; padding: 0; text-transform: inherit; }
 .tableScroll thead button { align-items: center; display: inline-flex; min-height: 44px; }
 .tableScroll tbody tr { transition: background 140ms ease; }
 .tableScroll tbody tr:hover,
-.tableScroll tbody tr:focus { background: #f3f7ff; outline: none; }
+.tableScroll tbody tr:focus { background: var(--surface-selected); outline: none; }
 .tableScroll tbody th strong { color: var(--commission-ink); font-size: .66rem; }
 .tableScroll tbody th small { color: var(--commission-muted); display: block; font-size: .55rem; font-weight: 500; margin-top: 2px; }
 .tableScroll tbody tr:hover strong,
 .tableScroll tbody tr:focus strong { color: var(--commission-blue); }
 .numeric { font-variant-numeric: tabular-nums; text-align: right !important; }
 .teamBadge,
-.tierBadge { align-items: center; background: var(--primary-subtle); border: 1px solid transparent; border-radius: 0.25rem; color: #2559b7; display: inline-flex; font-size: .6875rem; font-weight: 600; height: 1.25rem; justify-content: center; min-width: 1.25rem; padding: 0 .325rem; }
-.tierBadge { background: #f3edff; color: #6d3dc0; }
+.tierBadge { align-items: center; background: var(--primary-subtle); border: 1px solid transparent; border-radius: 0.25rem; color: var(--primary); display: inline-flex; font-size: .6875rem; font-weight: 600; height: 1.25rem; justify-content: center; min-width: 1.25rem; padding: 0 .325rem; }
+.tierBadge { background: var(--accent-purple-subtle); color: var(--accent-purple); }
 .rowAction { align-items: center; display: inline-flex; height: 44px; justify-content: center; min-height: 44px; opacity: .45; padding: 0; width: 44px; }
 .tableScroll tr:hover .rowAction,
 .tableScroll tr:focus .rowAction,
@@ -780,9 +780,9 @@
 .preview h2 { color: var(--commission-ink); font-size: 1.2rem; margin: 4px 0 0; }
 .preview header p { color: var(--commission-muted); font-size: .7rem; margin: 3px 0 0; }
 .preview header button { align-items: center; display: flex; height: 44px; justify-content: center; min-height: 44px; padding: 0; width: 44px; }
-.preview dl { border: 1px solid #e1e8f2; border-radius: 9px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 16px 0; overflow: hidden; }
-.preview dl div { border-bottom: 1px solid #e8eef6; min-width: 0; padding: 11px; }
-.preview dl div:nth-child(odd) { border-right: 1px solid #e8eef6; }
+.preview dl { border: 1px solid var(--border); border-radius: 9px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 16px 0; overflow: hidden; }
+.preview dl div { border-bottom: 1px solid var(--border); min-width: 0; padding: 11px; }
+.preview dl div:nth-child(odd) { border-right: 1px solid var(--border); }
 .preview dt { color: var(--commission-muted); font-size: .62rem; }
 .preview dd { color: var(--commission-ink); font-size: .78rem; font-variant-numeric: tabular-nums; font-weight: 750; margin: 4px 0 0; }
 .preview > .primaryButton { width: 100%; }
@@ -793,19 +793,19 @@
 .personalMetricGrid .metricTooltip { bottom: auto; top: calc(100% + 8px); }
 
 .progressPanel { padding: 20px; }
-.currentTierBadge { align-items: center; background: var(--commission-blue-soft); border: 1px solid #c9daff; border-radius: 999px; color: #1854c4; display: inline-flex; font-size: .6875rem; font-weight: 600; height: 1.5rem; justify-content: center; min-width: 1.5rem; padding: 0 .45rem; }
-.progressInteractive { background: var(--surface-subtle); border: 1px solid #dce6f2; border-radius: 10px; color: inherit; cursor: pointer; display: block; font: inherit; min-height: 184px; padding: 18px; position: relative; text-align: left; width: 100%; }
+.currentTierBadge { align-items: center; background: var(--primary-subtle); border: 1px solid var(--primary-border); border-radius: 999px; color: var(--primary); display: inline-flex; font-size: .6875rem; font-weight: 600; height: 1.5rem; justify-content: center; min-width: 1.5rem; padding: 0 .45rem; }
+.progressInteractive { background: var(--surface-subtle); border: 1px solid var(--border); border-radius: 10px; color: inherit; cursor: pointer; display: block; font: inherit; min-height: 184px; padding: 18px; position: relative; text-align: left; width: 100%; }
 .progressInteractive:hover,
-.progressInteractive[aria-expanded="true"] { border-color: #a9c8ff; box-shadow: inset 0 0 0 1px #d7e5ff; }
+.progressInteractive[aria-expanded="true"] { border-color: var(--primary-border); box-shadow: inset 0 0 0 1px #d7e5ff; }
 .progressLabels { display: flex; justify-content: space-between; }
 .progressLabels > span { display: grid; }
 .progressLabels > span:last-child { text-align: right; }
 .progressLabels small { color: var(--commission-muted); font-size: .63rem; }
 .progressLabels strong { color: var(--commission-ink); font-size: .92rem; margin-top: 4px; }
 .progressLabels b { color: var(--commission-blue); font-size: .7rem; margin-top: 3px; }
-.progressTrack { background: #e4ebf5; border-radius: 99px; height: 12px; margin: 28px 0 18px; position: relative; }
+.progressTrack { background: var(--track); border-radius: 99px; height: 12px; margin: 28px 0 18px; position: relative; }
 .progressTrack > i { background: linear-gradient(90deg, #1768f2, #55a1ff); border-radius: inherit; box-shadow: 0 4px 12px rgb(23 104 242 / 24%); display: block; height: 100%; transition: width 240ms ease; }
-.progressTrack > span { background: #1768f2; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 3px 9px rgb(23 104 242 / 24%); color: transparent; height: 20px; position: absolute; top: 50%; transform: translate(-50%, -50%); width: 20px; }
+.progressTrack > span { background: var(--primary); border: 3px solid var(--surface); border-radius: 50%; box-shadow: 0 3px 9px color-mix(in srgb, var(--primary) 28%, transparent); color: transparent; height: 20px; position: absolute; top: 50%; transform: translate(-50%, -50%); width: 20px; }
 .progressInteractive > p { color: var(--foreground); font-size: .72rem; margin: 0; text-align: center; }
 .progressTooltip { bottom: calc(100% - 14px); left: 50%; transform: translateX(-50%); }
 
@@ -833,8 +833,8 @@
   text-align: left;
 }
 
-.tierReference button:hover { border-color: #afc8eb; box-shadow: 0 7px 18px rgb(28 55 90 / 9%); transform: translateY(-1px); }
-.tierReference button[aria-current="true"] { background: var(--commission-blue-soft); border-color: #72a4ff; box-shadow: inset 0 0 0 1px #bcd3ff; }
+.tierReference button:hover { border-color: var(--border); box-shadow: 0 7px 18px rgb(28 55 90 / 9%); transform: translateY(-1px); }
+.tierReference button[aria-current="true"] { background: var(--primary-subtle); border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary-border); }
 .tierReference button > span { color: var(--commission-muted); font-size: .62rem; font-weight: 700; }
 .tierReference button > strong { color: var(--commission-ink); font-size: .76rem; margin-top: 7px; }
 .tierReference button > b { background: #1768f2; border-radius: 99px; color: #fff; font-size: .54rem; justify-self: start; margin-top: 9px; padding: 4px 7px; }

@@ -10,14 +10,14 @@ RESPONSIVE: Dense desktop directory with a modal side sheet; controls wrap at ta
 */
 
 .page {
-  --ua-blue: #1f5eff;
+  --ua-blue: var(--primary);
   --ua-ink: var(--foreground);
   --ua-muted: var(--muted);
   --ua-line: var(--border);
   --ua-soft: var(--surface-subtle);
-  --ua-green: #0a8f64;
-  --ua-red: #b42318;
-  --ua-amber: #a56000;
+  --ua-green: var(--success);
+  --ua-red: var(--danger);
+  --ua-amber: var(--warning);
   display: grid;
   min-width: 0;
   max-width: 100%;
@@ -88,7 +88,7 @@ RESPONSIVE: Dense desktop directory with a modal side sheet; controls wrap at ta
   background: var(--surface);
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
-.kpi:hover, .kpi:focus-within { transform: translateY(-2px); border-color: #4b7cff; box-shadow: 0 10px 28px rgb(6 21 47 / 10%); }
+.kpi:hover, .kpi:focus-within { transform: translateY(-2px); border-color: var(--primary); box-shadow: var(--shadow-sm); }
 .kpiLabel { margin: 0; color: var(--ua-muted); font-size: .6875rem; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; }
 .kpiValue { margin: 6px 0 2px; font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
 .kpiMeta { margin: 0; color: var(--ua-muted); font-size: 11px; }
@@ -109,12 +109,12 @@ RESPONSIVE: Dense desktop directory with a modal side sheet; controls wrap at ta
 .filterGrid { display: grid; grid-template-columns: minmax(220px, 1.6fr) repeat(5, minmax(130px, 1fr)); gap: 12px; align-items: end; }
 .field { display: grid; gap: 6px; color: var(--ua-ink); font-size: .6875rem; font-weight: 750; }
 .control { width: 100%; min-height: 44px; border: 1px solid var(--ua-line); border-radius: 6px; padding: 0 11px; background: var(--surface); color: var(--ua-ink); font: inherit; font-size: .8125rem; transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease; }
-.control:hover { border-color: #b9c6d8; background: var(--surface-subtle); }
+.control:hover { border-color: var(--border); background: var(--surface-subtle); }
 textarea.control { min-height: 82px; padding-block: 10px; resize: vertical; }
 .filterActions { grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; }
 
 .tableMeta { padding: 11px 14px; border-bottom: 1px solid var(--ua-line); color: var(--ua-muted); font-size: .75rem; }
-.bulkBar { min-height: 49px; justify-content: flex-start; padding: 8px 14px; border-bottom: 1px solid var(--ua-line); background: #fbfdff; }
+.bulkBar { min-height: 49px; justify-content: flex-start; padding: 8px 14px; border-bottom: 1px solid var(--ua-line); background: var(--surface-subtle); }
 .bulkBar > :last-child { margin-left: auto; }
 .tableWrap { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: .8125rem; }
@@ -184,13 +184,13 @@ textarea.control { min-height: 82px; padding-block: 10px; resize: vertical; }
 .dropZone { min-height: 178px; display: grid; place-items: center; border: 1.5px dashed #4b7cff; border-radius: 8px; padding: 22px; background: var(--ua-soft); text-align: center; transition: border-color 150ms ease, background 150ms ease, transform 150ms ease; }
 .dropZone:hover, .dropZone:focus-within { border-color: var(--ua-blue); background: var(--primary-subtle); transform: translateY(-1px); }
 .dropZoneActive { border-color: var(--ua-blue); background: var(--primary-subtle); box-shadow: inset 0 0 0 2px rgb(31 94 255 / 18%); transform: translateY(-1px); }
-.requirements { border-radius: 8px; padding: 16px; background: #f2f6fd; }
+.requirements { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--surface-subtle); }
 .requirements h3 { margin: 0 0 10px; font-size: 13px; }
 .requirements p, .requirements li { color: var(--ua-muted); font-size: .6875rem; line-height: 1.55; }
 .requirements ul { margin: 8px 0; padding-left: 18px; }
 .summaryGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
 .summaryCard { width: 100%; border: 1px solid var(--ua-line); border-radius: 8px; padding: 12px; background: var(--surface); color: inherit; font: inherit; text-align: left; transition: border-color 140ms ease, background 140ms ease, transform 140ms ease; }
-.summaryCard:hover, .summaryCard:focus-within { transform: translateY(-1px); border-color: #4b7cff; background: var(--ua-soft); }
+.summaryCard:hover, .summaryCard:focus-within { transform: translateY(-1px); border-color: var(--primary); background: var(--ua-soft); }
 .summaryCardActive { border-color: var(--ua-blue); background: var(--primary-subtle); box-shadow: inset 0 -2px var(--ua-blue); }
 .summaryCard p { margin: 0; color: var(--ua-muted); font-size: .625rem; font-weight: 750; text-transform: uppercase; }
 .summaryCard strong { display: block; margin-top: 6px; font-size: 1.5rem; }
@@ -200,7 +200,7 @@ textarea.control { min-height: 82px; padding-block: 10px; resize: vertical; }
 .tablePager .pageLink { border: 1px solid var(--ua-line); background: var(--surface); }
 .tablePager .pageLink:disabled { cursor: not-allowed; opacity: .45; }
 .assignmentBar { display: flex; flex-wrap: wrap; align-items: end; gap: 9px; border: 1px solid var(--ua-line); border-radius: 8px; padding: 10px; background: var(--ua-soft); }
-.reviewPanel { border: 1px solid #b9c6d8; border-radius: 8px; padding: 16px; background: var(--ua-soft); }
+.reviewPanel { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--ua-soft); }
 
 .unmatchedDescription { padding: 0 14px 13px; color: var(--ua-muted); font-size: .75rem; }
 .actionCluster { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; min-width: 420px; }

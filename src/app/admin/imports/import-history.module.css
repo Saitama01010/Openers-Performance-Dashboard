@@ -11,16 +11,16 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
   --history-muted: var(--muted);
   --history-border: var(--border);
   --history-border-strong: var(--border);
-  --history-blue: #1f5eff;
-  --history-blue-hover: #154be0;
+  --history-blue: var(--primary);
+  --history-blue-hover: var(--primary-hover);
   --history-blue-soft: var(--primary-subtle);
   --history-surface: var(--surface);
-  --history-subtle: var(--surface);
-  --history-success: #0a8f64;
+  --history-subtle: var(--surface-subtle);
+  --history-success: var(--success);
   --history-success-soft: var(--success-subtle);
-  --history-warning: #a56000;
+  --history-warning: var(--warning);
   --history-warning-soft: var(--warning-subtle);
-  --history-danger: #b42318;
+  --history-danger: var(--danger);
   --history-danger-soft: var(--danger-subtle);
   color: var(--history-ink);
 }
@@ -104,7 +104,7 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
 }
 
 .dangerOutlineButton {
-  border-color: #efb2ad;
+  border-color: var(--danger-border);
   background: var(--history-surface);
   color: var(--history-danger);
 }
@@ -379,7 +379,7 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
 .historyTable th,
 .historyTable td {
   padding: 0.72rem 0.8rem;
-  border-bottom: 1px solid #e7ecf3;
+  border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
 }
@@ -421,7 +421,7 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
 .historyTable tbody tr:hover td strong,
 .historyTable tbody tr:focus-visible td strong,
 .rowEmphasized td strong {
-  color: #081a3a;
+  color: var(--foreground);
 }
 
 .historyTable tbody tr:last-child th,
@@ -511,36 +511,36 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
 
 .statussuccess,
 .datasetsuccess {
-  border-color: #c9ebdc;
+  border-color: var(--success-border);
   background: var(--history-success-soft);
-  color: #06734f;
+  color: var(--success);
 }
 
 .statusdanger,
 .datasetdanger {
-  border-color: #f3c7c3;
+  border-color: var(--danger-border);
   background: var(--history-danger-soft);
-  color: #9c2118;
+  color: var(--danger);
 }
 
 .statuswarning,
 .datasetwarning {
-  border-color: #f2d7a8;
+  border-color: var(--warning-border);
   background: var(--history-warning-soft);
-  color: #804d00;
+  color: var(--warning);
 }
 
 .statusinfo,
 .datasetinfo {
-  border-color: #cbdcff;
+  border-color: var(--primary-border);
   background: var(--history-blue-soft);
-  color: #214aaf;
+  color: var(--primary);
 }
 
 .statusneutral,
 .datasetneutral {
   border-color: var(--history-border);
-  background: #f2f5f9;
+  background: var(--surface-hover);
   color: var(--foreground);
 }
 
@@ -643,7 +643,7 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
 
 .actionMenu .menuDanger {
   margin-top: 0.25rem;
-  border-top: 1px solid #f1d5d2;
+  border-top: 1px solid var(--danger-border);
   border-radius: 0 0 6px 6px;
   color: var(--history-danger);
 }
@@ -654,7 +654,7 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
 
 .rowEmphasized,
 .rowSelected {
-  background: #f2f6ff !important;
+  background: var(--surface-selected) !important;
   box-shadow: inset 0 0 0 1px var(--history-blue);
 }
 
@@ -841,7 +841,7 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
   display: grid;
   flex: 0 0 2.8rem;
   place-items: center;
-  border: 1px solid #cbdcff;
+  border: 1px solid var(--primary-border);
   border-radius: 8px;
   background: var(--history-blue-soft);
   color: var(--history-blue);
@@ -991,10 +991,10 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
 .actionPrompt {
   margin: -0.2rem 0 0.75rem;
   padding: 0.55rem 0.65rem;
-  border: 1px solid #cbdcff;
+  border: 1px solid var(--primary-border);
   border-radius: 6px;
   background: var(--history-blue-soft);
-  color: #214aaf;
+  color: var(--primary);
   font-size: 0.6875rem;
 }
 
@@ -1096,10 +1096,10 @@ FORM: Precisely specified operational ledger, directly shaped from the approved 
 .deleteWarning {
   margin: 1rem 0 0;
   padding: 0.75rem;
-  border: 1px solid #efb2ad;
+  border: 1px solid var(--danger-border);
   border-radius: 8px;
   background: var(--history-danger-soft);
-  color: #8d2018;
+  color: var(--danger);
   font-size: 0.75rem;
   line-height: 1.5;
 }

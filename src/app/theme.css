@@ -1,24 +1,40 @@
 :root { color-scheme: light; }
 
 html[data-theme="dark"] {
-  --background: #08111f;
-  --foreground: #e7edf7;
-  --surface: #111c2f;
-  --surface-subtle: #17243a;
-  --muted: #9cacbf;
-  --border: #2b3a50;
-  --border-strong: #40536e;
-  --primary: #6d9cff;
-  --primary-hover: #8aafff;
-  --primary-subtle: #172a4e;
+  --background: #07101d;
+  --foreground: #f0f4fb;
+  --surface: #111d30;
+  --surface-subtle: #18263c;
+  --surface-raised: #1b2a42;
+  --surface-hover: #203149;
+  --surface-selected: #203b63;
+  --track: #2a3a50;
+  --muted: #b2bfd0;
+  --border: #34465f;
+  --border-strong: #506784;
+  --primary: #84aaff;
+  --primary-hover: #a2bdff;
+  --primary-subtle: #1b3157;
+  --primary-border: #486da9;
   --primary-foreground: #071224;
-  --danger: #ff837a;
+  --danger: #ff938c;
   --danger-hover: #ff9b95;
-  --danger-subtle: #3b2027;
-  --success: #55d6a5;
-  --success-subtle: #16372f;
-  --warning: #ffc66d;
-  --warning-subtle: #3a2d18;
+  --danger-subtle: #43252c;
+  --danger-border: #7e4248;
+  --success: #63ddb0;
+  --success-subtle: #173a31;
+  --success-border: #2f705b;
+  --warning: #ffd083;
+  --warning-subtle: #3d301b;
+  --warning-border: #755d2d;
+  --accent-purple: #c4a7ff;
+  --accent-purple-subtle: #30264d;
+  --accent-orange: #ffb270;
+  --accent-orange-subtle: #402b20;
+  --accent-teal: #72dce6;
+  --accent-teal-subtle: #17363b;
+  --accent-pink: #ff9bbb;
+  --accent-pink-subtle: #412535;
   --sidebar: #030914;
   --sidebar-elevated: #0a1830;
   --sidebar-foreground: #f7f9fc;
@@ -58,6 +74,11 @@ html[data-theme="dark"] textarea {
   border-color: var(--border-strong);
   color: var(--foreground);
 }
+
+html[data-theme="dark"] ::placeholder { color: color-mix(in srgb, var(--muted) 82%, transparent); opacity: 1; }
+html[data-theme="dark"] ::selection { background: var(--primary); color: var(--primary-foreground); }
+html[data-theme="dark"] :disabled { color: color-mix(in srgb, var(--muted) 82%, transparent); }
+html[data-theme="dark"] hr { border-color: var(--border); }
 
 html[data-theme="dark"] .dashboard-search__results button,
 html[data-theme="dark"] .dashboard-attention__popover > a,

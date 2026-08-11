@@ -17,7 +17,7 @@
 }
 
 .eyebrow {
-  color: #1767f2;
+  color: var(--primary);
   font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -53,9 +53,9 @@
 .sourceNotice {
   align-items: center;
   background: var(--warning-subtle);
-  border: 1px solid #f0c36c;
+  border: 1px solid var(--warning-border);
   border-radius: 0.68rem;
-  color: #945800;
+  color: var(--warning);
   display: grid;
   gap: 0.65rem;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -95,9 +95,9 @@
 
 .sourceNotice a {
   background: var(--surface);
-  border: 1px solid #e8d3b2;
+  border: 1px solid var(--warning-border);
   border-radius: 0.45rem;
-  color: #1551d1;
+  color: var(--primary);
   font-size: 0.66rem;
   font-weight: 720;
   padding: 0.5rem 0.68rem;
@@ -135,7 +135,7 @@
 }
 
 .kpi:hover {
-  border-color: #aebfd7;
+  border-color: var(--border);
   box-shadow: 0 10px 24px rgb(6 21 47 / 0.09);
   transform: translateY(-2px);
 }
@@ -149,7 +149,7 @@
 
 .kpiIcon {
   align-items: center;
-  background: color-mix(in srgb, var(--metric-tone, #1767f2) 10%, white);
+  background: color-mix(in srgb, var(--metric-tone, var(--primary)) 16%, var(--surface));
   border-radius: 999px;
   color: var(--metric-tone, #1767f2);
   display: inline-flex;
@@ -273,7 +273,7 @@
 }
 
 .progressTrack {
-  background: #eaf0f8;
+  background: var(--track);
   border-radius: 999px;
   height: 0.45rem;
   overflow: hidden;
@@ -293,7 +293,7 @@
 }
 
 .queueGrid {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -304,11 +304,11 @@
 }
 
 .queueItem:nth-child(odd) {
-  border-right: 1px solid #e7ecf3;
+  border-right: 1px solid var(--border);
 }
 
 .queueItem:nth-child(n + 3) {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
 }
 
 .queueItem span,
@@ -327,7 +327,7 @@
 }
 
 .teamRows {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
   padding: 0.35rem 0.8rem 0.7rem;
 }
@@ -389,7 +389,7 @@
   align-items: center;
   background: var(--primary-subtle);
   border-radius: 999px;
-  color: #1767f2;
+  color: var(--primary);
   display: inline-flex;
   font-size: 0.62rem;
   font-weight: 800;
@@ -399,7 +399,7 @@
 }
 
 .rankGrid {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -410,7 +410,7 @@
 }
 
 .rankItem + .rankItem {
-  border-left: 1px solid #e7ecf3;
+  border-left: 1px solid var(--border);
 }
 
 .rankItem span,
@@ -428,7 +428,7 @@
 }
 
 .comparisonGrid {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -438,7 +438,7 @@
 }
 
 .comparisonItem + .comparisonItem {
-  border-left: 1px solid #e7ecf3;
+  border-left: 1px solid var(--border);
 }
 
 .comparisonItem span,
@@ -458,7 +458,7 @@
 .statusStrip {
   align-items: center;
   background: var(--surface-subtle);
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
@@ -525,7 +525,7 @@
 }
 
 .list {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
 }
 
@@ -536,7 +536,7 @@
 }
 
 .listItem + .listItem {
-  border-top: 1px solid #edf1f6;
+  border-top: 1px solid var(--border);
 }
 
 .listItem header {
@@ -567,7 +567,7 @@
 }
 
 .tableWrap {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
 }
 
 .tableWrap :global(.ui-table) {
@@ -686,7 +686,7 @@
   .rankItem + .rankItem,
   .comparisonItem + .comparisonItem {
     border-left: 0;
-    border-top: 1px solid #e7ecf3;
+    border-top: 1px solid var(--border);
   }
 
   .teamRow {
@@ -711,7 +711,7 @@
   }
 
   .queueItem + .queueItem {
-    border-top: 1px solid #e7ecf3;
+    border-top: 1px solid var(--border);
   }
 }
 

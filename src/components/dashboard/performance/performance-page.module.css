@@ -63,9 +63,9 @@
 .loadingPanel,
 .loadingStates,
 .loadingTable {
-  background: linear-gradient(100deg, #eef2f7 24%, var(--surface-subtle) 38%, #eef2f7 52%);
+  background: linear-gradient(100deg, var(--surface-hover) 24%, var(--surface-subtle) 38%, var(--surface-hover) 52%);
   background-size: 220% 100%;
-  border-color: #e3e9f1;
+  border-color: var(--border);
   pointer-events: none;
   animation: performanceLoading 1.4s ease-in-out infinite;
 }
@@ -104,7 +104,7 @@
   align-items: center;
   background: var(--danger-subtle);
   border-radius: 999px;
-  color: #d64050;
+  color: var(--danger);
   display: inline-flex;
   font-size: 1rem;
   font-weight: 800;
@@ -170,7 +170,7 @@
 .metricIcon,
 .activityHeading > span {
   align-items: center;
-  background: color-mix(in srgb, var(--metric-color, var(--state-color)) 10%, white);
+  background: color-mix(in srgb, var(--metric-color, var(--state-color)) 16%, var(--surface));
   border-radius: 999px;
   color: var(--metric-color, var(--state-color));
   display: inline-flex;
@@ -211,8 +211,8 @@
   font-weight: 760;
 }
 
-.metricTrend[data-tone="up"] > span { color: #15935c; }
-.metricTrend[data-tone="down"] > span { color: #d64050; }
+.metricTrend[data-tone="up"] > span { color: var(--success); }
+.metricTrend[data-tone="down"] > span { color: var(--danger); }
 
 .metricDescription {
   color: var(--muted);
@@ -302,7 +302,7 @@
 
 .iconButton:hover,
 .iconButton:focus-visible,
-.iconButton[aria-expanded="true"] { background: #f1f5fa; border-color: var(--border); outline: none; }
+.iconButton[aria-expanded="true"] { background: var(--surface-hover); border-color: var(--border); outline: none; }
 
 .menuPopover {
   background: var(--surface);
@@ -337,14 +337,14 @@
 .menuPopover > button:hover,
 .menuPopover > button:focus-visible,
 .menuPopover > a:hover,
-.menuPopover > a:focus-visible { background: #f1f5fa; outline: none; }
+.menuPopover > a:focus-visible { background: var(--surface-hover); outline: none; }
 
 .sourceBanner {
   align-items: flex-start;
   background: var(--warning-subtle);
-  border: 1px solid #f2d187;
+  border: 1px solid var(--warning-border);
   border-radius: 0.65rem;
-  color: #805307;
+  color: var(--warning);
   display: flex;
   gap: 0.7rem;
   padding: 0.65rem 0.85rem;
@@ -352,7 +352,7 @@
 
 .sourceBanner svg { flex: 0 0 auto; height: 1.05rem; margin-top: 0.05rem; width: 1.05rem; }
 .sourceBanner strong { font-size: 0.72rem; }
-.sourceBanner p { color: #9a6b20; font-size: 0.68rem; margin-top: 0.12rem; }
+.sourceBanner p { color: color-mix(in srgb, var(--warning) 82%, var(--foreground)); font-size: 0.68rem; margin-top: 0.12rem; }
 
 .analyticsGrid {
   display: grid;
@@ -388,7 +388,7 @@
   padding: 0.35rem 0.65rem;
 }
 
-.segmented button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 4px rgb(6 21 47 / 0.1); color: #1767f2; }
+.segmented button[aria-pressed="true"] { background: var(--surface-raised); box-shadow: var(--shadow-sm); color: var(--primary); }
 
 .chartToolbar {
   align-items: center;
@@ -415,7 +415,7 @@
 .legend button[aria-pressed="true"] { opacity: 1; }
 .legend button:hover,
 .legend button:focus-visible,
-.legend button[data-active] { background: #f4f7fb; border-color: var(--border); outline: none; }
+.legend button[data-active] { background: var(--surface-hover); border-color: var(--border); outline: none; }
 .legend button > span { border-radius: 0.15rem; height: 0.5rem; width: 0.5rem; }
 
 .metricSelect {
@@ -439,10 +439,10 @@
 .granularity { color: var(--muted); font-size: 0.65rem; margin-left: auto; }
 .chartFrame { min-width: 0; position: relative; }
 .chart { display: block; height: auto; max-height: 19rem; overflow: visible; width: 100%; }
-.gridline { stroke: #e7edf4; stroke-dasharray: 3 3; stroke-width: 1; }
-.axisTitle { fill: #64758d; font-size: 9px; font-weight: 700; }
+.gridline { stroke: var(--border); stroke-dasharray: 3 3; stroke-width: 1; }
+.axisTitle { fill: var(--muted); font-size: 9px; font-weight: 700; }
 .axisLabel,
-.xLabel { fill: #697a92; font-size: 8px; }
+.xLabel { fill: var(--muted); font-size: 8px; }
 .bar { opacity: 0.92; transition: opacity 150ms ease, filter 150ms ease; }
 .bar[data-series="transfers"] { fill: #1767f2; }
 .bar[data-series="closedDeals"] { fill: #20ae68; }
@@ -453,9 +453,9 @@
 .chartDate[data-active] .bar { filter: brightness(1.08) saturate(1.2); opacity: 1; stroke: white; stroke-width: 1; }
 .chartDate:focus-visible { filter: drop-shadow(0 0 3px rgb(23 103 242 / 0.5)); }
 .crosshair { stroke: #8795a9; stroke-dasharray: 3 3; stroke-width: 1; }
-.timeLine { fill: none; stroke: #7c3aed; stroke-linejoin: round; stroke-linecap: round; stroke-width: 2.2; }
-.timePoint { fill: white; stroke: #7c3aed; stroke-width: 2; transition: r 150ms ease; }
-.timePoint[data-active] { fill: #7c3aed; }
+.timeLine { fill: none; stroke: var(--accent-purple); stroke-linejoin: round; stroke-linecap: round; stroke-width: 2.2; }
+.timePoint { fill: var(--surface); stroke: var(--accent-purple); stroke-width: 2; transition: r 150ms ease; }
+.timePoint[data-active] { fill: var(--accent-purple); }
 .chartTooltipAnchor { position: absolute; top: 2.5rem; transform: translateX(-50%); z-index: 20; }
 .chartTooltip { min-width: 14rem; }
 
@@ -472,7 +472,7 @@
 }
 
 .emptyState svg,
-.tableEmpty svg { color: #9cabbf; height: 1.6rem; width: 1.6rem; }
+.tableEmpty svg { color: var(--muted); height: 1.6rem; width: 1.6rem; }
 .emptyState strong,
 .tableEmpty strong { color: var(--foreground); font-size: 0.8rem; }
 .emptyState span,
@@ -532,8 +532,8 @@
 .productivityLegend button:disabled { cursor: default; opacity: 0.7; }
 .productivityLegend button:not(:disabled):hover,
 .productivityLegend button:not(:disabled):focus-visible,
-.productivityLegend button[data-active] { background: #f4f7fb; border-color: var(--border); outline: none; }
-.productivityTotal { align-items: center; border-top: 1px solid #e4eaf2; display: flex; font-size: 0.7rem; justify-content: space-between; margin-top: 0.3rem; padding: 0.55rem 0.35rem 0; }
+.productivityLegend button[data-active] { background: var(--surface-hover); border-color: var(--border); outline: none; }
+.productivityTotal { align-items: center; border-top: 1px solid var(--border); display: flex; font-size: 0.7rem; justify-content: space-between; margin-top: 0.3rem; padding: 0.55rem 0.35rem 0; }
 .productivityTotal strong { font-variant-numeric: tabular-nums; }
 
 .inlineTooltip {
@@ -562,7 +562,7 @@
 }
 
 .activityCard {
-  border: 1px solid #e0e7f0;
+  border: 1px solid var(--border);
   border-radius: 0.6rem;
   min-height: 7.2rem;
   outline: none;
@@ -582,7 +582,7 @@
 .activityValue b { font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 .activityValue span { color: var(--muted); font-size: 0.62rem; font-variant-numeric: tabular-nums; }
 .activityCard > p { color: var(--muted); font-size: 0.59rem; margin-top: 0.35rem; }
-.progress { background: #e9eef5; border-radius: 999px; display: block; height: 0.28rem; margin-top: 0.55rem; overflow: hidden; }
+.progress { background: var(--track); border-radius: 999px; display: block; height: 0.28rem; margin-top: 0.55rem; overflow: hidden; }
 .progress i { background: var(--state-color); border-radius: inherit; display: block; height: 100%; transition: width 180ms ease; }
 .activityCard:hover .progress i,
 .activityCard:focus-visible .progress i,
@@ -601,22 +601,22 @@
 .tableScroll table { border-collapse: collapse; min-width: 48rem; width: 100%; }
 .tableScroll thead { background: var(--surface-subtle); position: sticky; top: 0; z-index: 2; }
 .tableScroll th,
-.tableScroll td { border-top: 1px solid #e3e9f1; color: var(--foreground); font-size: 0.67rem; padding: 0.72rem 0.85rem; text-align: left; }
+.tableScroll td { border-top: 1px solid var(--border); color: var(--foreground); font-size: 0.67rem; padding: 0.72rem 0.85rem; text-align: left; }
 .tableScroll th { color: var(--muted); font-weight: 730; }
 .tableScroll th button { color: inherit; font: inherit; font-weight: inherit; min-height: 1.75rem; }
 .tableScroll tbody tr { outline: none; transition: background 150ms ease, box-shadow 150ms ease; }
 .tableScroll tbody tr:hover,
 .tableScroll tbody tr:focus-visible,
-.tableScroll tbody tr[data-active] { background: #f1f6ff; box-shadow: inset 3px 0 #1767f2; }
+.tableScroll tbody tr[data-active] { background: var(--surface-selected); box-shadow: inset 3px 0 var(--primary); }
 .numeric { font-variant-numeric: tabular-nums; text-align: right !important; }
 .tableEmpty { min-height: 7rem; }
 
 .columnMenu { border: 0; display: grid; gap: 0.2rem; margin: 0; min-width: 14rem; padding: 0.25rem; }
 .columnMenu legend { color: var(--muted); font-size: 0.65rem; font-weight: 750; padding: 0.3rem; text-transform: uppercase; }
 .columnMenu label { align-items: center; border-radius: 0.35rem; color: var(--foreground); display: flex; font-size: 0.72rem; gap: 0.5rem; min-height: 2rem; padding: 0.3rem; }
-.columnMenu label:hover { background: #f1f5fa; }
+.columnMenu label:hover { background: var(--surface-hover); }
 
-.pagination { align-items: center; border-top: 1px solid #e3e9f1; display: flex; gap: 0.65rem; justify-content: flex-end; padding: 0.65rem 0.85rem; }
+.pagination { align-items: center; border-top: 1px solid var(--border); display: flex; gap: 0.65rem; justify-content: flex-end; padding: 0.65rem 0.85rem; }
 .pagination button { border: 1px solid var(--border); border-radius: 0.4rem; color: var(--foreground); font-size: 0.68rem; min-height: 2.1rem; padding: 0.3rem 0.65rem; }
 .pagination button:disabled { cursor: not-allowed; opacity: 0.45; }
 .pagination span { color: var(--muted); font-size: 0.66rem; }

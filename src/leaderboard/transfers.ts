@@ -236,6 +236,7 @@ export async function ingestAndMatchLeaderboardSources(
       errorKind: closedSource.kind,
       headerValidationStatus: closedSource.headerValidationStatus,
       timeZone: config.timeZone,
+      users: resolvedUsers,
       transferRecords: sourceResult.sources.transfers.records,
       transferMatches: transferMatches.results,
       transferDiagnostics: [

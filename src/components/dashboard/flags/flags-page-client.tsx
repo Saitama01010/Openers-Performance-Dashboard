@@ -8,6 +8,7 @@ import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/da
 import styles from "@/components/dashboard/flags/flags-page.module.css";
 import { AreaTrend } from "@/components/ui/area-trend";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { metricCardForeground, metricCardStyle } from "@/components/ui/statistics-card";
 import type { getPerformanceFlagsData, getTransferFlagsData } from "@/flags/data";
 import { TRANSFER_FLAG_LABELS } from "@/flags/domain";
 import { formatDurationSeconds } from "@/import/format";
@@ -67,20 +68,20 @@ function KpiCard({
 }) {
   const change = current === null ? null : comparison(current, previous);
   return (
-    <details className={styles.kpiCard} style={{ "--accent": color } as React.CSSProperties}>
+    <details className={`${styles.kpiCard} metric-color-card`} style={{ ...metricCardStyle(color), "--accent": color } as React.CSSProperties}>
       <summary>
-        <span className={styles.kpiIcon}><DashboardIcon name={icon} /></span>
+        <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
         <span className={styles.kpiCopy}>
-          <small>{label}</small>
-          <strong>{current === null ? "N/A" : number(current)}</strong>
-          <span className={styles.kpiComparison} data-direction={change ? (change.delta > 0 ? "up" : change.delta < 0 ? "down" : "flat") : "flat"}>
+          <small className="metric-card-label">{label}</small>
+          <strong className="metric-card-value">{current === null ? "N/A" : number(current)}</strong>
+          <span className={`${styles.kpiComparison} metric-card-comparison`} data-direction={change ? (change.delta > 0 ? "up" : change.delta < 0 ? "down" : "flat") : "flat"}>
             {change ? `${change.delta > 0 ? "↑" : change.delta < 0 ? "↓" : "—"} ${Math.abs(change.delta)}${change.percentage === null ? "" : ` (${Math.abs(change.percentage).toFixed(1)}%)`} vs ${range.comparison?.label ?? "prior period"}` : source === "ready" ? "No comparable period" : "Source unavailable"}
           </span>
         </span>
         <AreaTrend
           ariaLabel={`${label} weekly trend`}
-          className={styles.sparkline}
-          color={color}
+          className={`${styles.sparkline} metric-card-trend`}
+          color={metricCardForeground(color)}
           emptyLabel="No trend history"
           interactive={false}
           points={trend.map((value, index) => ({ label: `Period ${index + 1}`, value }))}
@@ -179,7 +180,7 @@ function TrendChart({
   title: string;
 }) {
   const [index, setIndex] = useState(Math.max(0, points.length - 1));
-  const [pinned, setPinned] = useState(false);
+  const [inspecting, setInspecting] = useState(false);
   const [visible, setVisible] = useState<Record<SeriesKey, boolean>>({ wrap: true, pause: true, strong: true, improvement: true });
   const safeIndex = Math.min(index, Math.max(0, points.length - 1));
   const width = 620;
@@ -189,10 +190,10 @@ function TrendChart({
   const y = (value: number) => height - 30 - (value / maximum) * (height - 62);
   const line = (key: SeriesKey) => points.map((point, pointIndex) => `${x(pointIndex)},${y(Number(point[key] ?? 0))}`).join(" ");
   function move(clientX: number, target: SVGSVGElement) {
-    if (pinned) return;
     const bounds = target.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width));
     setIndex(Math.round(ratio * Math.max(0, points.length - 1)));
+    setInspecting(true);
   }
   function toggle(key: SeriesKey) {
     const other = key === firstKey ? secondKey : firstKey;
@@ -202,7 +203,7 @@ function TrendChart({
     }
     setVisible((current) => ({ ...current, [key]: !current[key] }));
   }
-  const activePoint = points[safeIndex];
+  const activePoint = inspecting ? points[safeIndex] : null;
   const previous = safeIndex > 0 ? points[safeIndex - 1] : null;
   const activeTotal = activePoint ? Number(activePoint[firstKey] ?? 0) + Number(activePoint[secondKey] ?? 0) : 0;
   const previousTotal = previous ? Number(previous[firstKey] ?? 0) + Number(previous[secondKey] ?? 0) : null;
@@ -218,15 +219,18 @@ function TrendChart({
       {points.length === 0 ? <EmptyState title="No weekly trend is available" detail="No historical flag points exist for this selection." /> : (
         <div className={styles.trendBody}>
           <svg
-            aria-label={`${title}. Use Left and Right Arrow keys to inspect weeks, Enter to pin, and Escape to close.`}
+            aria-label={`${title}. Use Left and Right Arrow keys to inspect weeks, and Escape to close.`}
             className={styles.trendChart}
+            onBlur={() => setInspecting(false)}
+            onFocus={() => setInspecting(true)}
             onKeyDown={(event) => {
-              if (event.key === "ArrowLeft") { event.preventDefault(); setIndex((value) => Math.max(0, value - 1)); }
-              if (event.key === "ArrowRight") { event.preventDefault(); setIndex((value) => Math.min(points.length - 1, value + 1)); }
-              if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setPinned((value) => !value); }
-              if (event.key === "Escape") { setPinned(false); onCategory(null); }
+              if (event.key === "ArrowLeft") { event.preventDefault(); setInspecting(true); setIndex((value) => Math.max(0, value - 1)); }
+              if (event.key === "ArrowRight") { event.preventDefault(); setInspecting(true); setIndex((value) => Math.min(points.length - 1, value + 1)); }
+              if (event.key === "Escape") { setInspecting(false); onCategory(null); }
             }}
-            onPointerDown={() => setPinned(true)}
+            onLostPointerCapture={() => setInspecting(false)}
+            onPointerCancel={() => setInspecting(false)}
+            onPointerLeave={() => setInspecting(false)}
             onPointerMove={(event) => move(event.clientX, event.currentTarget)}
             role="img"
             tabIndex={0}
@@ -235,10 +239,10 @@ function TrendChart({
             {[0, .25, .5, .75, 1].map((part) => <line className={styles.gridLine} key={part} x1="38" x2={width - 24} y1={28 + part * (height - 58)} y2={28 + part * (height - 58)} />)}
             {visible[firstKey] ? <polyline className={styles.trendLine} data-dimmed={activeCategory && activeCategory !== firstKey ? "true" : undefined} fill="none" points={line(firstKey)} stroke={COLORS[firstKey]} strokeWidth={activeCategory === firstKey ? 3.8 : 2.5} /> : null}
             {visible[secondKey] ? <polyline className={styles.trendLine} data-dimmed={activeCategory && activeCategory !== secondKey ? "true" : undefined} fill="none" points={line(secondKey)} stroke={COLORS[secondKey]} strokeWidth={activeCategory === secondKey ? 3.8 : 2.5} /> : null}
-            <line className={styles.crosshair} x1={x(safeIndex)} x2={x(safeIndex)} y1="20" y2={height - 24} />
+            {activePoint ? <line className={styles.crosshair} x1={x(safeIndex)} x2={x(safeIndex)} y1="20" y2={height - 24} /> : null}
             {[firstKey, secondKey].map((key) => visible[key] && activePoint ? <circle cx={x(safeIndex)} cy={y(Number(activePoint[key] ?? 0))} fill="#fff" key={key} r={activeCategory === key ? 6 : 4.5} stroke={COLORS[key]} strokeWidth="2.5" /> : null)}
           </svg>
-          {activePoint ? <div aria-live="polite" className={styles.chartTooltip}><strong>{activePoint.weekStart} – {activePoint.weekEnd}</strong><span><i style={{ background: COLORS[firstKey] }} />{firstLabel}<b>{activePoint[firstKey]}</b></span><span><i style={{ background: COLORS[secondKey] }} />{secondLabel}<b>{activePoint[secondKey]}</b></span><span>Total flags <b>{activeTotal}</b></span><span>Distinct agents <b>{activePoint.agents}</b></span>{previousTotal === null ? null : <span>Change from prior week <b>{activeTotal - previousTotal >= 0 ? "+" : ""}{activeTotal - previousTotal}</b></span>}<small>{pinned ? "Pinned · press Escape to close" : "Move pointer or use arrow keys"}</small></div> : null}
+          {activePoint ? <div aria-live="polite" className={styles.chartTooltip}><strong>{activePoint.weekStart} – {activePoint.weekEnd}</strong><span><i style={{ background: COLORS[firstKey] }} />{firstLabel}<b>{activePoint[firstKey]}</b></span><span><i style={{ background: COLORS[secondKey] }} />{secondLabel}<b>{activePoint[secondKey]}</b></span><span>Total flags <b>{activeTotal}</b></span><span>Distinct agents <b>{activePoint.agents}</b></span>{previousTotal === null ? null : <span>Change from prior week <b>{activeTotal - previousTotal >= 0 ? "+" : ""}{activeTotal - previousTotal}</b></span>}<small>Move pointer or use arrow keys</small></div> : null}
           <details className={styles.chartData}><summary>Accessible chart data</summary><div><table><caption>{title} data</caption><thead><tr><th>Week</th><th>{firstLabel}</th><th>{secondLabel}</th><th>Agents</th></tr></thead><tbody>{points.map((point) => <tr key={point.weekStart}><th>{point.weekStart} – {point.weekEnd}</th><td>{point[firstKey]}</td><td>{point[secondKey]}</td><td>{point.agents}</td></tr>)}</tbody></table></div></details>
         </div>
       )}

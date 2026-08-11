@@ -5,6 +5,8 @@ import Link from "next/link";
 
 import { TemporaryPasswordControls } from "@/components/admin/temporary-password-controls";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { Badge } from "@/components/ui/base-badge";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import styles from "./users-access.module.css";
 
 type Role = "admin" | "manager" | "agent";
@@ -405,13 +407,14 @@ export function UserImportWizard({ teams }: { teams: Team[] }) {
 }
 
 function Summary({ active = false, detail, label, onActivate, total = 0, value }: { active?: boolean; detail?: string; label: string; onActivate?: () => void; total?: number; value: number }) {
+  const tone = /failed|error|invalid/i.test(label) ? METRIC_CARD_TONES.pink : /created|valid|ready/i.test(label) ? METRIC_CARD_TONES.green : /skipped|warning/i.test(label) ? METRIC_CARD_TONES.orange : METRIC_CARD_TONES.blue;
   const content = <>
-      <p>{label}</p>
-      <strong>{value}</strong>
-      {total > 0 ? <span className={styles.sectionCopy}>{Math.round((value / total) * 100)}% of CSV</span> : null}
-      {detail ? <span className={styles.summaryDetail}>{detail}</span> : null}
+      <p className="metric-card-label">{label}</p>
+      <strong className="metric-card-value">{value}</strong>
+      {total > 0 ? <span className={`${styles.sectionCopy} metric-card-detail`}>{Math.round((value / total) * 100)}% of CSV</span> : null}
+      {detail ? <span className={`${styles.summaryDetail} metric-card-detail`}>{detail}</span> : null}
     </>;
-  return onActivate ? <button aria-pressed={active} className={`${styles.summaryCard} ${active ? styles.summaryCardActive : ""}`} onClick={onActivate} type="button">{content}</button> : <div className={styles.summaryCard}>{content}</div>;
+  return onActivate ? <button aria-pressed={active} className={`${styles.summaryCard} ${active ? styles.summaryCardActive : ""} metric-color-card`} onClick={onActivate} style={metricCardStyle(tone)} type="button">{content}</button> : <div className={`${styles.summaryCard} metric-color-card`} style={metricCardStyle(tone)}>{content}</div>;
 }
 
 function ValidationPreviewTable({ filter, preview }: { filter: ValidationFilter; preview: Preview }) {
@@ -440,7 +443,7 @@ function ValidationPreviewTable({ filter, preview }: { filter: ValidationFilter;
               <td className="px-3 py-2">{row.americanName || "—"}</td>
               <td className="px-3 py-2">{row.shift || "—"}</td>
               <td className="px-3 py-2">{row.email || "—"}</td>
-              <td className="px-3 py-2">{row.validForAssignment ? <span className={styles.badgeSuccess}>VALID</span> : isExistingUser(row) ? <span className={styles.badgeDanger} title={`${row.errors.join(" ")} No new user will be created.`}>BLOCKED</span> : <span className={styles.badgeWarning} title={row.errors.join(" ")}>INVALID</span>}</td>
+              <td className="px-3 py-2">{row.validForAssignment ? <Badge appearance="light" size="xs" variant="success">VALID</Badge> : isExistingUser(row) ? <Badge appearance="light" size="xs" title={`${row.errors.join(" ")} No new user will be created.`} variant="destructive">BLOCKED</Badge> : <Badge appearance="light" size="xs" title={row.errors.join(" ")} variant="warning">INVALID</Badge>}</td>
               <td className="max-w-80 px-3 py-2 text-muted">
                 {[...row.errors, ...row.warnings].join(" ") ||
                   "No validation issues."}
@@ -560,7 +563,7 @@ function AssignmentTable({
                   </select>
                 </td>
                 <td className="max-w-80 px-3 py-2">
-                  <p>{row.validForAssignment ? <span className={styles.badgeSuccess}>VALID</span> : isExistingUser(row) ? <span className={styles.badgeDanger}>BLOCKED</span> : <span className={styles.badgeWarning}>INVALID</span>}</p>
+                  <p>{row.validForAssignment ? <Badge appearance="light" size="xs" variant="success">VALID</Badge> : isExistingUser(row) ? <Badge appearance="light" size="xs" variant="destructive">BLOCKED</Badge> : <Badge appearance="light" size="xs" variant="warning">INVALID</Badge>}</p>
                   <p className="mt-1 text-xs text-muted">
                     {assignmentIssues.join(" ") || "Ready to publish."}
                   </p>

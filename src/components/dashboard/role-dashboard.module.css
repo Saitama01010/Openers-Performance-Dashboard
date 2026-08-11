@@ -17,7 +17,7 @@
 }
 
 .eyebrow {
-  color: #1767f2;
+  color: var(--primary);
   font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -25,7 +25,7 @@
 }
 
 .hero h1 {
-  color: #102548;
+  color: var(--foreground);
   font-size: clamp(1.55rem, 2.2vw, 2.15rem);
   font-weight: 740;
   letter-spacing: -0.04em;
@@ -34,7 +34,7 @@
 }
 
 .heroDescription {
-  color: #60708a;
+  color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.55;
   margin-top: 0.36rem;
@@ -52,10 +52,10 @@
 
 .sourceNotice {
   align-items: center;
-  background: #fff9ee;
-  border: 1px solid #f0c36c;
+  background: var(--warning-subtle);
+  border: 1px solid var(--warning-border);
   border-radius: 0.68rem;
-  color: #945800;
+  color: var(--warning);
   display: grid;
   gap: 0.65rem;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -65,7 +65,7 @@
 
 .sourceIcon {
   align-items: center;
-  background: #fff0ce;
+  background: var(--warning-subtle);
   border-radius: 999px;
   display: inline-flex;
   height: 2rem;
@@ -88,16 +88,16 @@
 }
 
 .sourceNotice span {
-  color: #9a6a25;
+  color: var(--foreground);
   font-size: 0.65rem;
   margin-top: 0.08rem;
 }
 
 .sourceNotice a {
-  background: #fff;
-  border: 1px solid #e8d3b2;
+  background: var(--surface);
+  border: 1px solid var(--warning-border);
   border-radius: 0.45rem;
-  color: #1551d1;
+  color: var(--primary);
   font-size: 0.66rem;
   font-weight: 720;
   padding: 0.5rem 0.68rem;
@@ -111,8 +111,8 @@
 }
 
 .kpi {
-  background: #fff;
-  border: 1px solid #dce4ef;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 0.72rem;
   box-shadow: 0 1px 2px rgb(6 21 47 / 0.035);
   min-height: 7.15rem;
@@ -135,7 +135,7 @@
 }
 
 .kpi:hover {
-  border-color: #aebfd7;
+  border-color: var(--border);
   box-shadow: 0 10px 24px rgb(6 21 47 / 0.09);
   transform: translateY(-2px);
 }
@@ -149,7 +149,7 @@
 
 .kpiIcon {
   align-items: center;
-  background: color-mix(in srgb, var(--metric-tone, #1767f2) 10%, white);
+  background: color-mix(in srgb, var(--metric-tone, var(--primary)) 16%, var(--surface));
   border-radius: 999px;
   color: var(--metric-tone, #1767f2);
   display: inline-flex;
@@ -165,14 +165,14 @@
 }
 
 .kpiLabel {
-  color: #52627d;
+  color: var(--muted);
   font-size: 0.67rem;
   font-weight: 680;
   line-height: 1.2;
 }
 
 .kpiValue {
-  color: #102548;
+  color: var(--foreground);
   display: block;
   font-size: clamp(1.15rem, 1.7vw, 1.55rem);
   font-variant-numeric: tabular-nums;
@@ -185,7 +185,7 @@
 }
 
 .kpiDetail {
-  color: #7a879a;
+  color: var(--muted);
   display: block;
   font-size: 0.61rem;
   line-height: 1.35;
@@ -193,8 +193,8 @@
 }
 
 .panel {
-  background: #fff;
-  border: 1px solid #dce4ef;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 0.72rem;
   box-shadow: 0 1px 2px rgb(6 21 47 / 0.035);
   min-width: 0;
@@ -210,13 +210,13 @@
 }
 
 .panelHeader h2 {
-  color: #102548;
+  color: var(--foreground);
   font-size: 0.82rem;
   font-weight: 740;
 }
 
 .panelHeader p {
-  color: #6c7b91;
+  color: var(--muted);
   font-size: 0.63rem;
   line-height: 1.45;
   margin-top: 0.12rem;
@@ -261,19 +261,19 @@
 }
 
 .progressMeta span {
-  color: #52627d;
+  color: var(--muted);
   font-size: 0.65rem;
   font-weight: 650;
 }
 
 .progressMeta strong {
-  color: #203657;
+  color: var(--foreground);
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
 }
 
 .progressTrack {
-  background: #eaf0f8;
+  background: var(--track);
   border-radius: 999px;
   height: 0.45rem;
   overflow: hidden;
@@ -288,12 +288,12 @@
 }
 
 .progressDetail {
-  color: #7a879a;
+  color: var(--muted);
   font-size: 0.58rem;
 }
 
 .queueGrid {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -304,22 +304,22 @@
 }
 
 .queueItem:nth-child(odd) {
-  border-right: 1px solid #e7ecf3;
+  border-right: 1px solid var(--border);
 }
 
 .queueItem:nth-child(n + 3) {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
 }
 
 .queueItem span,
 .queueItem small {
-  color: #75839a;
+  color: var(--muted);
   display: block;
   font-size: 0.6rem;
 }
 
 .queueItem strong {
-  color: #102548;
+  color: var(--foreground);
   display: block;
   font-size: 1.35rem;
   font-variant-numeric: tabular-nums;
@@ -327,7 +327,7 @@
 }
 
 .teamRows {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
   padding: 0.35rem 0.8rem 0.7rem;
 }
@@ -342,17 +342,17 @@
 }
 
 .teamRow:hover {
-  background: #f6f9fd;
+  background: var(--surface-subtle);
 }
 
 .teamName {
-  color: #203657;
+  color: var(--foreground);
   font-size: 0.65rem;
   font-weight: 720;
 }
 
 .teamName small {
-  color: #7a879a;
+  color: var(--muted);
   display: block;
   font-size: 0.56rem;
   font-weight: 500;
@@ -380,16 +380,16 @@
 }
 
 .teamBar b {
-  color: #52627d;
+  color: var(--muted);
   font-size: 0.56rem;
   font-variant-numeric: tabular-nums;
 }
 
 .teamRank {
   align-items: center;
-  background: #eef4ff;
+  background: var(--primary-subtle);
   border-radius: 999px;
-  color: #1767f2;
+  color: var(--primary);
   display: inline-flex;
   font-size: 0.62rem;
   font-weight: 800;
@@ -399,7 +399,7 @@
 }
 
 .rankGrid {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -410,25 +410,25 @@
 }
 
 .rankItem + .rankItem {
-  border-left: 1px solid #e7ecf3;
+  border-left: 1px solid var(--border);
 }
 
 .rankItem span,
 .rankItem small {
-  color: #75839a;
+  color: var(--muted);
   display: block;
   font-size: 0.6rem;
 }
 
 .rankItem strong {
-  color: #102548;
+  color: var(--foreground);
   display: block;
   font-size: 1.6rem;
   margin: 0.35rem 0 0.15rem;
 }
 
 .comparisonGrid {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -438,18 +438,18 @@
 }
 
 .comparisonItem + .comparisonItem {
-  border-left: 1px solid #e7ecf3;
+  border-left: 1px solid var(--border);
 }
 
 .comparisonItem span,
 .comparisonItem small {
-  color: #75839a;
+  color: var(--muted);
   display: block;
   font-size: 0.6rem;
 }
 
 .comparisonItem strong {
-  color: #102548;
+  color: var(--foreground);
   display: block;
   font-size: 1.2rem;
   margin: 0.28rem 0;
@@ -457,8 +457,8 @@
 
 .statusStrip {
   align-items: center;
-  background: #f7f9fc;
-  border-top: 1px solid #e7ecf3;
+  background: var(--surface-subtle);
+  border-top: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
@@ -498,7 +498,7 @@
 }
 
 .commissionMeta div {
-  background: #f6f9fd;
+  background: var(--surface-subtle);
   border-radius: 0.5rem;
   padding: 0.58rem;
 }
@@ -510,11 +510,11 @@
 }
 
 .commissionMeta span {
-  color: #75839a;
+  color: var(--muted);
 }
 
 .commissionMeta strong {
-  color: #203657;
+  color: var(--foreground);
   margin-top: 0.2rem;
 }
 
@@ -525,7 +525,7 @@
 }
 
 .list {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
   display: grid;
 }
 
@@ -536,7 +536,7 @@
 }
 
 .listItem + .listItem {
-  border-top: 1px solid #edf1f6;
+  border-top: 1px solid var(--border);
 }
 
 .listItem header {
@@ -547,27 +547,27 @@
 }
 
 .listItem strong {
-  color: #203657;
+  color: var(--foreground);
   font-size: 0.68rem;
 }
 
 .listItem p,
 .listItem span,
 .listItem small {
-  color: #6e7d93;
+  color: var(--muted);
   font-size: 0.62rem;
   line-height: 1.45;
 }
 
 .empty {
-  color: #75839a;
+  color: var(--muted);
   font-size: 0.7rem;
   padding: 1.5rem 0.9rem;
   text-align: center;
 }
 
 .tableWrap {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--border);
 }
 
 .tableWrap :global(.ui-table) {
@@ -580,7 +580,7 @@
 }
 
 .agentIdentity small {
-  color: #7a879a;
+  color: var(--muted);
   font-size: 0.56rem;
   font-weight: 500;
 }
@@ -591,12 +591,12 @@
 }
 
 .metricPair small {
-  color: #7a879a;
+  color: var(--muted);
   font-size: 0.55rem;
 }
 
 .managerActions :global(.role-section) {
-  border: 1px solid #dce4ef;
+  border: 1px solid var(--border);
   border-radius: 0.72rem;
   box-shadow: 0 1px 2px rgb(6 21 47 / 0.035);
   overflow: hidden;
@@ -686,7 +686,7 @@
   .rankItem + .rankItem,
   .comparisonItem + .comparisonItem {
     border-left: 0;
-    border-top: 1px solid #e7ecf3;
+    border-top: 1px solid var(--border);
   }
 
   .teamRow {
@@ -711,7 +711,7 @@
   }
 
   .queueItem + .queueItem {
-    border-top: 1px solid #e7ecf3;
+    border-top: 1px solid var(--border);
   }
 }
 

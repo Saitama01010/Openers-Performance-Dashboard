@@ -11,6 +11,8 @@ import {
 } from "@/agents/directory-analytics";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { Badge, BadgeDot } from "@/components/ui/base-badge";
+import { metricCardStyle } from "@/components/ui/statistics-card";
 import styles from "@/components/dashboard/agents/agents-page.module.css";
 
 const SORT_OPTIONS: Array<{ value: AgentDirectorySortKey; label: string }> = [
@@ -58,10 +60,10 @@ function relativeChange(current: number | null, previous: number | null, suffix 
 
 function Comparison({ current, previous, suffix }: { current: number | null; previous: number | null; suffix?: string }) {
   const change = relativeChange(current, previous, suffix);
-  if (!change) return <span className={styles.mutedComparison}>No period comparison</span>;
+  if (!change) return <span className={`${styles.mutedComparison} metric-card-detail`}>No period comparison</span>;
   const direction = change.value > 0 ? "up" : change.value < 0 ? "down" : "flat";
   return (
-    <span className={styles.comparison} data-direction={direction}>
+    <span className={`${styles.comparison} metric-card-comparison`} data-direction={direction}>
       <span aria-hidden="true">{direction === "up" ? "↑" : direction === "down" ? "↓" : "—"}</span>
       {change.label} vs prior period
     </span>
@@ -93,12 +95,12 @@ function trendValues(row: AgentDirectoryRow, sortBy: AgentDirectorySortKey) {
 
 function KpiCard({ tone, icon, label, value, detail, comparison }: { tone: string; icon: "users" | "agent" | "freshness" | "talk"; label: string; value: string; detail: string; comparison?: React.ReactNode }) {
   return (
-    <article className={styles.kpiCard}>
-      <span className={styles.kpiIcon} style={{ backgroundColor: `${tone}16`, color: tone }}><DashboardIcon name={icon} /></span>
+    <article className={`${styles.kpiCard} metric-color-card`} style={metricCardStyle(tone)}>
+      <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
       <div>
-        <span className={styles.kpiLabel}>{label}</span>
-        <strong>{value}</strong>
-        {comparison ?? <span className={styles.kpiDetail}>{detail}</span>}
+        <span className={`${styles.kpiLabel} metric-card-label`}>{label}</span>
+        <strong className="metric-card-value">{value}</strong>
+        {comparison ?? <span className={`${styles.kpiDetail} metric-card-detail`}>{detail}</span>}
       </div>
     </article>
   );
@@ -252,8 +254,8 @@ export function AgentsPageClient({ data, exportHref }: { data: AgentDirectoryDat
                       <tr aria-selected={active} data-selected={active || undefined} key={row.profileId} onClick={() => select(row)}>
                         <td><input aria-label={`Preview ${row.realName}`} checked={active} name="selected-agent" onChange={() => select(row)} type="radio" /></td>
                         <th scope="row"><span className={styles.agentIdentity}><span className={styles.avatar} style={{ backgroundColor: initialColor(row.realName) }}>{initials(row.realName)}</span><span><strong>{row.realName}</strong>{row.americanName ? <small>{row.americanName}</small> : null}</span></span></th>
-                        <td><span className={styles.teamBadge}>{row.teamName}</span></td>
-                        <td><span className={styles.statusBadge} data-status={row.accountStatus}>{row.accountStatus}</span></td>
+                        <td><Badge appearance="light" className="max-w-[110px] overflow-hidden text-ellipsis" size="xs" variant="primary">{row.teamName}</Badge></td>
+                        <td><Badge appearance="light" shape="circle" size="xs" variant={row.accountStatus === "active" ? "success" : "secondary"}><BadgeDot />{row.accountStatus}</Badge></td>
                         <td className={styles.numeric}>{formatDuration(row.loggedInSeconds)}</td>
                         <td className={styles.numeric}>{formatNumber(row.transfers)}</td>
                         <td className={styles.numeric}>{formatNumber(row.closedDeals)}</td>
@@ -285,7 +287,7 @@ export function AgentsPageClient({ data, exportHref }: { data: AgentDirectoryDat
                 <button aria-label={pinned ? "Unpin preview" : "Pin preview"} aria-pressed={pinned} className={styles.pinButton} onClick={() => setPinned((value) => !value)} type="button">⌖</button>
                 <button aria-label="Close agent preview" className={styles.closeButton} onClick={() => setPreviewOpen(false)} type="button"><DashboardIcon name="close" /></button>
               </div>
-              <div className={styles.previewStatus}><span className={styles.statusBadge} data-status={selected.accountStatus}>{selected.accountStatus} account</span><span>{selected.hasMetrics ? "Active data included" : "No active data"}</span></div>
+              <div className={styles.previewStatus}><Badge appearance="light" shape="circle" size="xs" variant={selected.accountStatus === "active" ? "success" : "secondary"}><BadgeDot />{selected.accountStatus} account</Badge><span>{selected.hasMetrics ? "Active data included" : "No active data"}</span></div>
               <div className={styles.previewMetrics}>
                 <PreviewMetric current={selected.transfers} label="Transfers" previous={selected.comparison?.transfers ?? null} value={formatNumber(selected.transfers)} />
                 <PreviewMetric current={selected.closedDeals} label="Closed deals" previous={selected.comparison?.closedDeals ?? null} value={formatNumber(selected.closedDeals)} />

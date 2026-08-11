@@ -14,7 +14,14 @@ import {
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import { AreaTrend } from "@/components/ui/area-trend";
 import { DonutChart } from "@/components/ui/donut-chart";
-import { calculatePerformanceDelta, productivityStatePercentage, type PerformanceSeriesPoint } from "@/performance/aggregations";
+import { metricCardForeground, metricCardStyle } from "@/components/ui/statistics-card";
+import {
+  calculatePerformanceDelta,
+  PRODUCTIVITY_MIX_KEYS,
+  productivityStatePercentage,
+  sumProductivityMixSeconds,
+  type PerformanceSeriesPoint,
+} from "@/performance/aggregations";
 import type { PerformancePageData, PerformanceSource } from "@/performance/data";
 import styles from "@/components/dashboard/performance/performance-page.module.css";
 
@@ -66,7 +73,7 @@ function formatPercent(value: number | null) {
 }
 
 function formatDuration(seconds: number | null) {
-  if (seconds === null) return "N/A";
+  if (seconds === null) return "0";
   const safe = Math.max(0, Math.trunc(seconds));
   return `${integer.format(Math.floor(safe / 3600))}h ${Math.floor((safe % 3600) / 60)}m`;
 }
@@ -203,7 +210,7 @@ function MetricCard({
   return (
     <article
       aria-describedby={`${id}-description`}
-      className={styles.metricCard}
+      className={`${styles.metricCard} metric-color-card`}
       data-open={pinned || undefined}
       id={id}
       onClick={() => setPinned((value) => !value)}
@@ -214,29 +221,29 @@ function MetricCard({
         }
         if (event.key === "Escape") setPinned(false);
       }}
-      style={{ "--metric-color": color } as CSSProperties}
+      style={{ ...metricCardStyle(color), "--metric-color": color } as CSSProperties}
       tabIndex={0}
     >
       <div className={styles.metricTop}>
-        <span className={styles.metricIcon}><DashboardIcon name={icon} /></span>
-        <strong>{label}</strong>
+        <span className={`${styles.metricIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
+        <strong className="metric-card-label">{label}</strong>
         <ActionMenu label={`${label} actions`}>
           {(close) => <MenuButton onClick={() => { void copyValue(); close(); }}>Copy formatted value</MenuButton>}
         </ActionMenu>
       </div>
-      <p className={styles.metricValue}>{format(current)}</p>
-      <p className={styles.metricTrend} data-tone={trendTone}>
+      <p className={`${styles.metricValue} metric-card-value`}>{format(current)}</p>
+      <p className={`${styles.metricTrend} metric-card-detail`} data-tone={trendTone}>
         <span>{trend}</span> vs {data.comparison?.label ?? "previous period"}
       </p>
       <AreaTrend
         ariaLabel={`${label} trend`}
-        className={styles.sparkline}
-        color={color}
+        className={`${styles.sparkline} metric-card-trend`}
+        color={metricCardForeground(color)}
         emptyLabel="No trend history"
         formatValue={(value) => format(value)}
         points={series}
       />
-      <p className={styles.metricDescription} id={`${id}-description`}>{description}</p>
+      <p className={`${styles.metricDescription} metric-card-detail`} id={`${id}-description`}>{description}</p>
       <div className={styles.metricTooltip} role="tooltip">
         <strong>{label}</strong>
         <dl>
@@ -318,7 +325,6 @@ function DailyPerformanceChart({
   const [singleMetric, setSingleMetric] = useState<MetricKey>("transfers");
   const [visible, setVisible] = useState<Record<MetricKey, boolean>>({ transfers: true, closedDeals: true, loggedInSeconds: true });
   const [hoveredSeries, setHoveredSeries] = useState<MetricKey | null>(null);
-  const [pinned, setPinned] = useState(false);
   const refs = useRef<Array<SVGGElement | null>>([]);
   const points = data.series;
   const selectedKey = highlightedKey;
@@ -349,7 +355,6 @@ function DailyPerformanceChart({
   function focusDate(index: number) {
     const target = Math.max(0, Math.min(points.length - 1, index));
     const key = points[target]?.key ?? null;
-    if (key) setPinned(true);
     onHighlight(key);
     refs.current[target]?.focus();
   }
@@ -407,7 +412,7 @@ function DailyPerformanceChart({
       {points.length === 0 ? (
         <div className={styles.emptyState}><DashboardIcon name="info" /><strong>No daily activity is available</strong><span>The authorized sources contain no records for this period.</span></div>
       ) : (
-        <div className={styles.chartFrame} onMouseLeave={() => { if (!pinned) onHighlight(null); }}>
+        <div className={styles.chartFrame} onPointerCancel={() => onHighlight(null)} onPointerLeave={() => onHighlight(null)}>
           <svg aria-labelledby="performance-chart-title performance-chart-description" className={styles.chart} role="img" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
             <title id="performance-chart-title">Daily performance trend</title>
             <desc id="performance-chart-description">Transfers and closed deals use the left count axis. Logged-in time uses the right hours axis.</desc>
@@ -433,24 +438,14 @@ function DailyPerformanceChart({
                   data-active={active || undefined}
                   data-faded={faded || undefined}
                   key={point.key}
-                  onBlur={() => { if (!pinned) onHighlight(null); }}
-                  onClick={() => {
-                    if (pinned && highlightedKey === point.key) {
-                      setPinned(false);
-                      onHighlight(null);
-                    } else {
-                      setPinned(true);
-                      onHighlight(point.key);
-                    }
-                  }}
+                  onBlur={() => onHighlight(null)}
                   onFocus={() => onHighlight(point.key)}
                   onKeyDown={(event) => {
                     if (event.key === "ArrowLeft") { event.preventDefault(); focusDate(index - 1); }
                     if (event.key === "ArrowRight") { event.preventDefault(); focusDate(index + 1); }
-                    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setPinned(true); onHighlight(point.key); }
-                    if (event.key === "Escape") { setPinned(false); onHighlight(null); }
+                    if (event.key === "Escape") onHighlight(null);
                   }}
-                  onMouseEnter={() => { if (!pinned) onHighlight(point.key); }}
+                  onPointerEnter={() => onHighlight(point.key)}
                   ref={(node) => { refs.current[index] = node; }}
                   role="button"
                   tabIndex={0}
@@ -486,8 +481,12 @@ function ProductivityMix({
   onActiveState: (key: ActivityKey | null) => void;
 }) {
   const [visible, setVisible] = useState<Record<ActivityKey, boolean>>(() => Object.fromEntries(activityStates.map((state) => [state.key, true])) as Record<ActivityKey, boolean>);
-  const available = activityStates.filter((state) => data.totals[state.key] !== null);
-  const totalRecorded = available.reduce((total, state) => total + (data.totals[state.key] ?? 0), 0);
+  const available = activityStates.filter(
+    (state) =>
+      PRODUCTIVITY_MIX_KEYS.some((key) => key === state.key) &&
+      data.totals[state.key] !== null,
+  );
+  const totalRecorded = sumProductivityMixSeconds(data.totals);
   const visibleTotal = available.filter((state) => visible[state.key]).reduce((total, state) => total + (data.totals[state.key] ?? 0), 0);
   const active = activityStates.find((state) => state.key === activeState) ?? null;
   const activeSeconds = active ? data.totals[active.key] : null;
@@ -501,9 +500,9 @@ function ProductivityMix({
         title="Productivity mix"
       />
       <div className={styles.productivityBody}>
-        <DonutChart activeSegmentId={activeState} ariaLabel={totalRecorded > 0 ? `Productivity mix totaling ${formatDuration(totalRecorded)}` : "Productivity mix unavailable"} centerContent={<><strong>{active ? formatPercent(productivityStatePercentage(data.totals[active.key], totalRecorded)) : totalRecorded > 0 ? "100%" : "N/A"}</strong><span>{active?.shortLabel ?? (totalRecorded > 0 ? "Total" : "No data")}</span></>} className={styles.donut} data={available.filter((state) => visible[state.key]).map((state) => ({ id: state.key, value: data.totals[state.key] ?? 0, color: state.color, label: state.label, accessibleLabel: `${state.label}: ${formatDuration(data.totals[state.key])}, ${formatPercent(productivityStatePercentage(data.totals[state.key], visibleTotal))}` }))} onSegmentHover={(segment) => onActiveState((segment?.id as ActivityKey | undefined) ?? null)} size={200} strokeWidth={32} />
+        <DonutChart activeSegmentId={activeState} ariaLabel={totalRecorded > 0 ? `Productivity mix totaling ${formatDuration(totalRecorded)}` : "Productivity mix unavailable"} centerContent={<><strong>{active ? formatPercent(productivityStatePercentage(data.totals[active.key], totalRecorded)) : totalRecorded > 0 ? "100%" : "0"}</strong><span>{active?.shortLabel ?? (totalRecorded > 0 ? "Total" : "No data")}</span></>} className={styles.donut} data={available.filter((state) => visible[state.key]).map((state) => ({ id: state.key, value: data.totals[state.key] ?? 0, color: state.color, label: state.label, accessibleLabel: `${state.label}: ${formatDuration(data.totals[state.key])}, ${formatPercent(productivityStatePercentage(data.totals[state.key], visibleTotal))}` }))} onSegmentHover={(segment) => onActiveState((segment?.id as ActivityKey | undefined) ?? null)} size={200} strokeWidth={32} />
         <div className={styles.productivityLegend}>
-          {activityStates.filter((state) => state.key !== "netSeconds").map((state) => {
+          {activityStates.filter((state) => PRODUCTIVITY_MIX_KEYS.some((key) => key === state.key)).map((state) => {
             const seconds = data.totals[state.key];
             const percentage = productivityStatePercentage(seconds, totalRecorded);
             return (
@@ -523,12 +522,12 @@ function ProductivityMix({
                 onMouseLeave={() => onActiveState(null)}
                 type="button"
               >
-                <span style={{ background: state.color }} /><b>{state.shortLabel}</b><strong>{seconds === null ? "N/A" : formatPercent(percentage)}</strong>
+                <span style={{ background: state.color }} /><b>{state.shortLabel}</b><strong>{seconds === null ? "0" : formatPercent(percentage)}</strong>
                 <small>{seconds === null ? "Not reported by source" : `${formatDuration(seconds)} · ${integer.format(seconds)}s`}</small>
               </button>
             );
           })}
-          <div className={styles.productivityTotal}><span>Total recorded</span><strong>{totalRecorded > 0 ? formatDuration(totalRecorded) : "N/A"}</strong></div>
+          <div className={styles.productivityTotal}><span>Total recorded</span><strong>{totalRecorded > 0 ? formatDuration(totalRecorded) : "0"}</strong></div>
         </div>
       </div>
       {active ? <div className={styles.inlineTooltip} role="tooltip"><strong>{active.label}</strong><span>{formatDuration(activeSeconds)} · {activeSeconds === null ? "Unavailable" : `${integer.format(activeSeconds)} seconds`}</span><span>{formatPercent(productivityStatePercentage(activeSeconds, totalRecorded))} of recorded activity</span><span>{formatPercent(data.totals.loggedInSeconds && activeSeconds !== null ? (activeSeconds / data.totals.loggedInSeconds) * 100 : null)} of logged-in time</span></div> : null}
@@ -552,8 +551,6 @@ function ActivityStates({ activeState, data, onActiveState }: { activeState: Act
               key={state.key}
               onBlur={() => onActiveState(null)}
               onFocus={() => onActiveState(state.key)}
-              onMouseEnter={() => onActiveState(state.key)}
-              onMouseLeave={() => onActiveState(null)}
               style={{ "--state-color": state.color } as CSSProperties}
               tabIndex={0}
             >

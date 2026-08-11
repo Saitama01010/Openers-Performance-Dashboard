@@ -14,6 +14,7 @@ const originalEnvironment = {
   SESSION_SECRET: process.env.SESSION_SECRET,
   DATABASE_ENVIRONMENT: process.env.DATABASE_ENVIRONMENT,
   DEPLOYMENT_ENVIRONMENT: process.env.DEPLOYMENT_ENVIRONMENT,
+  NODE_ENV: process.env.NODE_ENV,
   TRUSTED_PROXY_HEADERS: process.env.TRUSTED_PROXY_HEADERS,
 };
 
@@ -108,5 +109,66 @@ describe("trusted mutation origin validation", () => {
       },
     });
     expect(() => assertTrustedMutationOrigin(forgedForwarded)).toThrow();
+  });
+
+  it("accepts the actual same-origin listener for loopback development servers", () => {
+    process.env.APP_URL = "http://localhost:3000";
+    process.env.DATABASE_ENVIRONMENT = "development";
+    process.env.DEPLOYMENT_ENVIRONMENT = "development";
+    Object.assign(process.env, { NODE_ENV: "development" });
+    resetEnvForTests();
+
+    expect(() =>
+      assertTrustedMutationOrigin(
+        new Request("http://127.0.0.1:3200/api/admin/users/import/preview", {
+          headers: {
+            Host: "127.0.0.1:3200",
+            Origin: "http://localhost:3200",
+            "X-Forwarded-Host": "127.0.0.1:3200",
+            "X-Forwarded-Proto": "http",
+          },
+        }),
+      ),
+    ).not.toThrow();
+
+    const hostileHeaders: Array<Record<string, string>> = [
+      { Host: "127.0.0.1:3200", Origin: "http://localhost:3100" },
+      { Host: "internal:3200", Origin: "http://localhost:3200" },
+      {
+        Host: "127.0.0.1:3200",
+        Origin: "http://localhost:3200",
+        "X-Forwarded-Host": "evil.example",
+      },
+      {
+        Host: "127.0.0.1:3200",
+        Origin: "http://localhost:3200",
+        "X-Forwarded-Host": "127.0.0.1:3200",
+        "X-Forwarded-Proto": "https",
+      },
+    ];
+    for (const headers of hostileHeaders) {
+      expect(() =>
+        assertTrustedMutationOrigin(
+          new Request("http://127.0.0.1:3200/api/admin/users/import/preview", {
+            headers,
+          }),
+        ),
+      ).toThrow("Untrusted request origin.");
+    }
+
+    process.env.DATABASE_ENVIRONMENT = "test";
+    process.env.DEPLOYMENT_ENVIRONMENT = "test";
+    Object.assign(process.env, { NODE_ENV: "test" });
+    resetEnvForTests();
+    expect(() =>
+      assertTrustedMutationOrigin(
+        new Request("http://127.0.0.1:3200/api/admin/users/import/preview", {
+          headers: {
+            Host: "127.0.0.1:3200",
+            Origin: "http://localhost:3200",
+          },
+        }),
+      ),
+    ).toThrow("Untrusted request origin.");
   });
 });

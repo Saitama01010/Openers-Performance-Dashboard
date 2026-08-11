@@ -15,6 +15,8 @@ import { ImportDeleteForm } from "@/app/admin/imports/import-delete-form";
 import styles from "@/app/admin/imports/import-history.module.css";
 import { RestoreImportDialog } from "@/app/admin/imports/restore-import-dialog";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { Badge, BadgeDot } from "@/components/ui/base-badge";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import type { ActiveImportLifecycleOptions } from "@/import/active-lifecycle";
 import type {
   ImportHistoryFacets,
@@ -104,6 +106,11 @@ function statusTone(status: string) {
     return "neutral";
   }
   return "info";
+}
+
+function statusVariant(status: string) {
+  const tone = statusTone(status);
+  return tone === "danger" ? "destructive" : tone === "neutral" ? "secondary" : tone;
 }
 
 function statusExplanation(row: ImportHistoryRow) {
@@ -203,24 +210,26 @@ function MetricCard({
   tone: "blue" | "green" | "red" | "amber";
 }) {
   const tooltipId = useId();
+  const cardTone = tone === "green" ? METRIC_CARD_TONES.green : tone === "red" ? METRIC_CARD_TONES.pink : tone === "amber" ? METRIC_CARD_TONES.orange : METRIC_CARD_TONES.blue;
   return (
     <button
       aria-describedby={tooltipId}
       aria-pressed={active}
-      className={`${styles.metricCard} ${styles[`metric${tone}`]} ${active ? styles.metricActive : ""}`}
+      className={`${styles.metricCard} ${styles[`metric${tone}`]} ${active ? styles.metricActive : ""} metric-color-card`}
       onBlur={() => onHover(null)}
       onClick={() => onPin(highlight)}
       onFocus={() => onHover(highlight)}
       onMouseEnter={() => onHover(highlight)}
       onMouseLeave={() => onHover(null)}
+      style={metricCardStyle(cardTone)}
       type="button"
     >
       <span className={styles.metricCopy}>
-        <span className={styles.metricLabel}>{label}</span>
-        <strong>{count.toLocaleString("en-US")}</strong>
-        <span className={styles.metricNote}>{note}</span>
+        <span className={`${styles.metricLabel} metric-card-label`}>{label}</span>
+        <strong className="metric-card-value">{count.toLocaleString("en-US")}</strong>
+        <span className={`${styles.metricNote} metric-card-detail`}>{note}</span>
       </span>
-      <span className={styles.metricIcon}><DashboardIcon name={icon} /></span>
+      <span className={`${styles.metricIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
       <span className={styles.metricTooltip} id={tooltipId} role="tooltip">
         <strong>{label}</strong>
         {detail}
@@ -234,19 +243,23 @@ function StatusBadge({ row }: { row: ImportHistoryRow }) {
   const tooltipId = useId();
   const status = displayStatus(row);
   return (
-    <span
+    <Badge
+      appearance="outline"
       aria-describedby={tooltipId}
-      className={`${styles.statusBadge} ${styles[`status${statusTone(status)}`]}`}
+      className={styles.statusBadge}
+      shape="circle"
+      size="sm"
       tabIndex={0}
+      variant={statusVariant(status)}
     >
-      <span aria-hidden="true" className={styles.statusDot} />
+      <BadgeDot />
       {importStatusLabel(status)}
       <span className={styles.statusTooltip} id={tooltipId} role="tooltip">
         <strong>{importStatusLabel(status)}</strong>
         <span>{reportingPeriod(row)}</span>
         <span>{statusExplanation(row)}</span>
       </span>
-    </span>
+    </Badge>
   );
 }
 

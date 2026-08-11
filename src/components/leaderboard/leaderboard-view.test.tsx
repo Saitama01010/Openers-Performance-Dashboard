@@ -40,6 +40,7 @@ const readyData: LeaderboardData = {
   filters: {},
   totalTransfers: 4,
   totalClosedDeals: 2,
+  closedMetricsAvailable: true,
   closedSourceEmpty: false,
   transferSourceRecordCount: 4,
   transferDiagnosticCount: 0,
@@ -128,26 +129,33 @@ describe("LeaderBoard view", () => {
         initialView={DEFAULT_LEADERBOARD_VIEW}
       />,
     );
-    const closedMarkup = renderToStaticMarkup(
+    expect(transferMarkup).toContain("Transfer source needs attention");
+    expect(transferMarkup).toContain("missing required headers: Opener");
+  });
+
+  it("keeps transfer rankings visible when Closed rows cannot be attributed", () => {
+    const markup = renderToStaticMarkup(
       <LeaderboardView
         data={{
-          status: "closed_error",
-          message: "The Closed worksheet does not contain all required headers.",
-          rows: [],
-          teams: [],
-          filters: {},
-          transferSourceRecordCount: 3,
-          transferDiagnosticCount: 0,
+          ...readyData,
+          totalClosedDeals: null,
+          closedMetricsAvailable: false,
+          closedMessage:
+            "Closed worksheet rows cannot be attributed. Transfer rankings remain available.",
+          closedDiagnosticCount: 151,
         }}
         dateRange={dateRange}
         initialView={DEFAULT_LEADERBOARD_VIEW}
       />,
     );
 
-    expect(transferMarkup).toContain("Transfer source needs attention");
-    expect(transferMarkup).toContain("missing required headers: Opener");
-    expect(closedMarkup).toContain("Closed source needs attention");
-    expect(closedMarkup).not.toContain("<tbody>");
+    expect(markup).toContain("Closed attribution needs attention");
+    expect(markup).toContain("Transfer rankings remain available");
+    expect(markup).toContain('aria-pressed="true" type="button">Transfers');
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("Amira Ayman");
+    expect(markup).toContain("N/A");
+    expect(markup).toContain("<tbody>");
   });
 
   it("exposes only aggregate source diagnostics and the empty Closed status", () => {

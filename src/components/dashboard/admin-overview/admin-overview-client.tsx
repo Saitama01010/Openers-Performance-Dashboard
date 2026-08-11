@@ -15,7 +15,9 @@ import styles from "@/components/dashboard/admin-overview/admin-overview.module.
 import { DashboardIcon, type DashboardIconName } from "@/components/dashboard/dashboard-icons";
 import { OverviewDateFilter } from "@/components/dashboard/overview-date-filter";
 import { AreaTrend } from "@/components/ui/area-trend";
+import { Badge, BadgeDot } from "@/components/ui/base-badge";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { metricCardForeground, metricCardStyle } from "@/components/ui/statistics-card";
 import {
   createRubricTemplateDialogAction,
   createTargetDialogAction,
@@ -71,8 +73,8 @@ function statusLabel(status: OverviewSourceStatus) {
   return status[0].toUpperCase() + status.slice(1);
 }
 
-function statusTone(status: OverviewSourceStatus) {
-  return `${styles.status} ${styles[`status_${status}`]}`;
+function statusVariant(status: OverviewSourceStatus) {
+  return status === "healthy" ? "success" : status === "warning" || status === "partial" ? "warning" : "secondary";
 }
 
 function Panel({
@@ -135,27 +137,28 @@ function KpiCard({
   const deltaTone = !delta || delta.absolute === 0 ? "neutral" : delta.absolute > 0 ? "positive" : "negative";
   return (
     <article
-      className={styles.kpi}
+      className={`${styles.kpi} metric-color-card`}
       data-attention-count={attention?.count || undefined}
       data-attention-href={attention?.href}
       data-attention-title={attention?.title}
       data-overview-search-label={`${label} metric`}
       id={id}
+      style={metricCardStyle(tone)}
     >
       <button aria-expanded={open} className={styles.kpiButton} onClick={() => setOpen((value) => !value)} type="button">
         <span className={styles.kpiTop}>
-          <span className={styles.kpiIcon} style={{ backgroundColor: `${tone}18`, color: tone }}><DashboardIcon name={icon} /></span>
-          <span className={styles.kpiLabel}>{label}</span>
+          <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
+          <span className={`${styles.kpiLabel} metric-card-label`}>{label}</span>
         </span>
-        <strong>{format(current)}</strong>
-        <span className={`${styles.delta} ${styles[`delta_${deltaTone}`]}`}>
+        <strong className="metric-card-value">{format(current)}</strong>
+        <span className={`${styles.delta} ${styles[`delta_${deltaTone}`]} metric-card-comparison`}>
           {delta ? `${delta.absolute > 0 ? "↑" : delta.absolute < 0 ? "↓" : "—"} ${formatNumber(Math.abs(delta.absolute))}${delta.percentage === null ? "" : ` (${formatPercent(Math.abs(delta.percentage))})`}` : "—"}
         </span>
-        <span className={styles.comparison}>{comparisonLabel ? `vs ${comparisonLabel}` : "No comparable period"}</span>
+        <span className={`${styles.comparison} metric-card-detail`}>{comparisonLabel ? `vs ${comparisonLabel}` : "No comparable period"}</span>
         <AreaTrend
           ariaLabel={`${label} monthly trend`}
-          className={styles.sparkline}
-          color={tone}
+          className={`${styles.sparkline} metric-card-trend`}
+          color={metricCardForeground(tone)}
           emptyLabel="No monthly trend"
           formatValue={(value) => format(value)}
           interactive={false}
@@ -226,6 +229,7 @@ type TrendKey = "transfers" | "closedDeals" | "conversion";
 function MonthlyTrends({ months }: { months: AdminDashboardData["trends"]["months"] }) {
   const [visible, setVisible] = useState<Record<TrendKey, boolean>>({ transfers: true, closedDeals: true, conversion: true });
   const [active, setActive] = useState<number | null>(null);
+  const gradientPrefix = `overview-trend-${useId().replaceAll(":", "")}`;
   const width = 560;
   const height = 230;
   const left = 42;
@@ -241,8 +245,18 @@ function MonthlyTrends({ months }: { months: AdminDashboardData["trends"]["month
     { key: "closedDeals" as const, label: "Closed deals", color: "#16a66a", values: months.map((month) => month.closedDeals.value), y: countY },
     { key: "conversion" as const, label: "Conversion", color: "#f28705", values: months.map((month) => month.conversion), y: percentY },
   ];
+  const activeMonth = active === null ? null : months[active] ?? null;
   function path(values: Array<number | null>, y: (value: number) => number) {
     return values.map((value, index) => value === null ? null : `${index === 0 || values[index - 1] === null ? "M" : "L"}${x(index)} ${y(value)}`).filter(Boolean).join(" ");
+  }
+  function areaPath(values: Array<number | null>, y: (value: number) => number) {
+    const ready = values.flatMap((value, index) => value === null ? [] : [{ index, value }]);
+    if (ready.length < 2) return "";
+    const line = ready.map((point, index) => `${index === 0 ? "M" : "L"}${x(point.index)} ${y(point.value)}`).join(" ");
+    return `${line} L${x(ready.at(-1)?.index ?? 0)} ${top + plotHeight} L${x(ready[0].index)} ${top + plotHeight} Z`;
+  }
+  function clearActive() {
+    setActive(null);
   }
   const hasHistory = months.some((month) => month.transfers.value !== null || month.closedDeals.value !== null);
   return (
@@ -250,14 +264,44 @@ function MonthlyTrends({ months }: { months: AdminDashboardData["trends"]["month
       <div className={styles.legend}>{series.map((item) => <button aria-pressed={visible[item.key]} key={item.key} onClick={() => setVisible((state) => ({ ...state, [item.key]: !state[item.key] }))} type="button"><span style={{ background: item.color }} />{item.label}</button>)}</div>
       {!hasHistory ? <p className={styles.empty}>Not enough historical data.</p> : (
         <div className={styles.trendWrap}>
-          <svg aria-label="Six-month transfers, closed deals, and conversion trend" className={styles.trendChart} role="img" viewBox={`0 0 ${width} ${height}`}>
+          <svg
+            aria-label="Six-month transfers, closed deals, and conversion trend. Use left and right arrow keys to inspect months."
+            className={styles.trendChart}
+            onBlur={clearActive}
+            onFocus={() => setActive(months.length - 1)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") clearActive();
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                const direction = event.key === "ArrowLeft" ? -1 : 1;
+                setActive((current) => Math.max(0, Math.min(months.length - 1, (current ?? months.length - 1) + direction)));
+              }
+            }}
+            onLostPointerCapture={clearActive}
+            onPointerCancel={clearActive}
+            onPointerLeave={clearActive}
+            onPointerMove={(event) => {
+              const bounds = event.currentTarget.getBoundingClientRect();
+              const pointerX = ((event.clientX - bounds.left) / Math.max(bounds.width, 1)) * width;
+              const nearest = months.reduce((best, _month, index) => Math.abs(x(index) - pointerX) < Math.abs(x(best) - pointerX) ? index : best, 0);
+              setActive((current) => current === nearest ? current : nearest);
+            }}
+            role="img"
+            tabIndex={0}
+            viewBox={`0 0 ${width} ${height}`}
+          >
+            <title>Six-month transfers, closed deals, and conversion trend</title>
+            <desc>{months.map((month) => `${month.label}: ${formatNumber(month.transfers.value)} transfers, ${formatNumber(month.closedDeals.value)} closed deals, ${formatPercent(month.conversion)} conversion`).join("; ")}</desc>
+            <defs>
+              {series.map((item) => <linearGradient id={`${gradientPrefix}-${item.key}`} key={item.key} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor={item.color} stopOpacity="0.18" /><stop offset="100%" stopColor={item.color} stopOpacity="0.015" /></linearGradient>)}
+            </defs>
             {[0, 0.5, 1].map((position) => <line className={styles.gridLine} key={position} x1={left} x2={left + plotWidth} y1={top + plotHeight * position} y2={top + plotHeight * position} />)}
             <text className={styles.axisLabel} x="2" y="14">Count</text><text className={styles.axisLabel} textAnchor="end" x={width - 2} y="14">%</text>
             {active !== null ? <line className={styles.crosshair} x1={x(active)} x2={x(active)} y1={top} y2={top + plotHeight} /> : null}
-            {series.map((item) => visible[item.key] ? <g key={item.key}><path d={path(item.values, item.y)} fill="none" stroke={item.color} strokeWidth="2.5" />{item.values.map((value, index) => value === null ? null : <circle aria-label={`${months[index].label} ${item.label}: ${item.key === "conversion" ? formatPercent(value) : formatNumber(value)}`} cx={x(index)} cy={item.y(value)} fill="white" key={months[index].key} onBlur={() => setActive(null)} onFocus={() => setActive(index)} onMouseEnter={() => setActive(index)} r="4" role="button" stroke={item.color} strokeWidth="2" tabIndex={0} />)}</g> : null)}
+            {series.map((item) => visible[item.key] ? <g key={item.key}><path className={styles.trendArea} d={areaPath(item.values, item.y)} fill={`url(#${gradientPrefix}-${item.key})`} /><path className={styles.trendLine} d={path(item.values, item.y)} fill="none" stroke={item.color} />{active === null || item.values[active] === null ? null : <circle className={styles.trendDot} cx={x(active)} cy={item.y(item.values[active])} fill={item.color} r="4" />}</g> : null)}
             {months.map((month, index) => <text className={styles.monthLabel} key={month.key} textAnchor="middle" x={x(index)} y={210}>{month.label}</text>)}
           </svg>
-          {active !== null ? <div className={styles.trendTooltip}><strong>{months[active].label}</strong><span>Transfers {formatNumber(months[active].transfers.value)}</span><span>Closed {formatNumber(months[active].closedDeals.value)}</span><span>Conversion {formatPercent(months[active].conversion)}</span></div> : null}
+          {activeMonth ? <div aria-live="polite" className={styles.trendTooltip} data-edge={active === 0 ? "start" : active === months.length - 1 ? "end" : undefined} role="status" style={{ left: `${(x(active ?? 0) / width) * 100}%` }}><strong>{activeMonth.label}</strong>{visible.transfers ? <span><i style={{ background: series[0].color }} />Transfers <b>{formatNumber(activeMonth.transfers.value)}</b></span> : null}{visible.closedDeals ? <span><i style={{ background: series[1].color }} />Closed <b>{formatNumber(activeMonth.closedDeals.value)}</b></span> : null}{visible.conversion ? <span><i style={{ background: series[2].color }} />Conversion <b>{formatPercent(activeMonth.conversion)}</b></span> : null}</div> : null}
         </div>
       )}
     </>
@@ -297,9 +341,9 @@ function DataHealth({ data, overall }: { data: AdminDashboardData["dataHealth"];
     },
   ];
   return (
-    <Panel actions={<span className={statusTone(overall)}>{statusLabel(overall)}</span>} className={styles.healthPanel} id="overview-data-health" title="Data Health">
+    <Panel actions={<Badge appearance="light" shape="circle" size="xs" variant={statusVariant(overall)}><BadgeDot />{statusLabel(overall)}</Badge>} className={styles.healthPanel} id="overview-data-health" title="Data Health">
       <div className={styles.healthRows}>
-        {rows.map((row) => <div className={styles.healthRow} key={row.id}><button aria-expanded={expanded === row.id} onClick={() => setExpanded((value) => value === row.id ? null : row.id)} type="button"><span className={styles.healthIcon}><DashboardIcon name={row.icon} /></span><span><strong>{row.title}</strong><small>{row.summary}</small></span><span className={statusTone(row.status)}>{statusLabel(row.status)}</span><span aria-hidden="true">›</span></button>{expanded === row.id ? <div className={styles.healthDetail}><p>{row.detail}</p>{row.href ? <Link href={row.href}>Open related administration page</Link> : null}</div> : null}</div>)}
+        {rows.map((row) => <div className={styles.healthRow} key={row.id}><button aria-expanded={expanded === row.id} onClick={() => setExpanded((value) => value === row.id ? null : row.id)} type="button"><span className={styles.healthIcon}><DashboardIcon name={row.icon} /></span><span><strong>{row.title}</strong><small>{row.summary}</small></span><Badge appearance="light" shape="circle" size="xs" variant={statusVariant(row.status)}><BadgeDot />{statusLabel(row.status)}</Badge><span aria-hidden="true">›</span></button>{expanded === row.id ? <div className={styles.healthDetail}><p>{row.detail}</p>{row.href ? <Link href={row.href}>Open related administration page</Link> : null}</div> : null}</div>)}
       </div>
     </Panel>
   );
@@ -315,7 +359,7 @@ function TalentDistribution({ agents }: { agents: AdminDashboardData["talentDist
   const selected = buckets[active] ?? buckets[0];
   return (
     <Panel className={styles.talentPanel} description="Active agents grouped by authoritative employment tenure" title="Talent distribution">
-      {agents.length === 0 ? <p className={styles.empty}>No active talent data is available.</p> : <div className={styles.talentBody}><DonutChart activeSegmentId={selected?.key} ariaLabel={`Talent distribution. ${selected?.label}: ${selected?.count} agents.`} className={styles.donut} data={buckets.map((bucket, index) => ({ id: bucket.key, value: bucket.count, color: colors[index] ?? "#8b98aa", label: bucket.label, accessibleLabel: `${bucket.label}: ${bucket.count} agents, ${formatPercent(bucket.percentage)}` }))} size={132} strokeWidth={24} centerContent={<><strong>{selected ? formatPercent(selected.percentage) : "0%"}</strong><span>{selected?.label}</span></>} /><div className={styles.talentLegend}>{buckets.map((bucket, index) => <button aria-pressed={active === index} key={bucket.key} onClick={() => setActive(index)} onFocus={() => setActive(index)} type="button"><span style={{ background: colors[index] }} /><b>{bucket.label}</b><small>{bucket.count} agents · {formatPercent(bucket.percentage)}</small></button>)}</div></div>}
+      {agents.length === 0 ? <p className={styles.empty}>No active talent data is available.</p> : <div className={styles.talentBody}><DonutChart activeSegmentId={selected?.key} ariaLabel={`Talent distribution. ${selected?.label}: ${selected?.count} agents.`} centerClassName={styles.donutCenter} className={styles.donut} data={buckets.map((bucket, index) => ({ id: bucket.key, value: bucket.count, color: colors[index] ?? "#8b98aa", label: bucket.label, accessibleLabel: `${bucket.label}: ${bucket.count} agents, ${formatPercent(bucket.percentage)}` }))} size={132} strokeWidth={24} centerContent={<><strong>{selected ? formatPercent(selected.percentage) : "0%"}</strong><span>{selected?.label}</span></>} /><div className={styles.talentLegend}>{buckets.map((bucket, index) => <button aria-pressed={active === index} key={bucket.key} onClick={() => setActive(index)} onFocus={() => setActive(index)} type="button"><span style={{ background: colors[index] }} /><b>{bucket.label}</b><small>{bucket.count} agents · {formatPercent(bucket.percentage)}</small></button>)}</div></div>}
       {selected ? <p className={styles.chartNote}>{selected.description}</p> : null}
     </Panel>
   );
@@ -457,7 +501,7 @@ export function AdminOverviewClient({ data }: { data: AdminDashboardData }) {
       </header>
       <div className={styles.kpiGrid}>{kpis.map((kpi) => <KpiCard {...kpi} comparisonLabel={data.company.comparisonLabel} key={kpi.id} sourceStatus={kpi.source} />)}</div>
       {overall !== "healthy" ? <div className={styles.warning} data-attention-count="1" data-attention-href="#overview-data-health" data-attention-title="Data source health"><DashboardIcon name="info" /><span><strong>Some outcome sources need attention</strong><small>Unavailable values remain visible and are never replaced with estimates.</small></span><button onClick={() => { const target = document.getElementById("overview-data-health"); target?.scrollIntoView({ behavior: "smooth", block: "center" }); target?.focus({ preventScroll: true }); }} type="button">View source health</button></div> : null}
-      <div className={styles.analyticsGrid}><Panel className={styles.teamPanel} description={`Performance by team (${data.period.label})`} title="Team comparison"><TeamComparison onPreview={previewTeam} rows={data.teamComparison} /></Panel><Panel className={styles.trendsPanel} actions={<span className={styles.periodPill}>Last 6 months</span>} description="Outcome trends across real calendar months" title="Month-over-month trends"><MonthlyTrends months={data.trends.months} /></Panel><DataHealth data={data.dataHealth} overall={overall} /></div>
+      <div className={styles.analyticsGrid}><Panel className={styles.teamPanel} description={`Performance by team (${data.period.label})`} title="Team comparison"><TeamComparison onPreview={previewTeam} rows={data.teamComparison} /></Panel><Panel className={styles.trendsPanel} actions={<Badge appearance="outline" size="sm" variant="secondary">Last 6 months</Badge>} description="Outcome trends across real calendar months" title="Month-over-month trends"><MonthlyTrends months={data.trends.months} /></Panel><DataHealth data={data.dataHealth} overall={overall} /></div>
       <div className={styles.secondaryGrid}><TalentDistribution agents={data.talentDistributionAgents} /><LeaderTable leaders={data.leaderPerformance} onPreview={previewLeader} /></div>
       <ManagementActions onOpen={(key, trigger) => { lastTrigger.current = trigger; setAction(key); }} />
       <Panel className={styles.insights} description={`Authoritative operational context (${data.period.label})`} title="Operational insights"><div className={styles.insightGrid}>{insights.map(([label, value, detail, icon, color]) => <article data-attention-count={label === "Active Flags" ? activeFlags : undefined} data-attention-href={label === "Active Flags" ? "/flags" : undefined} data-attention-title={label === "Active Flags" ? "Active flags" : undefined} key={label}><span style={{ background: `${color}18`, color }}><DashboardIcon name={icon} /></span><div><small>{label}</small><strong>{value}</strong><p>{detail}</p></div></article>)}</div></Panel>

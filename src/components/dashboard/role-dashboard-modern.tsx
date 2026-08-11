@@ -9,6 +9,7 @@ import {
 } from "@/components/dashboard/dashboard-icons";
 import { OverviewDateFilter } from "@/components/dashboard/overview-date-filter";
 import { formatCompactDuration } from "@/components/dashboard/performance-visuals";
+import { metricCardStyle } from "@/components/ui/statistics-card";
 import {
   EmptyTableRow,
   StatusBadge,
@@ -128,13 +129,13 @@ function RoleKpi({
   value: React.ReactNode;
 }) {
   return (
-    <article className={styles.kpi} style={{ "--metric-tone": tone } as VisualStyle}>
+    <article className={`${styles.kpi} metric-color-card`} style={{ ...metricCardStyle(tone), "--metric-tone": tone } as VisualStyle}>
       <span className={styles.kpiTop}>
-        <span className={styles.kpiIcon}><DashboardIcon name={icon} /></span>
-        <span className={styles.kpiLabel}>{label}</span>
+        <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span>
+        <span className={`${styles.kpiLabel} metric-card-label`}>{label}</span>
       </span>
-      <strong className={styles.kpiValue}>{value}</strong>
-      <span className={styles.kpiDetail}>{detail}</span>
+      <strong className={`${styles.kpiValue} metric-card-value`}>{value}</strong>
+      <span className={`${styles.kpiDetail} metric-card-detail`}>{detail}</span>
     </article>
   );
 }

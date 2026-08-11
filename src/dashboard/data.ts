@@ -394,7 +394,8 @@ async function getDashboardTotals(scope: DashboardScope) {
       untrackedAvailableRows: sql<number>`count(${dialerAgentHourlyMetrics.untrackedSeconds})`,
       rowCount: sql<number>`count(*)`,
       dailyRowCount: sql<number>`coalesce(sum(case when ${dialerAgentHourlyMetrics.granularity} = 'daily' then 1 else 0 end), 0)`,
-      activeScopeCount: sql<number>`count(distinct ${dialerDatasetScopes.scopeKey})`,
+      latestMetricDate: sql<string | null>`max(${dialerAgentHourlyMetrics.metricDate})`,
+      latestMetricUpdatedAt: sql<Date | null>`max(${dialerAgentHourlyMetrics.updatedAt})`,
     })
     .from(dialerAgentHourlyMetrics)
     .innerJoin(
@@ -416,9 +417,39 @@ async function getDashboardTotals(scope: DashboardScope) {
 
   return {
     totals: normalizeTotals(row),
-    activeScopeCount: toNumber(row?.activeScopeCount),
     dailyRowCount: toNumber(row?.dailyRowCount),
+    dataFreshness: {
+      latestMetricDate: row?.latestMetricDate
+        ? String(row.latestMetricDate)
+        : null,
+      latestMetricUpdatedAt: row?.latestMetricUpdatedAt ?? null,
+    },
   };
+}
+
+async function hasActiveMetrics(scope: DashboardScope) {
+  const [row] = await getDb()
+    .select({ id: dialerAgentHourlyMetrics.id })
+    .from(dialerAgentHourlyMetrics)
+    .innerJoin(
+      dialerDatasetScopes,
+      eq(
+        dialerDatasetScopes.activeVersionId,
+        dialerAgentHourlyMetrics.versionId,
+      ),
+    )
+    .innerJoin(
+      profiles,
+      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
+    )
+    .where(and(
+      scope.metricWhere,
+      activeProfileWhere(actorOrganizationId(scope.actor)),
+      eq(profiles.role, "agent"),
+    ))
+    .limit(1);
+
+  return Boolean(row);
 }
 
 async function getMetricAggregates(scope: DashboardScope) {
@@ -641,38 +672,6 @@ async function getHourlyBreakdown(scope: DashboardScope) {
   ) satisfies DashboardHourlyBreakdownRow[];
 }
 
-async function getDataFreshness(scope: DashboardScope) {
-  const [row] = await getDb()
-    .select({
-      latestMetricDate: sql<string | null>`max(${dialerAgentHourlyMetrics.metricDate})`,
-      latestMetricUpdatedAt: sql<Date | null>`max(${dialerAgentHourlyMetrics.updatedAt})`,
-    })
-    .from(dialerAgentHourlyMetrics)
-    .innerJoin(
-      dialerDatasetScopes,
-      eq(
-        dialerDatasetScopes.activeVersionId,
-        dialerAgentHourlyMetrics.versionId,
-      ),
-    )
-    .innerJoin(
-      profiles,
-      eq(profiles.id, dialerAgentHourlyMetrics.agentProfileId),
-    )
-    .where(and(
-      scope.metricWhere,
-      activeProfileWhere(actorOrganizationId(scope.actor)),
-      eq(profiles.role, "agent"),
-    ));
-
-  return {
-    latestMetricDate: row?.latestMetricDate
-      ? String(row.latestMetricDate)
-      : null,
-    latestMetricUpdatedAt: row?.latestMetricUpdatedAt ?? null,
-  };
-}
-
 function reconcileAgentRows(
   totals: DashboardTotals,
   agentRows: DashboardAgentPerformanceRow[],
@@ -709,28 +708,25 @@ export async function getDashboardData(
   const comparisonScope = options.dateRange?.comparison
     ? scopeForDateWindow(baseScope, options.dateRange.comparison)
     : null;
-  const baseTotalsPromise = getDashboardTotals(baseScope);
   const currentTotalsPromise = options.dateRange
     ? getDashboardTotals(scope)
-    : baseTotalsPromise;
+    : getDashboardTotals(baseScope);
   const [
-    { activeScopeCount },
-    { totals, dailyRowCount },
+    activeMetrics,
+    { totals, dailyRowCount, dataFreshness },
     agentRows,
     hourlyBreakdown,
-    dataFreshness,
     comparisonResult,
   ] = await Promise.all([
-    baseTotalsPromise,
+    hasActiveMetrics(baseScope),
     currentTotalsPromise,
     getAgentPerformanceRows(scope, options.showAgentsWithNoData ?? false),
     getHourlyBreakdown(scope),
-    getDataFreshness(scope),
     comparisonScope ? getDashboardTotals(comparisonScope) : null,
   ]);
 
   return {
-    status: activeScopeCount > 0 ? "ACTIVE_IMPORT" : "NO_ACTIVE_IMPORT",
+    status: activeMetrics ? "ACTIVE_IMPORT" : "NO_ACTIVE_IMPORT",
     datasetScope: {
       importType: "agent_hours_performance",
       teamIds: actor.role === "manager" ? actor.teamIds : [],
@@ -751,4 +747,69 @@ export async function getDashboardData(
           }
         : null,
   } satisfies DashboardData;
+}
+
+export async function getDashboardSummaryData(
+  actor: Actor,
+  options: { dateRange?: OverviewDateRange } = {},
+) {
+  const baseScope = await buildDashboardScope(actor);
+  const scope = options.dateRange
+    ? scopeForDateWindow(baseScope, options.dateRange)
+    : baseScope;
+  const comparisonScope = options.dateRange?.comparison
+    ? scopeForDateWindow(baseScope, options.dateRange.comparison)
+    : null;
+  const [activeMetrics, current, comparisonResult] = await Promise.all([
+    hasActiveMetrics(baseScope),
+    getDashboardTotals(scope),
+    comparisonScope ? getDashboardTotals(comparisonScope) : null,
+  ]);
+
+  return {
+    status: activeMetrics ? "ACTIVE_IMPORT" as const : "NO_ACTIVE_IMPORT" as const,
+    totals: current.totals,
+    dataFreshness: current.dataFreshness,
+    comparison:
+      options.dateRange?.comparison && comparisonResult
+        ? {
+            hasData: comparisonResult.totals.rowCount > 0,
+            label: options.dateRange.comparison.label,
+            totals: comparisonResult.totals,
+          }
+        : null,
+  };
+}
+
+export async function getDashboardAgentRowsData(
+  actor: Actor,
+  options: {
+    dateRange: OverviewDateRange;
+    showAgentsWithNoData?: boolean;
+  },
+) {
+  const baseScope = await buildDashboardScope(actor);
+  const currentScope = scopeForDateWindow(baseScope, options.dateRange);
+  const comparisonScope = options.dateRange.comparison
+    ? scopeForDateWindow(baseScope, options.dateRange.comparison)
+    : null;
+  const [activeMetrics, agentRows, comparisonAgentRows] = await Promise.all([
+    hasActiveMetrics(baseScope),
+    getAgentPerformanceRows(
+      currentScope,
+      options.showAgentsWithNoData ?? false,
+    ),
+    comparisonScope
+      ? getAgentPerformanceRows(
+          comparisonScope,
+          options.showAgentsWithNoData ?? false,
+        )
+      : null,
+  ]);
+
+  return {
+    status: activeMetrics ? "ACTIVE_IMPORT" as const : "NO_ACTIVE_IMPORT" as const,
+    agentRows,
+    comparisonAgentRows,
+  };
 }

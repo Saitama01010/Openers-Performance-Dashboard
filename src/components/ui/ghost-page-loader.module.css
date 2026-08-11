@@ -1,0 +1,202 @@
+/* Adapted from the Uiverse.io loader by BlackisPlay (MIT). */
+.loader {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: min(32rem, 68vh);
+  overflow: hidden;
+  padding: 3rem 1.5rem;
+  width: 100%;
+}
+
+.fullScreen {
+  background: var(--background, #f6f8fc);
+  min-height: 100dvh;
+}
+
+.ghost {
+  height: 176px;
+  position: relative;
+  transform: scale(0.8);
+  transform-origin: center;
+  width: 140px;
+}
+
+.body {
+  animation: ghost-bounce 0.5s steps(1, end) infinite;
+  display: grid;
+  grid-template-areas:
+    "a1 a2 a3 a4 a5 top0 top0 top0 top0 a10 a11 a12 a13 a14"
+    "b1 b2 b3 top1 top1 top1 top1 top1 top1 top1 top1 b12 b13 b14"
+    "c1 c2 top2 top2 top2 top2 top2 top2 top2 top2 top2 top2 c13 c14"
+    "d1 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 d14"
+    "e1 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 e14"
+    "f1 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 f14"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "st0 st0 an4 st1 an7 st2 an10 an10 st3 an13 st4 an16 st5 st5"
+    "an1 an2 an3 an5 an6 an8 an9 an9 an11 an12 an14 an15 an17 an18";
+  grid-template-columns: repeat(14, 1fr);
+  grid-template-rows: repeat(14, 1fr);
+  height: 140px;
+  position: relative;
+  width: 140px;
+  z-index: 1;
+}
+
+.part {
+  min-height: 0;
+  min-width: 0;
+}
+
+.solid,
+.flickerFirst {
+  background: #ef2e3a;
+}
+
+.flickerFirst {
+  animation: ghost-flicker-first 0.5s steps(1, end) infinite;
+}
+
+.flickerSecond {
+  animation: ghost-flicker-second 0.5s steps(1, end) infinite;
+  background: transparent;
+}
+
+.part[data-part="top0"] { grid-area: top0; }
+.part[data-part="top1"] { grid-area: top1; }
+.part[data-part="top2"] { grid-area: top2; }
+.part[data-part="top3"] { grid-area: top3; }
+.part[data-part="top4"] { grid-area: top4; }
+.part[data-part="st0"] { grid-area: st0; }
+.part[data-part="st1"] { grid-area: st1; }
+.part[data-part="st2"] { grid-area: st2; }
+.part[data-part="st3"] { grid-area: st3; }
+.part[data-part="st4"] { grid-area: st4; }
+.part[data-part="st5"] { grid-area: st5; }
+.part[data-part="an1"] { grid-area: an1; }
+.part[data-part="an2"] { grid-area: an2; }
+.part[data-part="an3"] { grid-area: an3; }
+.part[data-part="an4"] { grid-area: an4; }
+.part[data-part="an6"] { grid-area: an6; }
+.part[data-part="an7"] { grid-area: an7; }
+.part[data-part="an8"] { grid-area: an8; }
+.part[data-part="an9"] { grid-area: an9; }
+.part[data-part="an10"] { grid-area: an10; }
+.part[data-part="an11"] { grid-area: an11; }
+.part[data-part="an12"] { grid-area: an12; }
+.part[data-part="an13"] { grid-area: an13; }
+.part[data-part="an15"] { grid-area: an15; }
+.part[data-part="an16"] { grid-area: an16; }
+.part[data-part="an17"] { grid-area: an17; }
+.part[data-part="an18"] { grid-area: an18; }
+
+.eye {
+  height: 50px;
+  left: 10px;
+  position: absolute;
+  top: 30px;
+  width: 40px;
+}
+
+.eye::before,
+.eye::after {
+  background: #fff;
+  content: "";
+  display: block;
+  position: absolute;
+}
+
+.eye::before {
+  height: 50px;
+  transform: translateX(10px);
+  width: 20px;
+}
+
+.eye::after {
+  height: 30px;
+  transform: translateY(10px);
+  width: 40px;
+}
+
+.eyeRight {
+  left: auto;
+  right: 30px;
+}
+
+.pupil {
+  animation: ghost-eyes 3s steps(1, end) infinite;
+  background: #1769ff;
+  height: 20px;
+  left: 10px;
+  position: absolute;
+  top: 50px;
+  width: 20px;
+  z-index: 2;
+}
+
+.pupilRight {
+  left: auto;
+  right: 50px;
+}
+
+.shadow {
+  animation: ghost-shadow 0.5s steps(1, end) infinite;
+  background: #08152c;
+  border-radius: 50%;
+  filter: blur(20px);
+  height: 140px;
+  left: 0;
+  opacity: 0.5;
+  position: absolute;
+  top: 82px;
+  transform: rotateX(80deg);
+  width: 140px;
+}
+
+@keyframes ghost-bounce {
+  0%, 49% { transform: translateY(0); }
+  50%, 100% { transform: translateY(-10px); }
+}
+
+@keyframes ghost-flicker-first {
+  0%, 49% { background: #ef2e3a; }
+  50%, 100% { background: transparent; }
+}
+
+@keyframes ghost-flicker-second {
+  0%, 49% { background: transparent; }
+  50%, 100% { background: #ef2e3a; }
+}
+
+@keyframes ghost-eyes {
+  0%, 49% { transform: translateX(0); }
+  50%, 99% { transform: translateX(10px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes ghost-shadow {
+  0%, 49% { opacity: 0.5; }
+  50%, 100% { opacity: 0.2; }
+}
+
+@media (max-width: 640px) {
+  .loader {
+    min-height: min(26rem, 62vh);
+    padding: 2rem 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .body,
+  .flickerFirst,
+  .flickerSecond,
+  .pupil,
+  .shadow {
+    animation: none;
+  }
+}

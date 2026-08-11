@@ -10,6 +10,7 @@ import {
   scopeOutcomeEvents,
   serializePerformanceTimestamp,
   selectPerformanceGranularity,
+  sumProductivityMixSeconds,
   sumSeriesTotals,
   type DialerDailyAggregate,
   type ScopedOutcomeEvent,
@@ -119,6 +120,20 @@ describe("performance aggregation", () => {
     expect(productivityStatePercentage(30, 120)).toBe(25);
     expect(productivityStatePercentage(null, 120)).toBeNull();
     expect(productivityStatePercentage(0, 0)).toBeNull();
+  });
+
+  it("excludes the derived net total from the productivity mix denominator", () => {
+    expect(sumProductivityMixSeconds({
+      readySeconds: 600,
+      talkSeconds: 900,
+      ringingSeconds: null,
+      wrapSeconds: 120,
+      pausedSeconds: 30,
+      systemPauseSeconds: 20,
+      idleSeconds: 10,
+      untrackedSeconds: 5,
+      netSeconds: 3500,
+    })).toBe(1685);
   });
 
   it("normalizes database timestamp strings for client-safe freshness data", () => {

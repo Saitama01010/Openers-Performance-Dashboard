@@ -31,6 +31,15 @@ describe("login redesign interface contract", () => {
     expect(shell).toContain("Auditable administration");
   });
 
+  it("keeps the complete official mark visible at desktop and mobile sizes", () => {
+    const styles = source("src/components/auth/login.module.css");
+
+    expect(styles).toContain("inset: -2.58rem auto auto -3.25rem");
+    expect(styles).toContain("inset: -1.6rem auto auto -2.03rem");
+    expect(styles).not.toContain("inset: -2.9rem auto auto -3.25rem");
+    expect(styles).not.toContain("inset: -1.82rem auto auto -2.03rem");
+  });
+
   it("keeps login controls accessible and does not fake remember-me semantics", () => {
     const page = source("src/app/login/page.tsx");
     const controls = source("src/components/auth/login-controls.tsx");

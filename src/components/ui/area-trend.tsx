@@ -101,6 +101,8 @@ export function AreaTrend({
         onBlur={interactive ? () => setActiveIndex(null) : undefined}
         onFocus={interactive ? () => setActiveIndex(coordinates.length - 1) : undefined}
         onKeyDown={interactive ? onKeyDown : undefined}
+        onLostPointerCapture={interactive ? () => setActiveIndex(null) : undefined}
+        onPointerCancel={interactive ? () => setActiveIndex(null) : undefined}
         onPointerLeave={interactive ? () => setActiveIndex(null) : undefined}
         onPointerMove={interactive ? onPointerMove : undefined}
         role="img"

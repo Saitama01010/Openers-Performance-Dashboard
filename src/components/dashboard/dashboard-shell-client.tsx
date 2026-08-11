@@ -15,6 +15,11 @@ import {
   DashboardNavigation,
   type DashboardNavItem,
 } from "@/components/dashboard/dashboard-navigation";
+import {
+  RexMascot,
+  RexToggle,
+} from "@/components/dashboard/rex-mascot";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { roleLabel } from "@/presentation/labels";
 
 type NavigationGroup = {
@@ -260,9 +265,9 @@ function AttentionMenu() {
   }, [pathname]);
   return (
     <div className="dashboard-attention">
-      <button aria-expanded={open} aria-label={`${items.length} operational attention categories`} className="dashboard-icon-button" onClick={() => setOpen((value) => !value)} type="button">
+      <button aria-expanded={open} aria-label={`${items.length} operational attention categories`} className="dashboard-icon-button ui-button--sweep" onClick={() => setOpen((value) => !value)} type="button">
         <DashboardIcon name="bell" />
-        {items.length ? <span>{items.length}</span> : null}
+        {items.length ? <span className="dashboard-attention__count">{items.length}</span> : null}
       </button>
       {open ? <div className="dashboard-attention__popover"><strong>Operational attention</strong>{items.length ? items.map((item) => <Link href={item.href} key={item.title} onClick={() => setOpen(false)}><span>{item.title}</span><b>{item.count}</b></Link>) : <p>No current attention categories on this page.</p>}</div> : null}
     </div>
@@ -435,20 +440,28 @@ export function DashboardShellClient({
               <p className="dashboard-topbar__context">{pageName(pathname)}</p>
             </div>
           </div>
+          <div
+            aria-hidden="true"
+            className="dashboard-topbar__rex-lane"
+            data-rex-navbar-lane
+          />
           <ShellSearch navigation={navigation} />
           <div className="dashboard-topbar__actions">
+            <ThemeToggle />
             {user.role !== "agent" ? (
-              <Link className="dashboard-topbar__import ui-button ui-button--secondary" href="/import">
+              <Link className="dashboard-topbar__import ui-button ui-button--secondary ui-button--sweep" href="/import">
                 <DashboardIcon name="import" />
                 <span>Import data</span>
               </Link>
             ) : null}
+            <RexToggle />
             <AttentionMenu />
             <TopUserMenu user={user} />
           </div>
         </header>
         <main id="dashboard-content">{children}</main>
       </div>
+      <RexMascot />
     </div>
   );
 }

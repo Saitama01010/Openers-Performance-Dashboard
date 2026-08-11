@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/base-badge";
+import { GhostPageLoader } from "@/components/ui/ghost-page-loader";
+
 export function PageHeader({
   actions,
   description,
@@ -50,9 +53,8 @@ export function StatusBadge({
   children: ReactNode;
   tone?: "danger" | "info" | "neutral" | "success" | "warning";
 }) {
-  return (
-    <span className={`status-badge status-badge--${tone}`}>{children}</span>
-  );
+  const variant = tone === "danger" ? "destructive" : tone === "neutral" ? "secondary" : tone;
+  return <Badge appearance="light" shape="circle" size="sm" variant={variant}>{children}</Badge>;
 }
 
 export function TableScroll({
@@ -100,22 +102,5 @@ export function DashboardPageSkeleton({
 }: {
   label?: string;
 }) {
-  return (
-    <section
-      aria-busy="true"
-      aria-label={label}
-      className="dashboard-page dashboard-skeleton"
-      role="status"
-    >
-      <span className="sr-only">{label}</span>
-      <div className="skeleton-line skeleton-line--short" />
-      <div className="skeleton-line skeleton-line--title" />
-      <div className="skeleton-grid">
-        {Array.from({ length: 3 }, (_, index) => (
-          <div className="skeleton-card" key={index} />
-        ))}
-      </div>
-      <div className="skeleton-panel" />
-    </section>
-  );
+  return <GhostPageLoader label={label} />;
 }

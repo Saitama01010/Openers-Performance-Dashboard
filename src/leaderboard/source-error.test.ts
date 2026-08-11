@@ -110,6 +110,7 @@ describe("LeaderBoard transfer-source errors", () => {
       errorKind: "configuration",
       headerValidationStatus: "invalid",
       timeZone: "Africa/Cairo",
+      users: [],
       transferRecords: [{ sourceRowId: "Xfers:2" }],
       transferMatches: [],
       transferDiagnostics: [],
@@ -123,14 +124,22 @@ describe("LeaderBoard transfer-source errors", () => {
         {},
       ),
     ).resolves.toEqual({
-      status: "closed_error",
-      message: "The Closed worksheet does not contain all required headers.",
+      status: "ready",
       rows: [],
       teams: [{ id: "team-1", name: "Team One" }],
       filters: {},
+      totalTransfers: 0,
+      totalClosedDeals: null,
+      closedMetricsAvailable: false,
+      closedMessage:
+        "The Closed worksheet does not contain all required headers. Transfer rankings remain available.",
+      closedSourceEmpty: false,
       transferSourceRecordCount: 1,
       transferDiagnosticCount: 0,
-      closedDiagnostics: {
+      closedDiagnosticCount: 0,
+      latestSynchronization: "2026-07-30T10:00:00.000Z",
+      stale: false,
+      closedErrorDiagnostics: {
         connectionStatus: "configuration_error",
         worksheet: "Closed",
         headerValidationStatus: "invalid",
@@ -145,6 +154,7 @@ describe("LeaderBoard transfer-source errors", () => {
       errorKind: "unavailable",
       headerValidationStatus: "unknown",
       timeZone: "Africa/Cairo",
+      users: [],
       transferRecords: [],
       transferMatches: [],
       transferDiagnostics: [],
@@ -156,10 +166,56 @@ describe("LeaderBoard transfer-source errors", () => {
       { id: "agent-1", role: "agent", teamIds: ["team-1"] },
       {},
     );
-    expect(result.status).toBe("closed_error");
+    expect(result.status).toBe("ready");
     expect(
-      result.status === "closed_error" && result.closedDiagnostics,
+      result.status === "ready" && result.closedErrorDiagnostics,
     ).toBeUndefined();
+  });
+
+  it("does not represent an entirely unattributable Closed worksheet as zero deals", async () => {
+    mocks.ingestAndMatchLeaderboardSources.mockResolvedValueOnce({
+      status: "ready",
+      timeZone: "Africa/Cairo",
+      users: [],
+      transferRecords: [],
+      transferMatches: [],
+      transferDiagnostics: [],
+      closedRecords: [
+        {
+          sourceRowNumber: 2,
+          timestamp: new Date("2026-08-07T08:00:00.000Z"),
+          timestampIso: "2026-08-07T08:00:00.000Z",
+          closer: "",
+          customerName: "",
+          fileNumber: "",
+          debtAmount: "",
+          readyForSubmission: "",
+          sheetOpener: "",
+          extractedAmericanName: "",
+          normalizedAmericanName: "",
+          matchedUserId: null,
+          matchStatus: "invalid",
+          validationErrors: ["Closed row 2 has an empty Opener."],
+        },
+      ],
+      closedDiagnostics: [{ code: "missing_opener" }],
+      closedGeneratedAt: "2026-08-10T10:00:00.000Z",
+      totalNonEmptyClosedRows: 1,
+      duplicateAmericanNames: [],
+      stale: false,
+      fetchedAt: "2026-08-10T10:00:01.000Z",
+    });
+
+    const result = await getLeaderboardData(
+      { id: "admin-1", role: "admin", teamIds: [] },
+      { from: "2026-08-01", to: "2026-08-10" },
+    );
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") return;
+    expect(result.closedMetricsAvailable).toBe(false);
+    expect(result.totalClosedDeals).toBeNull();
+    expect(result.closedMessage).toContain("valid Opener");
   });
 
   it("returns only safe ranking fields and aggregate Closed diagnostics", async () => {
@@ -213,6 +269,7 @@ describe("LeaderBoard transfer-source errors", () => {
     );
     expect(result.status).toBe("ready");
     if (result.status !== "ready") return;
+    expect(result.closedMetricsAvailable).toBe(true);
     expect(result.rows[0]).toEqual({
       profileId: "agent-1",
       realName: "Database Real Name",

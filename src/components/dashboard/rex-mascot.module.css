@@ -1,0 +1,99 @@
+.toggle {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.mascot {
+  --rex-size: 4rem;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  cursor: pointer;
+  height: var(--rex-size);
+  left: 0;
+  margin: 0;
+  padding: 0;
+  position: fixed;
+  touch-action: manipulation;
+  visibility: hidden;
+  width: var(--rex-size);
+  z-index: 25;
+}
+
+.mascot:focus-visible {
+  border-radius: 0.5rem;
+  outline: 3px solid #2f6bff;
+  outline-offset: 3px;
+}
+
+.sprite {
+  background-image: url("/mascot/rex-sprite-v2.png");
+  background-position: 75% 0;
+  background-repeat: no-repeat;
+  background-size: 500% 100%;
+  display: block;
+  height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+  transform: scaleX(var(--rex-facing, 1));
+  transform-origin: center bottom;
+  width: 100%;
+}
+
+.walking .sprite {
+  animation: rex-walk-frames 780ms steps(1, end) infinite;
+}
+
+.idle .sprite {
+  background-position: 75% 0;
+}
+
+.seated .sprite,
+.static .sprite,
+.mascot[data-rex-direction="stationary"] .sprite {
+  animation: none;
+  background-position: 100% 0;
+}
+
+.seated {
+  bottom: auto;
+  position: absolute;
+}
+
+@keyframes rex-walk-frames {
+  0%,
+  32% {
+    background-position: 0 0;
+  }
+
+  33%,
+  65% {
+    background-position: 25% 0;
+  }
+
+  66%,
+  100% {
+    background-position: 50% 0;
+  }
+}
+
+@media (max-width: 42rem) {
+  .mascot {
+    --rex-size: 3rem;
+    bottom: max(0.6rem, env(safe-area-inset-bottom));
+  }
+
+  .toggle {
+    font-size: 0.7rem;
+    min-height: 2.5rem;
+    padding-inline: 0.6rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .walking .sprite {
+    animation: none;
+    background-position: 100% 0;
+  }
+}

@@ -9,6 +9,8 @@ import type {
   AdminTeamDirectoryRow,
 } from "@/admin/teams";
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
+import { Badge, BadgeDot } from "@/components/ui/base-badge";
+import { METRIC_CARD_TONES, metricCardStyle } from "@/components/ui/statistics-card";
 import { roleLabel, statusLabel } from "@/presentation/labels";
 import styles from "./teams-admin.module.css";
 
@@ -246,7 +248,7 @@ export function AdminTeamsWorkspace({
               <td><ManagerSummary managers={team.managers} /></td>
               <td className={styles.numeric}>{team.memberCount}</td>
               <td className={styles.numeric}>{team.agentCount}</td>
-              <td><details className={styles.statusDetails}><summary className={team.active ? styles.statusActive : styles.statusInactive}>{team.active ? "Active" : "Inactive"}</summary><p>{team.active ? "Available for active assignments." : "Unavailable for new assignments. Historical reporting remains."}</p></details></td>
+              <td><details className={styles.statusDetails}><Badge appearance="light" render={<summary />} shape="circle" size="xs" variant={team.active ? "success" : "destructive"}><BadgeDot />{team.active ? "Active" : "Inactive"}</Badge><p>{team.active ? "Available for active assignments." : "Unavailable for new assignments. Historical reporting remains."}</p></details></td>
               <td><time dateTime={team.createdAt}>{formatDate(team.createdAt)}</time></td>
               <td><div className={styles.rowActions}><button aria-label={`View ${team.name}`} onClick={(event) => openTeam(team.id, event.currentTarget)} type="button"><DashboardIcon name="info" /></button><button aria-label={`Manage members for ${team.name}`} onClick={(event) => openTeam(team.id, event.currentTarget, "members")} type="button"><DashboardIcon name="users" /></button></div></td>
             </tr>;
@@ -260,7 +262,7 @@ export function AdminTeamsWorkspace({
       <div className={styles.drawerInner}>
         <header className={styles.drawerHeader}><strong id="team-drawer-title">Team details</strong><button aria-label="Close team details" onClick={() => drawer.current?.close()} type="button"><DashboardIcon name="close" /></button></header>
         {busy === "load" ? <p className={styles.drawerLoading}>Loading authorized team details…</p> : !details ? <p className={styles.drawerLoading}>{feedback?.message ?? "Team details are unavailable."}</p> : <>
-          <div className={styles.drawerTeam}><span className={styles.drawerMark}>{initials(details.team.name)}</span><div><h2>{details.team.name}</h2><span className={details.team.active ? styles.statusActive : styles.statusInactive}>{details.team.active ? "Active" : "Inactive"}</span><p>{managerNames(details.managers)}</p></div></div>
+          <div className={styles.drawerTeam}><span className={styles.drawerMark}>{initials(details.team.name)}</span><div><h2>{details.team.name}</h2><Badge appearance="light" shape="circle" size="xs" variant={details.team.active ? "success" : "destructive"}><BadgeDot />{details.team.active ? "Active" : "Inactive"}</Badge><p>{managerNames(details.managers)}</p></div></div>
           <nav aria-label="Team detail sections" className={styles.tabs}>{(["overview", "members", "settings", "activity"] as DrawerTab[]).map((item) => <button aria-current={tab === item ? "page" : undefined} key={item} onClick={() => setTab(item)} type="button">{item === "members" ? `Members (${details.counts.members})` : capitalize(item)}</button>)}</nav>
           <div className={styles.drawerBody}>
             {feedback ? <div className={feedback.tone === "error" ? styles.feedbackError : styles.feedbackSuccess} role={feedback.tone === "error" ? "alert" : "status"}>{feedback.message}</div> : null}
@@ -281,7 +283,8 @@ export function AdminTeamsWorkspace({
 }
 
 function Kpi({ active, detail, icon, label, meta, onActivate, onPreview, preview, value }: { active: boolean; detail: string; icon: "audit" | "users" | "agent" | "teams" | "pause"; label: string; meta: string; onActivate: () => void; onPreview: (value: Highlight | null) => void; preview: Highlight; value: number }) {
-  return <button aria-pressed={active} className={styles.kpi} onBlur={() => onPreview(null)} onClick={onActivate} onFocus={() => onPreview(preview)} onPointerEnter={() => onPreview(preview)} onPointerLeave={() => onPreview(null)} type="button"><span className={styles.kpiLabel}>{label}</span><strong>{value}</strong><span className={styles.kpiMeta}>{meta}</span><span className={styles.kpiIcon}><DashboardIcon name={icon} /></span><span className={styles.kpiDetail} role="tooltip">{detail}</span></button>;
+  const tone = icon === "users" ? METRIC_CARD_TONES.green : icon === "agent" ? METRIC_CARD_TONES.cyan : icon === "teams" ? METRIC_CARD_TONES.purple : icon === "pause" ? METRIC_CARD_TONES.orange : METRIC_CARD_TONES.blue;
+  return <button aria-pressed={active} className={`${styles.kpi} metric-color-card`} onBlur={() => onPreview(null)} onClick={onActivate} onFocus={() => onPreview(preview)} onPointerEnter={() => onPreview(preview)} onPointerLeave={() => onPreview(null)} style={metricCardStyle(tone)} type="button"><span className={`${styles.kpiLabel} metric-card-label`}>{label}</span><strong className="metric-card-value">{value}</strong><span className={`${styles.kpiMeta} metric-card-detail`}>{meta}</span><span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={icon} /></span><span className={styles.kpiDetail} role="tooltip">{detail}</span></button>;
 }
 
 function SortableHeader({ direction, filters, label, navigate, value }: { direction: string; filters: AdminTeamDirectoryFilters; label: string; navigate: (patch: Record<string, string | null>) => void; value: AdminTeamDirectoryFilters["sortBy"] }) {
@@ -330,7 +333,16 @@ function Performance({ details }: { details: TeamDetails }) {
   return <section className={styles.performance}><header><div><h3>Team performance (last 7 days)</h3><p>{details.performance.range.from} – {details.performance.range.to}</p></div></header>{metrics ? <div className={styles.performanceGrid}><Metric label="Transfers" value={formatNumber(metrics.transfers)} /><Metric label="Closed deals" value={formatNumber(metrics.closedDeals)} /><Metric label="Conversion" value={formatPercent(metrics.conversion)} /><Metric label="Avg logged-in" value={formatDuration(metrics.averageLoggedInSeconds)} /></div> : <Empty title="Performance unavailable" detail={details.performance.sources.message ?? "No authorized Team Performance row is available for this team and period."} />}<Link className={styles.buttonSecondary} href={`/teams/performance?range=custom&from=${details.performance.range.from}&to=${details.performance.range.to}&teamId=${details.team.id}`}>View full team performance</Link></section>;
 }
 
-function Metric({ label, value }: { label: string; value: string }) { return <button className={styles.metric} type="button"><span>{label}</span><strong>{value}</strong><em role="tooltip">Exact value for the selected team over the last seven calendar days.</em></button>; }
+function Metric({ label, value }: { label: string; value: string }) {
+  const tone = label === "Closed deals"
+    ? METRIC_CARD_TONES.green
+    : label === "Conversion"
+      ? METRIC_CARD_TONES.purple
+      : label === "Avg logged-in"
+        ? METRIC_CARD_TONES.orange
+        : METRIC_CARD_TONES.blue;
+  return <button className={`${styles.metric} metric-color-card`} style={metricCardStyle(tone)} type="button"><span className="metric-card-label">{label}</span><strong className="metric-card-value">{value}</strong><em role="tooltip">Exact value for the selected team over the last seven calendar days.</em></button>;
+}
 function Empty({ detail, title }: { detail: string; title: string }) { return <div className={styles.empty}><strong>{title}</strong><p>{detail}</p></div>; }
 function initials(value: string) { return value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "T"; }
 function managerNames(managers: TeamDetails["managers"]) { return managers.length ? managers.map((manager) => manager.name).join(", ") : "No manager assigned"; }

@@ -38,8 +38,28 @@ describe("leaderboard export route", () => {
 
   it("fails closed when an authoritative source is unavailable", async () => {
     mocks.currentUser.mockResolvedValue({ id: "admin", role: "admin", teamIds: [] });
-    mocks.getData.mockResolvedValue({ status: "closed_error", rows: [] });
+    mocks.getData.mockResolvedValue({
+      status: "ready",
+      rows: [row],
+      closedMetricsAvailable: false,
+    });
     const response = await GET(new Request("http://localhost/api/leaderboard/export"));
     expect(response.status).toBe(503);
+  });
+
+  it("exports usable transfer rankings while marking Closed metrics unavailable", async () => {
+    mocks.currentUser.mockResolvedValue({ id: "admin", role: "admin", teamIds: [] });
+    mocks.getData.mockResolvedValue({
+      status: "ready",
+      rows: [row],
+      closedMetricsAvailable: false,
+    });
+    const response = await GET(
+      new Request("http://localhost/api/leaderboard/export?metric=transfers"),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain(
+      "1,Agent One,Amy One,East,4,Unavailable,Unavailable,Unavailable,transfers",
+    );
   });
 });

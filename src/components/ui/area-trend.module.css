@@ -1,6 +1,6 @@
 /* Direction: compact operational area charts with restrained depth and truthful interaction states. */
 .root {
-  --area-trend-color: #1f5eff;
+  --area-trend-color: var(--primary);
   display: block;
   min-width: 0;
   position: relative;
@@ -73,12 +73,12 @@
 
 .tooltip[data-edge="start"] { transform: none; }
 .tooltip[data-edge="end"] { transform: translateX(-100%); }
-.tooltip > span { color: #b9c6d8; }
+.tooltip > span { color: var(--border); }
 .tooltip > strong { font-variant-numeric: tabular-nums; }
 
 .empty {
   align-items: center;
-  color: #5c6b82;
+  color: var(--muted);
   display: flex;
   font-size: 0.6875rem;
   min-height: 2.5rem;

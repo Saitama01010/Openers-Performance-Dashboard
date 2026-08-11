@@ -47,4 +47,22 @@ describe("LeaderBoard route contract", () => {
     expect(controls).not.toContain("LEADERBOARD_API_SECRET");
     expect(controls).not.toContain("fetch(");
   });
+
+  it("keeps KPI detail popovers above the podium section", () => {
+    const styles = readFileSync(
+      resolve(
+        process.cwd(),
+        "src/components/leaderboard/leaderboard-page.module.css",
+      ),
+      "utf8",
+    );
+    const kpiGrid = styles.slice(
+      styles.indexOf(".kpiGrid {"),
+      styles.indexOf(".kpiCard {"),
+    );
+
+    expect(kpiGrid).toContain("position: relative");
+    expect(kpiGrid).toContain("z-index: 2");
+    expect(styles).toContain("z-index: 30");
+  });
 });

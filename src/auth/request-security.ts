@@ -5,6 +5,51 @@ import { isIP } from "node:net";
 
 import { getEnv } from "@/env";
 
+const LOCAL_DEVELOPMENT_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+function localDevelopmentOriginMatches(
+  request: Request,
+  origin: URL,
+  canonical: URL,
+  nodeEnvironment: string,
+  trustedProxyHeaders: boolean,
+) {
+  if (
+    nodeEnvironment !== "development" ||
+    trustedProxyHeaders ||
+    canonical.protocol !== "http:" ||
+    origin.protocol !== "http:" ||
+    !LOCAL_DEVELOPMENT_HOSTS.has(canonical.hostname.toLocaleLowerCase("en-US")) ||
+    !LOCAL_DEVELOPMENT_HOSTS.has(origin.hostname.toLocaleLowerCase("en-US"))
+  ) {
+    return false;
+  }
+
+  const host = request.headers.get("host");
+  if (!host) return false;
+
+  let requestOrigin: URL;
+  try {
+    requestOrigin = new URL(`http://${host}`);
+  } catch {
+    return false;
+  }
+
+  const forwardedHost = request.headers.has("x-forwarded-host")
+    ? singleHeaderValue(request.headers.get("x-forwarded-host"))
+    : requestOrigin.host;
+  const forwardedProto = request.headers.has("x-forwarded-proto")
+    ? singleHeaderValue(request.headers.get("x-forwarded-proto"))
+    : requestOrigin.protocol.slice(0, -1);
+
+  return (
+    LOCAL_DEVELOPMENT_HOSTS.has(requestOrigin.hostname.toLocaleLowerCase("en-US")) &&
+    requestOrigin.port === origin.port &&
+    forwardedHost === requestOrigin.host.toLocaleLowerCase("en-US") &&
+    forwardedProto === origin.protocol.slice(0, -1)
+  );
+}
+
 export function assertTrustedMutationOrigin(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) throw new Error("Untrusted request origin.");
@@ -18,11 +63,22 @@ export function assertTrustedMutationOrigin(request: Request) {
     throw new Error("Untrusted request origin.");
   }
 
-  if (parsedOrigin.origin !== canonical.origin) {
+  if (request.headers.has("forwarded")) {
     throw new Error("Untrusted request origin.");
   }
 
-  if (request.headers.has("forwarded")) {
+  const localDevelopmentOrigin = localDevelopmentOriginMatches(
+    request,
+    parsedOrigin,
+    canonical,
+    env.NODE_ENV,
+    env.TRUSTED_PROXY_HEADERS,
+  );
+  if (localDevelopmentOrigin) {
+    return;
+  }
+
+  if (parsedOrigin.origin !== canonical.origin) {
     throw new Error("Untrusted request origin.");
   }
 

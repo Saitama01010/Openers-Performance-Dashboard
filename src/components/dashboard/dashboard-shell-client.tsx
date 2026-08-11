@@ -15,6 +15,10 @@ import {
   DashboardNavigation,
   type DashboardNavItem,
 } from "@/components/dashboard/dashboard-navigation";
+import {
+  RexMascot,
+  RexToggle,
+} from "@/components/dashboard/rex-mascot";
 import { roleLabel } from "@/presentation/labels";
 
 type NavigationGroup = {
@@ -443,12 +447,14 @@ export function DashboardShellClient({
                 <span>Import data</span>
               </Link>
             ) : null}
+            <RexToggle />
             <AttentionMenu />
             <TopUserMenu user={user} />
           </div>
         </header>
         <main id="dashboard-content">{children}</main>
       </div>
+      <RexMascot />
     </div>
   );
 }

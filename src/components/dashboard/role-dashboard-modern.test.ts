@@ -40,6 +40,12 @@ describe("modern role dashboard contract", () => {
 
     expect(agent).toContain("This view contains only your private performance records");
     expect(agent).toContain("performanceHref={`/agents/${userId}`}");
+    expect(agent).toContain("data.overview.transfers");
+    expect(agent).toContain("data.overview.closedDeals");
+    expect(agent).toContain("data.overview.conversion");
+    expect(agent).toContain("data.overview.activity.loggedInSeconds");
+    expect(agent).toContain("data.overview.activity.calls");
+    expect(agent).not.toContain("value={<SourceValue metric={data.lastShift.transfers}");
     expect(agent).not.toContain('href="/admin');
     expect(agent).not.toContain('href="/coaching/room"');
     expect(manager).toContain("data.teamIds.length");

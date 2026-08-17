@@ -258,23 +258,24 @@ export function AgentRoleDashboard({ data, userId }: { data: AgentData; userId: 
     data.lastShift.automaticFlags.triggeredFlags.length +
     data.transferFlags.rows.length +
     data.manualFlags.length;
+  const overviewComparison = data.overview.comparison;
   return (
     <section className={`${styles.page} dashboard-page`}>
       <RoleHero
         actions={<RolePageActions range={data.period} performanceHref={`/agents/${userId}`} />}
-        description="Your shift results, monthly progress, coaching, and action items. This view contains only your private performance records."
+        description="Your selected-period results, monthly progress, coaching, and action items. This view contains only your private performance records."
         eyebrow="My performance"
         title="My performance dashboard"
       />
       <SourceHealthNotice href="/performance" source={data.source} />
 
       <div className={styles.kpiGrid}>
-        <RoleKpi detail={`Previous shift: ${number(data.lastShift.comparison.transfers.value)}`} icon="performance" label="Transfers" tone="#1767f2" value={<SourceValue metric={data.lastShift.transfers} />} />
-        <RoleKpi detail={`Previous shift: ${number(data.lastShift.comparison.closedDeals.value)}`} icon="leaderboard" label="Closed deals" tone="#16a66a" value={<SourceValue metric={data.lastShift.closedDeals} />} />
-        <RoleKpi detail="Closed deals divided by transfers" icon="activity" label="Conversion" tone="#8b5cf6" value={percentage(data.lastShift.conversion)} />
-        <RoleKpi detail="Dialer-recorded login duration" icon="freshness" label="Logged-in time" tone="#f28705" value={formatCompactDuration(data.lastShift.activity.loggedInSeconds)} />
-        <RoleKpi detail="Calls during the completed shift" icon="calls" label="Calls" tone="#06a6b7" value={number(data.lastShift.activity.calls)} />
-        <RoleKpi detail="Activity-derived, not attendance" icon="calendar" label="Shift coverage" tone="#e54879" value={data.lastShift.coverage.status === "ready" ? percentage(data.lastShift.coverage.percentage) : "Incomplete source"} />
+        <RoleKpi detail={overviewComparison ? `${overviewComparison.label}: ${number(overviewComparison.transfers.value)}` : data.period.label} icon="performance" label="Transfers" tone="#1767f2" value={<SourceValue metric={data.overview.transfers} />} />
+        <RoleKpi detail={overviewComparison ? `${overviewComparison.label}: ${number(overviewComparison.closedDeals.value)}` : data.period.label} icon="leaderboard" label="Closed deals" tone="#16a66a" value={<SourceValue metric={data.overview.closedDeals} />} />
+        <RoleKpi detail={overviewComparison ? `${overviewComparison.label}: ${percentage(overviewComparison.conversion)}` : "Closed deals divided by transfers"} icon="activity" label="Conversion" tone="#8b5cf6" value={percentage(data.overview.conversion)} />
+        <RoleKpi detail={overviewComparison ? `${overviewComparison.label}: ${formatCompactDuration(overviewComparison.activity.loggedInSeconds)}` : "Dialer-recorded login duration"} icon="freshness" label="Logged-in time" tone="#f28705" value={formatCompactDuration(data.overview.activity.loggedInSeconds)} />
+        <RoleKpi detail={overviewComparison ? `${overviewComparison.label}: ${number(overviewComparison.activity.calls)}` : "Dialer-recorded calls"} icon="calls" label="Calls" tone="#06a6b7" value={number(data.overview.activity.calls)} />
+        <RoleKpi detail="Latest completed shift · activity-derived, not attendance" icon="calendar" label="Shift coverage" tone="#e54879" value={data.lastShift.coverage.status === "ready" ? percentage(data.lastShift.coverage.percentage) : "Incomplete source"} />
       </div>
 
       <div className={styles.agentOverviewGrid}>

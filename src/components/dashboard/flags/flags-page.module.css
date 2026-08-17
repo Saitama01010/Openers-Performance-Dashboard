@@ -125,7 +125,8 @@
 .tableScroll tbody tr { transition: background 150ms ease, opacity 150ms ease; }
 .tableScroll tbody tr:hover, .tableScroll tbody tr:focus { background: var(--surface-selected); outline: none; }
 .tableScroll tbody tr[data-dimmed="true"] { opacity: .3; }
-.tableScroll tbody th { align-items: center; color: var(--foreground); display: flex; font-weight: 750; gap: 8px; min-height: 44px; }
+.tableScroll tbody th { color: var(--foreground); display: table-cell; font-weight: 750; }
+.tableScroll tbody th .avatar { margin-right: 8px; }
 .avatar { align-items: center; background: linear-gradient(135deg, #145be0, #8a46ed); border-radius: 50%; color: #fff; display: inline-flex; flex: 0 0 25px; font-size: 8px; height: 25px; justify-content: center; width: 25px; }
 .numeric { font-variant-numeric: tabular-nums; text-align: right !important; }
 .flagBadges { display: grid; gap: 4px; min-width: 310px; }

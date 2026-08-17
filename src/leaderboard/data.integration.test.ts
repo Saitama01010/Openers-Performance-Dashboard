@@ -12,7 +12,11 @@ import {
   teamMemberships,
   teams,
 } from "@/db/schema";
-import { listMatchableUsers } from "@/leaderboard/data";
+import {
+  listLeaderboardTeams,
+  listLeaderboardUsers,
+  listMatchableUsers,
+} from "@/leaderboard/data";
 import { newId } from "@/lib/ids";
 
 vi.mock("server-only", () => ({}));
@@ -120,23 +124,33 @@ describe("leaderboard profile visibility", () => {
     expect(users.map((user) => user.id)).toEqual([activeId]);
   });
 
-  it("enforces admin, manager, empty-manager, and agent scopes at the profile query", async () => {
+  it("keeps general profile reads role-scoped while agents receive the organization leaderboard", async () => {
     const organizationId = newId();
+    const otherOrganizationId = newId();
     const eastTeamId = newId();
     const westTeamId = newId();
+    const otherTeamId = newId();
     const eastAgentId = newId();
     const westAgentId = newId();
-    organizationIds.push(organizationId);
-    teamIds.push(eastTeamId, westTeamId);
-    profileIds.push(eastAgentId, westAgentId);
+    const otherAgentId = newId();
+    organizationIds.push(organizationId, otherOrganizationId);
+    teamIds.push(eastTeamId, westTeamId, otherTeamId);
+    profileIds.push(eastAgentId, westAgentId, otherAgentId);
 
-    await getDb().insert(organizations).values({
-      id: organizationId,
-      name: `Leaderboard scope ${organizationId}`,
-    });
+    await getDb().insert(organizations).values([
+      {
+        id: organizationId,
+        name: `Leaderboard scope ${organizationId}`,
+      },
+      {
+        id: otherOrganizationId,
+        name: `Other leaderboard scope ${otherOrganizationId}`,
+      },
+    ]);
     await getDb().insert(teams).values([
       { id: eastTeamId, organizationId, name: "Leaderboard East", active: true },
       { id: westTeamId, organizationId, name: "Leaderboard West", active: true },
+      { id: otherTeamId, organizationId: otherOrganizationId, name: "Other Organization", active: true },
     ]);
     await getDb().insert(profiles).values([
       {
@@ -159,10 +173,21 @@ describe("leaderboard profile visibility", () => {
         accountStatus: "active",
         passwordHash: "test-hash",
       },
+      {
+        id: otherAgentId,
+        organizationId: otherOrganizationId,
+        email: `${otherAgentId}@example.test`,
+        name: "Other Organization Agent",
+        role: "agent",
+        active: true,
+        accountStatus: "active",
+        passwordHash: "test-hash",
+      },
     ]);
     await getDb().insert(teamMemberships).values([
       { id: newId(), teamId: eastTeamId, profileId: eastAgentId, role: "agent", active: true },
       { id: newId(), teamId: westTeamId, profileId: westAgentId, role: "agent", active: true },
+      { id: newId(), teamId: otherTeamId, profileId: otherAgentId, role: "agent", active: true },
     ]);
     await getDb().insert(sourceUserMappings).values([
       {
@@ -187,6 +212,17 @@ describe("leaderboard profile visibility", () => {
         active: true,
         isPrimary: true,
       },
+      {
+        id: newId(),
+        source: "dialer",
+        sourceAgentName: "Other Organization Agent",
+        normalizedAgentName: `other-${otherAgentId}`,
+        activeMappingKey: activeMappingKey("dialer", `other-${otherAgentId}`),
+        primaryMappingKey: primaryMappingKey("dialer", otherAgentId),
+        profileId: otherAgentId,
+        active: true,
+        isPrimary: true,
+      },
     ]);
 
     const adminUsers = await listMatchableUsers({
@@ -201,6 +237,12 @@ describe("leaderboard profile visibility", () => {
     const agentUsers = await listMatchableUsers({
       id: westAgentId, role: "agent", teamIds: [westTeamId], organizationId,
     });
+    const agentLeaderboardUsers = await listLeaderboardUsers({
+      id: westAgentId, role: "agent", teamIds: [westTeamId], organizationId,
+    });
+    const agentLeaderboardTeams = await listLeaderboardTeams({
+      id: westAgentId, role: "agent", teamIds: [westTeamId], organizationId,
+    });
 
     expect(adminUsers.map((user) => user.id).sort()).toEqual(
       [eastAgentId, westAgentId].sort(),
@@ -208,5 +250,11 @@ describe("leaderboard profile visibility", () => {
     expect(managerUsers.map((user) => user.id)).toEqual([eastAgentId]);
     expect(emptyManagerUsers).toEqual([]);
     expect(agentUsers.map((user) => user.id)).toEqual([westAgentId]);
+    expect(agentLeaderboardUsers.map((user) => user.id).sort()).toEqual(
+      [eastAgentId, westAgentId].sort(),
+    );
+    expect(agentLeaderboardTeams.map((team) => team.id).sort()).toEqual(
+      [eastTeamId, westTeamId].sort(),
+    );
   });
 });

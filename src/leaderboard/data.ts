@@ -113,10 +113,10 @@ export type TransferSummaryData =
       totalTransfers: number;
     };
 
-async function listLeaderboardTeams(actor: Actor) {
-  if (actor.role !== "admin" && actor.teamIds.length === 0) return [];
+export async function listLeaderboardTeams(actor: Actor) {
+  if (actor.role === "manager" && actor.teamIds.length === 0) return [];
   const scopeWhere =
-    actor.role === "admin" ? undefined : inArray(teams.id, actor.teamIds);
+    actor.role === "manager" ? inArray(teams.id, actor.teamIds) : undefined;
   return getDb()
     .select({ id: teams.id, name: teams.name })
     .from(teams)
@@ -124,10 +124,15 @@ async function listLeaderboardTeams(actor: Actor) {
     .orderBy(asc(teams.name), asc(teams.id));
 }
 
-export async function listMatchableUsers(actor: Actor) {
+async function listMatchableUsersForScope(
+  actor: Actor,
+  scope: "role" | "organization",
+) {
   if (actor.role === "manager" && actor.teamIds.length === 0) return [];
   const scopeWhere =
-    actor.role === "manager"
+    scope === "organization"
+      ? undefined
+      : actor.role === "manager"
       ? inArray(teams.id, actor.teamIds)
       : actor.role === "agent"
         ? eq(profiles.id, actor.id)
@@ -167,6 +172,17 @@ export async function listMatchableUsers(actor: Actor) {
         scopeWhere,
       ),
     );
+}
+
+export function listMatchableUsers(actor: Actor) {
+  return listMatchableUsersForScope(actor, "role");
+}
+
+export function listLeaderboardUsers(actor: Actor) {
+  return listMatchableUsersForScope(
+    actor,
+    actor.role === "agent" ? "organization" : "role",
+  );
 }
 
 function normalizeSearchText(value: string) {
@@ -479,7 +495,7 @@ export async function getLeaderboardData(
     };
   }
 
-  const usersPromise = listMatchableUsers(actor);
+  const usersPromise = listLeaderboardUsers(actor);
   const ingestionPromise = ingestAndMatchLeaderboardSources(
     usersPromise,
     config,

@@ -5,6 +5,7 @@ const performancePage = readFileSync("src/app/flags/performance/page.tsx", "utf8
 const coachingLeaderboard = readFileSync("src/app/coaching/leaderboard/page.tsx", "utf8");
 const coachingComposer = readFileSync("src/components/dashboard/coaching/coaching-session-composer.tsx", "utf8");
 const globalStyles = readFileSync("src/app/globals.css", "utf8");
+const flagsStyles = readFileSync("src/components/dashboard/flags/flags-page.module.css", "utf8");
 const workspacePages = [
   "src/app/dashboard/page.tsx",
   "src/app/performance/page.tsx",
@@ -59,6 +60,12 @@ describe("coaching and flags UI contract", () => {
     }
     expect(client).not.toContain(">Source Status<");
     expect(client).toContain("Missing-source data was not classified as zero deals");
+  });
+
+  it("keeps flag table row dividers aligned across the agent column", () => {
+    expect(flagsStyles).toContain(".tableScroll tbody th { color: var(--foreground); display: table-cell; font-weight: 750; }");
+    expect(flagsStyles).toContain(".tableScroll tbody th .avatar { margin-right: 8px; }");
+    expect(flagsStyles).not.toContain(".tableScroll tbody th { align-items: center;");
   });
 
   it("separates the two manager Coaching Leaderboard targets with accessible progress bars", () => {

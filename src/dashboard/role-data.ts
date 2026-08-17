@@ -24,6 +24,7 @@ import {
 import {
   loadRoleDashboardOutcomeSource,
   outcomeSnapshot,
+  type RoleDashboardOutcomeSource,
 } from "@/dashboard/outcome-source";
 import {
   calculateShiftCoverage,
@@ -97,6 +98,64 @@ function sourceValue(value: number | undefined, available: boolean): SourceValue
   return available
     ? { status: "ready", value: value ?? 0 }
     : { status: "unavailable", value: null };
+}
+
+export function buildAgentOverviewMetrics(input: {
+  agentId: string;
+  dialer: Pick<Awaited<ReturnType<typeof getDashboardData>>, "comparison" | "totals">;
+  outcomeSource: RoleDashboardOutcomeSource;
+  range: OverviewDateRange;
+}) {
+  const allowedAgentIds = new Set([input.agentId]);
+  const current = outcomeSnapshot(
+    input.outcomeSource,
+    { kind: "date", window: input.range },
+    allowedAgentIds,
+  );
+  const previous = input.range.comparison
+    ? outcomeSnapshot(
+        input.outcomeSource,
+        { kind: "date", window: input.range.comparison },
+        allowedAgentIds,
+      )
+    : null;
+
+  function outcomeConversion(snapshot: typeof current | null) {
+    if (
+      !snapshot ||
+      snapshot.transfers.value === null ||
+      snapshot.closedDeals.value === null
+    ) {
+      return null;
+    }
+    return conversionPercentage(
+      snapshot.closedDeals.value,
+      snapshot.transfers.value,
+    );
+  }
+
+  return {
+    transfers: current.transfers,
+    closedDeals: current.closedDeals,
+    conversion: outcomeConversion(current),
+    activity: {
+      calls: input.dialer.totals.calls,
+      loggedInSeconds: input.dialer.totals.loggedInSeconds,
+    },
+    comparison: input.range.comparison && previous
+      ? {
+          label: input.range.comparison.label,
+          transfers: previous.transfers,
+          closedDeals: previous.closedDeals,
+          conversion: outcomeConversion(previous),
+          activity: {
+            calls: input.dialer.comparison?.totals.calls ?? 0,
+            loggedInSeconds:
+              input.dialer.comparison?.totals.loggedInSeconds ?? 0,
+          },
+        }
+      : null,
+  };
 }
 
 async function profileEmployment(agentIds: string[]) {
@@ -397,12 +456,19 @@ async function agentDashboardData(actor: CurrentActor, now: Date, selectedRange:
   const previousOutcome = outcomeSnapshot(shared.outcomeSource, { kind: "shift", window: previousShift }, allowed);
   const currentActivity = sumShiftRows(shiftRows);
   const previousActivity = sumShiftRows(previousRows);
+  const overview = buildAgentOverviewMetrics({
+    agentId: actor.id,
+    dialer: shared.dialer,
+    outcomeSource: shared.outcomeSource,
+    range: selectedRange,
+  });
   const teamId = shared.scopedAgents[0]?.teams[0]?.id ?? null;
   const transferTarget = resolveEffectiveTarget(shared.configuration.targets, { metric: "transfers", date: shared.today, teamId });
   const closedTarget = resolveEffectiveTarget(shared.configuration.targets, { metric: "closed_deals", date: shared.today, teamId });
   return {
     period: selectedRange,
     source: shared.outcomeSource,
+    overview,
     lastShift: {
       window: shift,
       transfers: currentOutcome.transfers,

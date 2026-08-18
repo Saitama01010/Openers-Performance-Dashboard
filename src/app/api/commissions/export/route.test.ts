@@ -65,7 +65,7 @@ describe("commission export route", () => {
     expect(response.headers.get("content-type")).not.toContain("text/csv");
   });
 
-  it("exports the admin payroll schema with aligned salary and preserved download behavior", async () => {
+  it("exports the admin payroll schema with aligned salary, total compensation, and preserved download behavior", async () => {
     getCurrentUser.mockResolvedValue(admin);
     getCommissionReport.mockResolvedValue(readyReport());
     const response = await GET(new Request("http://localhost/api/commissions/export?commissionMonth=2026-08"));
@@ -77,9 +77,9 @@ describe("commission export route", () => {
     expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     const lines = new TextDecoder().decode(bytes.slice(3)).split("\r\n");
     expect(lines[0]).toBe(
-      "Real Name,American Name,Email,Team,Closed Deals,Commission in EGP,Salary in EGP",
+      "Real Name,American Name,Email,Team,Closed Deals,Commission in EGP,Salary in EGP,Total Compensation in EGP",
     );
-    expect(lines[1]).toBe("Jane Doe,Jane,jane@example.com,East Team,0,0,14000");
+    expect(lines[1]).toBe("Jane Doe,Jane,jane@example.com,East Team,0,0,14000,14000");
   });
 
   it("maps invalid months to 400 and unauthorized filters to 403", async () => {

@@ -904,11 +904,8 @@ export async function createTeamAgent(actor: Actor, input: {
   employmentStartDate?: string;
 }) {
   actor = await resolveCurrentActor(actor);
-  if (actor.role !== "manager") throw new Error("Forbidden");
+  assertAdmin(actor);
   await assertPermission(actor, "users.create_team_agent");
-  if (!actor.teamIds.includes(input.teamId)) {
-    throw new Error("Managers may create agents only in their assigned teams.");
-  }
   const created = await createProvisionedUser(actor, {
     ...input,
     role: "agent",

@@ -24,6 +24,7 @@ import {
   updateManualFlagAction,
 } from "@/dashboard/actions";
 import type { OverviewDateRange } from "@/dashboard/date-range";
+import type { ManagerAgentSortKey } from "@/dashboard/manager-agent-sort";
 import type { RoleDashboardData } from "@/dashboard/role-data";
 
 type AgentData = Extract<RoleDashboardData, { role: "agent" }>["data"];
@@ -381,6 +382,8 @@ export function AgentRoleDashboard({ data, userId }: { data: AgentData; userId: 
 
 function managerPageHref(data: ManagerData, page: number) {
   const params = new URLSearchParams({ range: data.period.key, page: String(page) });
+  params.set("agentSort", data.agentTableSort.key);
+  params.set("agentDirection", data.agentTableSort.direction);
   if (data.period.key === "custom" && data.period.from && data.period.to) {
     params.set("from", data.period.from);
     params.set("to", data.period.to);
@@ -388,14 +391,55 @@ function managerPageHref(data: ManagerData, page: number) {
   return `/dashboard?${params.toString()}`;
 }
 
+function managerSortHref(data: ManagerData, key: ManagerAgentSortKey) {
+  const nextDirection = data.agentTableSort.key === key && data.agentTableSort.direction === "asc"
+    ? "desc"
+    : "asc";
+  const params = new URLSearchParams({
+    range: data.period.key,
+    agentSort: key,
+    agentDirection: nextDirection,
+  });
+  if (data.period.key === "custom" && data.period.from && data.period.to) {
+    params.set("from", data.period.from);
+    params.set("to", data.period.to);
+  }
+  return `/dashboard?${params.toString()}`;
+}
+
+function ManagerSortHeader({
+  data,
+  label,
+  sortKey,
+}: {
+  data: ManagerData;
+  label: string;
+  sortKey: ManagerAgentSortKey;
+}) {
+  const active = data.agentTableSort.key === sortKey;
+  const direction = active ? data.agentTableSort.direction : null;
+  return (
+    <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"}>
+      <Link
+        aria-label={`Sort by ${label} ${direction === "asc" ? "descending" : "ascending"}`}
+        className={styles.sortHeader}
+        href={managerSortHref(data, sortKey)}
+      >
+        <span>{label}</span>
+        <span aria-hidden="true" className={styles.sortIndicator}>{direction === "asc" ? "↑" : direction === "desc" ? "↓" : "↕"}</span>
+      </Link>
+    </th>
+  );
+}
+
 function ManagerAgentTable({ data }: { data: ManagerData }) {
   return (
     <>
       <div className={styles.tableWrap}>
         <TableScroll label="Authorized team agents">
-          <table className="ui-table">
+          <table className={`ui-table ${styles.managerTable}`}>
             <caption>One row per active agent in assigned teams</caption>
-            <thead><tr><th>Agent</th><th>Team</th><th>Shift coverage</th><th>Today</th><th>Month to date</th><th>Target</th><th>Rank</th><th>Coaching</th><th>Flags</th><th>Status</th></tr></thead>
+            <thead><tr><ManagerSortHeader data={data} label="Agent" sortKey="agent" /><ManagerSortHeader data={data} label="Team" sortKey="team" /><ManagerSortHeader data={data} label="Shift coverage" sortKey="coverage" /><ManagerSortHeader data={data} label="Today" sortKey="today" /><ManagerSortHeader data={data} label="Month to date" sortKey="month" /><ManagerSortHeader data={data} label="Target" sortKey="target" /><ManagerSortHeader data={data} label="Rank" sortKey="rank" /><ManagerSortHeader data={data} label="Coaching" sortKey="coaching" /><ManagerSortHeader data={data} label="Flags" sortKey="flags" /><ManagerSortHeader data={data} label="Status" sortKey="status" /></tr></thead>
             <tbody>
               {data.visibleRows.length === 0 ? <EmptyTableRow colSpan={10} title="No active agents in assigned teams" /> : data.visibleRows.map((row) => {
                 const flagCount = row.automaticFlags.triggeredFlags.length + row.transferFlagCount + row.manualFlagCount;
@@ -489,11 +533,18 @@ export function ManagerRoleDashboard({ data }: { data: ManagerData }) {
             <StatusBadge tone={shadowingDue ? "warning" : "success"}>{shadowingDue} shadowing due</StatusBadge>
             <StatusBadge tone={activeManualCases ? "warning" : "success"}>{activeManualCases} active cases</StatusBadge>
           </div>
-          <CoachingRubricEntry existingReports={data.coachingReports} sessions={data.coachingSessions} templates={data.rubricTemplates} />
+          <div className={styles.coachingBody}>
+            <CoachingRubricEntry existingReports={data.coachingReports} sessions={data.coachingSessions} templates={data.rubricTemplates} />
+          </div>
         </Panel>
 
         <Panel description="The most recent scoped shadowing and manual-case workflows." title="Follow-up actions">
-          {data.shadowing.filter((item) => item.status === "scheduled").length === 0 && activeManualCases === 0 ? <p className={styles.empty}>No active follow-up actions.</p> : (
+          {data.shadowing.filter((item) => item.status === "scheduled").length === 0 && activeManualCases === 0 ? (
+            <div className={styles.emptyState}>
+              <span aria-hidden="true">✓</span>
+              <div><strong>No follow-up needed</strong><p>There are no scheduled shadowing sessions or open manual cases.</p></div>
+            </div>
+          ) : (
             <div className={styles.list}>
               {data.shadowing.filter((item) => item.status === "scheduled").slice(0, 3).map((item) => (
                 <article className={styles.listItem} key={item.id}>

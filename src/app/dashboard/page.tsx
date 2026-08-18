@@ -29,8 +29,12 @@ export default async function DashboardPage({
     timeZone,
   );
   const requestedPage = Array.isArray(params.page) ? params.page[0] : params.page;
+  const managerSort = Array.isArray(params.agentSort) ? params.agentSort[0] : params.agentSort;
+  const managerDirection = Array.isArray(params.agentDirection) ? params.agentDirection[0] : params.agentDirection;
   const dashboard = await getRoleDashboardData(user, {
     dateRange,
+    managerDirection,
+    managerSort,
     page: Number(requestedPage) || 1,
     timeZone,
   });

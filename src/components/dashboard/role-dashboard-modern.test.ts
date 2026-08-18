@@ -56,6 +56,11 @@ describe("modern role dashboard contract", () => {
     );
     expect(manager).toContain("data.teamIds.length");
     expect(manager).toContain("<ManagerActions data={data} />");
+    expect(modern).toContain("<ManagerSortHeader");
+    expect(modern).toContain('aria-sort={direction === "asc"');
+    expect(manager).toContain('className={styles.emptyState}');
+    expect(source("src/components/dashboard/role-dashboard.tsx")).not.toContain("Add team agent");
+    expect(source("src/app/dashboard/page.tsx")).toContain("managerSort");
   });
 
   it("supports responsive layouts and reduced motion", () => {

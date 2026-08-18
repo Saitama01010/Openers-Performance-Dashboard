@@ -36,12 +36,13 @@ describe("admin access policy", () => {
       "coaching.submit_rubric_team",
       "shadowing.manage_team",
       "flags.raise_team_case",
-      "users.create_team_agent",
     ]));
+    expect(ROLE_DEFAULT_PERMISSIONS.manager).not.toContain("users.create_team_agent");
     expect(ROLE_DEFAULT_PERMISSIONS.manager).not.toContain("users.deactivate_team_agent");
     expect(ROLE_DEFAULT_PERMISSIONS.manager).not.toContain("users.terminate_team_agent");
     expect(ADMIN_ONLY_PERMISSIONS.has("users.deactivate_team_agent")).toBe(true);
     expect(ADMIN_ONLY_PERMISSIONS.has("users.terminate_team_agent")).toBe(true);
+    expect(ADMIN_ONLY_PERMISSIONS.has("users.create_team_agent")).toBe(true);
     expect(ROLE_DEFAULT_PERMISSIONS.admin).toEqual(expect.arrayContaining([
       "dashboard.view_company",
       "dashboard.export_company",
@@ -90,6 +91,7 @@ describe("admin access policy", () => {
     expect(canGrantPermissionToRole("metrics.view_company", "agent")).toBe(false);
     expect(canGrantPermissionToRole("users.deactivate_team_agent", "manager")).toBe(false);
     expect(canGrantPermissionToRole("users.terminate_team_agent", "agent")).toBe(false);
+    expect(canGrantPermissionToRole("users.create_team_agent", "manager")).toBe(false);
     expect(canGrantPermissionToRole("users.manage_permissions", "admin")).toBe(true);
     expect(() =>
       validatePermissionOverrides(

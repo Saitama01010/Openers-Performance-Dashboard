@@ -289,7 +289,9 @@ export async function updateManualFlagAction(formData: FormData) {
 }
 
 export async function createTeamAgentAction(formData: FormData) {
-  await createTeamAgent(await actor(), {
+  const user = await actor();
+  if (user.role !== "admin") throw new Error("Forbidden");
+  await createTeamAgent(user, {
     name: text(formData, "name"),
     email: text(formData, "email"),
     teamId: id(formData, "teamId"),

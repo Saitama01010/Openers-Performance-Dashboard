@@ -6,14 +6,18 @@ import { getCurrentUser } from "@/auth/session";
 import { COMMISSION_TIERS } from "@/commissions/domain";
 import { getCommissionDashboard } from "@/commissions/service";
 import {
+  buildAdminCommissionAnalytics,
   buildCommissionAnalytics,
+  commissionOnlyRow,
+  commissionOnlySummary,
   paginateCommissionRows,
   parseCommissionTableQuery,
 } from "@/commissions/view-model";
 import {
+  type AdminCommissionData,
+  type ManagerCommissionData,
   CommissionsPageClient,
   type AgentCommissionData,
-  type OrganizationCommissionData,
 } from "@/components/dashboard/commissions/commissions-page-client";
 import { PageHeader, StatusBanner } from "@/components/dashboard/dashboard-primitives";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -58,13 +62,17 @@ export default async function CommissionsPage({
           <PageHeader
             actions={<CommissionMonthPicker value={dashboard.month.key} />}
             description={actor.role === "agent"
-              ? "Track your personal monthly closed deals, commission tier, and total compensation."
-              : "Monthly compensation from valid matched Closed worksheet deals. Higher tiers apply retroactively to the full month."}
-            eyebrow="Compensation"
+              ? "Track your personal monthly closed deals and commission tier."
+              : actor.role === "manager"
+                ? "Monthly commissions from valid matched Closed worksheet deals. Higher tiers apply retroactively to the full month."
+                : "Monthly compensation from valid matched Closed worksheet deals. Higher tiers apply retroactively to the full month."}
+            eyebrow={actor.role === "admin" ? "Compensation" : "Commissions"}
             title="Commissions"
           />
           <StatusBanner tone="danger">
-            <strong>Closed source unavailable.</strong> {dashboard.message} Commission and base-only totals were not calculated.
+            <strong>Closed source unavailable.</strong> {dashboard.message} {actor.role === "admin"
+              ? "Commission and base-only totals were not calculated."
+              : "Commission values were not calculated."}
           </StatusBanner>
         </section>
       </DashboardShell>
@@ -72,7 +80,6 @@ export default async function CommissionsPage({
   }
 
   const report = dashboard.report;
-  const analytics = buildCommissionAnalytics(report, dashboard.history);
   const shared = {
     month: {
       key: report.month.key,
@@ -83,15 +90,16 @@ export default async function CommissionsPage({
     sourceFetchedAt: report.sourceFetchedAt,
     closedGeneratedAt: report.closedGeneratedAt,
     tiers: [...COMMISSION_TIERS],
-    trend: analytics.trend,
   };
 
   if (actor.role === "agent") {
+    const analytics = buildCommissionAnalytics(report, dashboard.history);
     const data: AgentCommissionData = {
       ...shared,
       role: "agent",
       scopeLabel: "Your commission record",
-      row: report.rows[0] ?? null,
+      trend: analytics.trend,
+      row: report.rows[0] ? commissionOnlyRow(report.rows[0]) : null,
     };
     return <DashboardShell user={actor}><CommissionsPageClient data={data} /></DashboardShell>;
   }
@@ -104,7 +112,7 @@ export default async function CommissionsPage({
     direction: first(params.direction),
     page: first(params.page),
     pageSize: first(params.pageSize),
-  });
+  }, { salaryVisible: actor.role === "admin" });
   const selectedTeamName = report.selectedTeamId
     ? report.teams.find((team) => team.id === report.selectedTeamId)?.name
     : null;
@@ -115,19 +123,47 @@ export default async function CommissionsPage({
       : selectedTeamName
         ? `Assigned team — ${selectedTeamName}`
         : `Assigned teams — ${report.teams.map((team) => team.name).join(", ")}`;
-  const data: OrganizationCommissionData = {
+  const common = {
     ...shared,
-    role: actor.role,
     scopeLabel,
-    summary,
-    previousSummary: analytics.previousSummary,
-    analytics,
     teams: report.teams,
     selectedTeamId: report.selectedTeamId,
-    showTeamFilter: actor.role === "admin" ? report.teams.length > 0 : report.teams.length > 1,
+    showTeamFilter:
+      actor.role === "admin" ? report.teams.length > 0 : report.teams.length > 1,
     exportHref: exportHref(report.month.key, report.selectedTeamId),
-    table: paginateCommissionRows(report.rows, tableQuery),
   };
+  const data: AdminCommissionData | ManagerCommissionData =
+    actor.role === "admin"
+      ? (() => {
+          const analytics = buildAdminCommissionAnalytics(
+            report,
+            dashboard.history,
+          );
+          return {
+            ...common,
+            role: "admin" as const,
+            summary,
+            previousSummary: analytics.previousSummary,
+            analytics,
+            trend: analytics.trend,
+            table: paginateCommissionRows(report.rows, tableQuery),
+          };
+        })()
+      : (() => {
+          const analytics = buildCommissionAnalytics(report, dashboard.history);
+          return {
+            ...common,
+            role: "manager" as const,
+            summary: commissionOnlySummary(summary),
+            previousSummary: analytics.previousSummary,
+            analytics,
+            trend: analytics.trend,
+            table: paginateCommissionRows(
+              report.rows.map(commissionOnlyRow),
+              tableQuery,
+            ),
+          };
+        })();
 
   return (
     <DashboardShell user={actor}>

@@ -12,10 +12,13 @@ export type CommissionTrendPoint = {
   employees: number;
   closedDeals: number;
   commission: number;
-  baseSalaries: number;
-  totalCompensation: number;
   tierLabel: string | null;
   ratePerDeal: number | null;
+};
+
+export type AdminCommissionTrendPoint = CommissionTrendPoint & {
+  baseSalaries: number;
+  totalCompensation: number;
 };
 
 export type TeamCommissionDistribution = {
@@ -24,8 +27,11 @@ export type TeamCommissionDistribution = {
   employees: number;
   closedDeals: number;
   commission: number;
-  totalCompensation: number;
   share: number;
+};
+
+export type AdminTeamCommissionDistribution = TeamCommissionDistribution & {
+  totalCompensation: number;
 };
 
 export type TierCommissionDistribution = CommissionTier & {
@@ -39,8 +45,25 @@ export type CommissionAnalytics = {
   trend: CommissionTrendPoint[];
   byTeam: TeamCommissionDistribution[];
   byTier: TierCommissionDistribution[];
+  previousSummary: CommissionOnlySummary | null;
+};
+
+export type AdminCommissionAnalytics = {
+  trend: AdminCommissionTrendPoint[];
+  byTeam: AdminTeamCommissionDistribution[];
+  byTier: TierCommissionDistribution[];
   previousSummary: CommissionSummary | null;
 };
+
+export type CommissionOnlyRow = Omit<
+  CommissionRow,
+  "baseSalary" | "totalCompensation"
+>;
+
+export type CommissionOnlySummary = Omit<
+  CommissionSummary,
+  "totalBaseSalaries" | "totalCompensation"
+>;
 
 export type CommissionSort =
   | "name"
@@ -58,11 +81,43 @@ export type CommissionTableQuery = {
   pageSize: 10 | 25 | 50;
 };
 
-export type CommissionTablePage = CommissionTableQuery & {
-  rows: CommissionRow[];
+export type CommissionTablePage<
+  Row extends CommissionOnlyRow = CommissionOnlyRow,
+> = CommissionTableQuery & {
+  rows: Row[];
   totalRows: number;
   totalPages: number;
 };
+
+export function commissionOnlyRow(row: CommissionRow): CommissionOnlyRow {
+  return {
+    id: row.id,
+    realName: row.realName,
+    americanName: row.americanName,
+    email: row.email,
+    active: row.active,
+    team: row.team,
+    closedDeals: row.closedDeals,
+    tierLabel: row.tierLabel,
+    tierMinimum: row.tierMinimum,
+    tierMaximum: row.tierMaximum,
+    ratePerDeal: row.ratePerDeal,
+    commissionAmount: row.commissionAmount,
+    nextTierMinimum: row.nextTierMinimum,
+    nextTierRate: row.nextTierRate,
+    dealsUntilNextTier: row.dealsUntilNextTier,
+  };
+}
+
+export function commissionOnlySummary(
+  summary: CommissionSummary,
+): CommissionOnlySummary {
+  return {
+    totalEmployees: summary.totalEmployees,
+    totalClosedDeals: summary.totalClosedDeals,
+    totalCommission: summary.totalCommission,
+  };
+}
 
 function summaryPoint(report: ReadyCommissionReport): CommissionTrendPoint | null {
   if (report.role === "agent") {
@@ -75,8 +130,6 @@ function summaryPoint(report: ReadyCommissionReport): CommissionTrendPoint | nul
       employees: 1,
       closedDeals: row.closedDeals,
       commission: row.commissionAmount,
-      baseSalaries: row.baseSalary,
-      totalCompensation: row.totalCompensation,
       tierLabel: row.tierLabel,
       ratePerDeal: row.ratePerDeal,
     };
@@ -89,10 +142,30 @@ function summaryPoint(report: ReadyCommissionReport): CommissionTrendPoint | nul
     employees: report.summary.totalEmployees,
     closedDeals: report.summary.totalClosedDeals,
     commission: report.summary.totalCommission,
-    baseSalaries: report.summary.totalBaseSalaries,
-    totalCompensation: report.summary.totalCompensation,
     tierLabel: null,
     ratePerDeal: null,
+  };
+}
+
+function adminSummaryPoint(
+  report: ReadyCommissionReport,
+): AdminCommissionTrendPoint | null {
+  const point = summaryPoint(report);
+  if (!point) return null;
+  if (report.role === "agent") {
+    const row = report.rows[0];
+    if (!row) return null;
+    return {
+      ...point,
+      baseSalaries: row.baseSalary,
+      totalCompensation: row.totalCompensation,
+    };
+  }
+  if (!report.summary) return null;
+  return {
+    ...point,
+    baseSalaries: report.summary.totalBaseSalaries,
+    totalCompensation: report.summary.totalCompensation,
   };
 }
 
@@ -110,12 +183,10 @@ export function buildCommissionAnalytics(
       employees: 0,
       closedDeals: 0,
       commission: 0,
-      totalCompensation: 0,
     };
     current.employees += 1;
     current.closedDeals += row.closedDeals;
     current.commission += row.commissionAmount;
-    current.totalCompensation += row.totalCompensation;
     teamGroups.set(id, current);
   }
 
@@ -142,9 +213,39 @@ export function buildCommissionAnalytics(
       }))
       .sort((left, right) => right.commission - left.commission || left.name.localeCompare(right.name)),
     byTier,
-    previousSummary: history.length > 1
-      ? history[history.length - 2]?.summary ?? null
-      : null,
+    previousSummary:
+      history.length > 1 && history[history.length - 2]?.summary
+        ? commissionOnlySummary(history[history.length - 2].summary!)
+        : null,
+  };
+}
+
+export function buildAdminCommissionAnalytics(
+  report: ReadyCommissionReport,
+  history: readonly ReadyCommissionReport[],
+): AdminCommissionAnalytics {
+  const commissionOnly = buildCommissionAnalytics(report, history);
+  const compensationByTeam = new Map<string, number>();
+  for (const row of report.rows) {
+    const id = row.team?.id ?? "unassigned";
+    compensationByTeam.set(
+      id,
+      (compensationByTeam.get(id) ?? 0) + row.totalCompensation,
+    );
+  }
+
+  return {
+    trend: history.flatMap((item) => {
+      const point = adminSummaryPoint(item);
+      return point ? [point] : [];
+    }),
+    byTeam: commissionOnly.byTeam.map((team) => ({
+      ...team,
+      totalCompensation: compensationByTeam.get(team.id) ?? 0,
+    })),
+    byTier: commissionOnly.byTier,
+    previousSummary:
+      history.length > 1 ? history[history.length - 2]?.summary ?? null : null,
   };
 }
 
@@ -159,14 +260,13 @@ export function parseCommissionTableQuery(input: {
   direction?: string;
   page?: string;
   pageSize?: string;
-}): CommissionTableQuery {
+}, options: { salaryVisible?: boolean } = {}): CommissionTableQuery {
   const allowedSorts: CommissionSort[] = [
     "name",
     "closedDeals",
     "tier",
     "commission",
-    "baseSalary",
-    "totalCompensation",
+    ...(options.salaryVisible ? ["baseSalary" as const, "totalCompensation" as const] : []),
   ];
   const parsedSize = safePositiveInteger(input.pageSize, 10);
   return {
@@ -180,19 +280,22 @@ export function parseCommissionTableQuery(input: {
   };
 }
 
-function sortValue(row: CommissionRow, sort: CommissionSort): string | number {
+function sortValue(row: CommissionOnlyRow, sort: CommissionSort): string | number {
   if (sort === "name") return row.realName;
   if (sort === "closedDeals") return row.closedDeals;
   if (sort === "tier") return row.tierMinimum;
   if (sort === "commission") return row.commissionAmount;
-  if (sort === "baseSalary") return row.baseSalary;
-  return row.totalCompensation;
+  if (sort === "baseSalary" && "baseSalary" in row) return Number(row.baseSalary);
+  if (sort === "totalCompensation" && "totalCompensation" in row) {
+    return Number(row.totalCompensation);
+  }
+  return row.realName;
 }
 
-export function paginateCommissionRows(
-  rows: readonly CommissionRow[],
+export function paginateCommissionRows<Row extends CommissionOnlyRow>(
+  rows: readonly Row[],
   query: CommissionTableQuery,
-): CommissionTablePage {
+): CommissionTablePage<Row> {
   const needle = query.query.toLocaleLowerCase("en-US");
   const filtered = needle
     ? rows.filter((row) =>

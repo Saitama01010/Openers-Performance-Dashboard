@@ -313,7 +313,7 @@ export function AgentRoleDashboard({ data, userId }: { data: AgentData; userId: 
         <Panel actions={<Link className="ui-link" href="/commissions">View details</Link>} description="Current incomplete-month values are estimates from the Commission service." title="Commission snapshot">
           {commission ? (
             <div className={styles.commissionBody}>
-              <div className={styles.commissionTotal}><span>Estimated total compensation</span><strong>{money(commission.totalCompensation)}</strong><small>{commission.tierLabel}</small></div>
+              <div className={styles.commissionTotal}><span>Estimated commission</span><strong>{money(commission.commissionAmount)}</strong><small>{commission.tierLabel}</small></div>
               <div className={styles.commissionMeta}>
                 <div><span>Commission</span><strong>{money(commission.commissionAmount)}</strong></div>
                 <div><span>Closed deals</span><strong>{commission.closedDeals}</strong></div>

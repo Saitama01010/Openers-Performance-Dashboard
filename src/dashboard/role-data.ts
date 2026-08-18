@@ -7,6 +7,7 @@ import type { Actor } from "@/auth/authorization";
 import { resolveCurrentActor, type CurrentActor } from "@/auth/current-actor";
 import { assertRoleDashboardViewAccess } from "@/auth/feature-access";
 import { getCommissionReport } from "@/commissions/service";
+import { commissionOnlyRow } from "@/commissions/view-model";
 import { getCoachingRoomData } from "@/coaching/data";
 import { listCoachingReportsForCurrentActor } from "@/coaching/reports";
 import { resolveWeekWindow } from "@/coaching/week";
@@ -500,7 +501,12 @@ async function agentDashboardData(actor: CurrentActor, now: Date, selectedRange:
       transfers: evaluateTarget(shared.monthly.transferByAgent.get(actor.id) ?? 0, transferTarget?.targetValue ?? null),
       closedDeals: evaluateTarget(shared.monthly.closedByAgent.get(actor.id) ?? 0, closedTarget?.targetValue ?? null),
     },
-    commission: commission.status === "ready" ? commission.rows.find((row) => row.id === actor.id) ?? null : commission,
+    commission: commission.status === "ready"
+      ? (() => {
+          const row = commission.rows.find((item) => item.id === actor.id);
+          return row ? commissionOnlyRow(row) : null;
+        })()
+      : commission,
     coachingReports: shared.coachingReports,
     shadowing: shared.shadowing,
     manualFlags: shared.manualFlags,

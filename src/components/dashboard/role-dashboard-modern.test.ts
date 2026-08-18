@@ -48,6 +48,12 @@ describe("modern role dashboard contract", () => {
     expect(agent).not.toContain("value={<SourceValue metric={data.lastShift.transfers}");
     expect(agent).not.toContain('href="/admin');
     expect(agent).not.toContain('href="/coaching/room"');
+    expect(agent).toContain("commission.commissionAmount");
+    expect(agent).not.toContain("commission.baseSalary");
+    expect(agent).not.toContain("commission.totalCompensation");
+    expect(source("src/dashboard/role-data.ts")).toContain(
+      "commissionOnlyRow(row)",
+    );
     expect(manager).toContain("data.teamIds.length");
     expect(manager).toContain("<ManagerActions data={data} />");
   });

@@ -71,6 +71,7 @@ const manager: Actor = {
   role: "manager",
   teamIds: ["east"],
 };
+const admin: Actor = { id: "admin", role: "admin", teamIds: [] };
 
 function preview(fileContent = csv, existingMetrics: ExistingDialerMetric[] = []) {
   return previewDialerCsv({
@@ -79,7 +80,7 @@ function preview(fileContent = csv, existingMetrics: ExistingDialerMetric[] = []
     existingFileHashes: new Set(),
     mappings,
     existingMetrics,
-    actor: manager,
+    actor: admin,
   });
 }
 
@@ -427,14 +428,23 @@ describe("dialer import preview", () => {
     }
   });
 
-  it("marks out-of-scope rows as not importable", () => {
-    const result = preview();
-    const mia = result.agents.find((agent) => agent.agentKey === "mia patel");
-    const miaRow = result.rows.find((row) => row.agentKey === "mia patel");
+  it("marks every manager row as out of scope and not importable", () => {
+    const result = previewDialerCsv({
+      source: "dialer",
+      fileContent: csv,
+      existingFileHashes: new Set(),
+      mappings,
+      existingMetrics: [],
+      actor: manager,
+    });
 
-    expect(mia?.mappingStatus).toBe("out_of_scope");
-    expect(miaRow?.status).toBe("out_of_scope");
-    expect(miaRow?.importable).toBe(false);
+    for (const agentKey of ["ava rivera", "mia patel"]) {
+      const agent = result.agents.find((item) => item.agentKey === agentKey);
+      const row = result.rows.find((item) => item.agentKey === agentKey);
+      expect(agent?.mappingStatus).toBe("out_of_scope");
+      expect(row?.status).toBe("out_of_scope");
+      expect(row?.importable).toBe(false);
+    }
   });
 
   it("allows partial confirmation when mapped rows can be imported", () => {
@@ -484,7 +494,7 @@ describe("dialer import preview", () => {
         },
       ],
       existingMetrics: [],
-      actor: manager,
+      actor: admin,
     });
 
     expect(result.fileSummary.uniqueInvalidMappingAgents).toBe(1);
@@ -517,7 +527,7 @@ describe("dialer import preview", () => {
       existingFileHashes: new Set([hash]),
       mappings,
       existingMetrics,
-      actor: manager,
+      actor: admin,
     });
 
     expect(duplicate.duplicateFile).toBe(true);
@@ -535,7 +545,7 @@ describe("dialer import preview", () => {
       existingFileHashes: new Set([hash]),
       mappings,
       existingMetrics: [],
-      actor: manager,
+      actor: admin,
     });
 
     expect(duplicateWithNewRows.duplicateFile).toBe(true);
@@ -578,6 +588,12 @@ describe("dialer import preview", () => {
 });
 
 describe("server-side authorization policy", () => {
+  it("prevents managers from importing even for an assigned team", () => {
+    expect(
+      canImportForProfile(manager, { id: "agent-ava", teamIds: ["east"] }),
+    ).toBe(false);
+  });
+
   it("prevents managers from accessing or importing another team", () => {
     expect(
       canAccessProfile(manager, { id: "agent-mia", teamIds: ["west"] }),

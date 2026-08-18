@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { isNavigationItemActive } from "@/components/dashboard/dashboard-navigation";
+import { navigationForRole } from "@/components/dashboard/dashboard-navigation-config";
+
+function navigationLabels(role: "admin" | "manager" | "agent") {
+  return navigationForRole(role, `${role}-id`).flatMap((section) =>
+    section.items.map((item) => item.label),
+  );
+}
 
 describe("dashboard navigation active state", () => {
   it("marks exact routes as active", () => {
@@ -31,5 +38,11 @@ describe("dashboard navigation active state", () => {
       false,
     );
     expect(isNavigationItemActive("/admin/teams", "/admin/users")).toBe(false);
+  });
+
+  it("shows operational Imports navigation only to administrators", () => {
+    expect(navigationLabels("admin")).toContain("Imports");
+    expect(navigationLabels("manager")).not.toContain("Imports");
+    expect(navigationLabels("agent")).not.toContain("Imports");
   });
 });

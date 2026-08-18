@@ -21,7 +21,7 @@ describe("imports redesign interface contract", () => {
   it("keeps import route authorization and warning scope server-derived", () => {
     const page = source("src/app/import/page.tsx");
 
-    expect(page).toContain('if (user.role === "agent")');
+    expect(page).toContain('if (user.role !== "admin")');
     expect(page).toContain('redirect("/dashboard")');
     expect(page).toContain('isAdmin={user.role === "admin"}');
   });

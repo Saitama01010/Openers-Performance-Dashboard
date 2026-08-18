@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertPermission: vi.fn(),
+  confirmDialerImportBatch: vi.fn(),
   deactivateDialerImportBatch: vi.fn(),
   deleteDialerImportBatch: vi.fn(),
+  enqueueDialerPreviewBatch: vi.fn(),
   getCurrentUser: vi.fn(),
   listImportHistory: vi.fn(),
+  rejectDialerImportBatch: vi.fn(),
   revalidatePath: vi.fn(),
   redirect: vi.fn((location: string) => {
     throw new Error(`REDIRECT:${location}`);
@@ -31,10 +34,11 @@ vi.mock("@/auth/permissions", () => ({
 }));
 
 vi.mock("@/import/service", () => ({
-  confirmDialerImportBatch: vi.fn(),
+  confirmDialerImportBatch: mocks.confirmDialerImportBatch,
   createDialerPreviewBatch: vi.fn(),
+  enqueueDialerPreviewBatch: mocks.enqueueDialerPreviewBatch,
   ImportConfirmationError: class ImportConfirmationError extends Error {},
-  rejectDialerImportBatch: vi.fn(),
+  rejectDialerImportBatch: mocks.rejectDialerImportBatch,
   restoreDialerImportBatch: mocks.restoreDialerImportBatch,
   rollbackDialerImportBatch: mocks.rollbackDialerImportBatch,
   listImportHistory: mocks.listImportHistory,
@@ -51,8 +55,11 @@ vi.mock("@/import/active-lifecycle", () => ({
 }));
 
 import {
+  confirmImportAction,
   deactivateImportAction,
   deleteImportAction,
+  previewImportAction,
+  rejectImportAction,
   restoreImportAction,
   rollbackImportAction,
 } from "@/import/actions";
@@ -80,6 +87,87 @@ const BATCH_IDS = {
   restoreFiltered: "00000000-0000-4000-8000-000000000406",
   activeDelete: "00000000-0000-4000-8000-000000000407",
 } as const;
+
+function operationalFormData() {
+  const formData = new FormData();
+  formData.set(
+    "file",
+    new File(["Agent,Date,Calls\nExample,2026-08-18,1"], "import.csv", {
+      type: "text/csv",
+    }),
+  );
+  formData.set("reportingDate", "2026-08-18");
+  formData.set("batchId", BATCH_IDS.deactivate);
+  formData.set("reason", "Invalid import preview");
+  return formData;
+}
+
+describe("operational import authorization", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getCurrentUser.mockResolvedValue(admin);
+    mocks.assertPermission.mockResolvedValue(undefined);
+    mocks.enqueueDialerPreviewBatch.mockResolvedValue({
+      batchId: BATCH_IDS.deactivate,
+      status: "queued",
+    });
+    mocks.confirmDialerImportBatch.mockResolvedValue({});
+    mocks.rejectDialerImportBatch.mockResolvedValue({});
+  });
+
+  it("allows an administrator through upload, publish, and reject actions", async () => {
+    await expect(previewImportAction(operationalFormData())).rejects.toThrow(
+      `REDIRECT:/import?preview=${BATCH_IDS.deactivate}`,
+    );
+    await expect(confirmImportAction(operationalFormData())).rejects.toThrow(
+      `REDIRECT:/import?confirmed=${BATCH_IDS.deactivate}`,
+    );
+    await expect(rejectImportAction(operationalFormData())).rejects.toThrow(
+      "REDIRECT:/import?rejected=true",
+    );
+
+    expect(mocks.assertPermission).toHaveBeenCalledTimes(3);
+    expect(mocks.assertPermission).toHaveBeenNthCalledWith(
+      1,
+      admin,
+      "imports.company",
+    );
+    expect(mocks.enqueueDialerPreviewBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ actor: admin, source: "dialer" }),
+    );
+    expect(mocks.confirmDialerImportBatch).toHaveBeenCalledWith({
+      actor: admin,
+      batchId: BATCH_IDS.deactivate,
+    });
+    expect(mocks.rejectDialerImportBatch).toHaveBeenCalledWith({
+      actor: admin,
+      batchId: BATCH_IDS.deactivate,
+      reason: "Invalid import preview",
+    });
+  });
+
+  it.each(["manager", "agent"] as const)(
+    "denies %s upload, publish, and reject actions before service access",
+    async (role) => {
+      mocks.getCurrentUser.mockResolvedValue({ ...admin, id: role, role });
+
+      for (const action of [
+        previewImportAction,
+        confirmImportAction,
+        rejectImportAction,
+      ]) {
+        await expect(action(operationalFormData())).rejects.toThrow(
+          "REDIRECT:/dashboard",
+        );
+      }
+
+      expect(mocks.assertPermission).not.toHaveBeenCalled();
+      expect(mocks.enqueueDialerPreviewBatch).not.toHaveBeenCalled();
+      expect(mocks.confirmDialerImportBatch).not.toHaveBeenCalled();
+      expect(mocks.rejectDialerImportBatch).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe("import history cache revalidation", () => {
   beforeEach(() => {

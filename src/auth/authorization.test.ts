@@ -25,6 +25,7 @@ describe("authorization policy", () => {
   it("allows a manager to access only an overlapping team", () => {
     expect(canAccessProfile(manager, { id: "agent-a", teamIds: ["east"] })).toBe(true);
     expect(canAccessProfile(manager, { id: "agent-b", teamIds: ["west"] })).toBe(false);
+    expect(canImportForProfile(manager, { id: "agent-a", teamIds: ["east"] })).toBe(false);
   });
 
   it("fails closed for a manager with no team", () => {

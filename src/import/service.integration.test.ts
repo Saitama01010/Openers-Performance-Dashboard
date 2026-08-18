@@ -655,7 +655,7 @@ describe("versioned dialer import service integration", () => {
     );
   });
 
-  it("does not let managers override warnings", async () => {
+  it("does not let managers create imports, including drafts with warnings", async () => {
     const admin = await createActor("admin");
     const teamId = await createTeam(`Manager Warning ${newId()}`);
     const manager = await createActor("manager", [teamId]);
@@ -667,18 +667,13 @@ describe("versioned dialer import service integration", () => {
       fileContent,
     });
     await publishDialerImportBatch({ actor: admin, batchId: first.batchId });
-    const duplicate = await upload({
-      actor: manager,
-      fileName: "manager-warning-copy.csv",
-      fileContent,
-    });
-
     await expect(
-      publishDialerImportBatch({
+      upload({
         actor: manager,
-        batchId: duplicate.batchId,
+        fileName: "manager-warning-copy.csv",
+        fileContent,
       }),
-    ).rejects.toThrow("Only an administrator");
+    ).rejects.toThrow("Administrator access");
   });
 
   it("rejects unauthorized upload, publish, and rollback callers", async () => {
@@ -695,7 +690,7 @@ describe("versioned dialer import service integration", () => {
         fileName: "agent-upload.csv",
         fileContent: csvFor({ agentName: mapped.dialerName }),
       }),
-    ).rejects.toThrow("Agents cannot upload");
+    ).rejects.toThrow("Administrator access");
 
     const draft = await upload({
       actor: admin,
@@ -704,7 +699,7 @@ describe("versioned dialer import service integration", () => {
     });
     await expect(
       publishDialerImportBatch({ actor: manager, batchId: draft.batchId }),
-    ).rejects.toThrow("does not belong");
+    ).rejects.toThrow("Administrator access");
     await expect(
       rollbackDialerImportBatch({
         actor: agentActor,

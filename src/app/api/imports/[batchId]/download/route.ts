@@ -14,6 +14,9 @@ export async function GET(
   if (!actor) {
     return new Response("Unauthorized", { status: 401 });
   }
+  if (actor.role !== "admin") {
+    return new Response("Forbidden", { status: 403 });
+  }
 
   const { batchId } = await params;
   if (!uuidSchema.safeParse(batchId).success) {

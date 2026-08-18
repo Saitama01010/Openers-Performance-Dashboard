@@ -42,11 +42,7 @@ export function canAccessProfile(actor: Actor, target: ScopedProfile) {
 }
 
 export function canImportForProfile(actor: Actor, target: ScopedProfile) {
-  if (actor.role === "agent") {
-    return false;
-  }
-
-  return canAccessProfile(actor, target);
+  return actor.role === "admin" && canAccessProfile(actor, target);
 }
 
 export function assertCanAccessProfile(actor: Actor, target: ScopedProfile) {

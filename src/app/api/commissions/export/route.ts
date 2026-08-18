@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const actor = await getCurrentUser();
   if (!actor) return new Response("Unauthorized", { status: 401 });
-  if (actor.role === "agent") return new Response("Forbidden", { status: 403 });
+  if (actor.role !== "admin") return new Response("Forbidden", { status: 403 });
 
   const url = new URL(request.url);
   const commissionMonth = url.searchParams.get("commissionMonth")?.trim() || undefined;
@@ -27,9 +27,7 @@ export async function GET(request: Request) {
     }
     const teamName = report.selectedTeamId
       ? report.teams.find((team) => team.id === report.selectedTeamId)?.name
-      : actor.role === "manager" && report.teams.length === 1
-        ? report.teams[0].name
-        : null;
+      : null;
     const fileName = safeCommissionFilename(report.month.key, teamName);
     return new Response(`\uFEFF${commissionsCsv(report.rows)}`, {
       headers: {

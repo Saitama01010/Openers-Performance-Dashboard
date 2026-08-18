@@ -230,18 +230,9 @@ function assertCanAccessBatch(
   actor: Actor,
   batch: { uploadedById: string; organizationId: string },
 ) {
+  assertAdmin(actor);
   if (batch.organizationId !== actorOrganizationId(actor)) {
     throw new ImportConfirmationError("Import batch was not found.", "forbidden");
-  }
-  if (actor.role === "agent") {
-    throw new ImportConfirmationError("Agents cannot access imports.", "forbidden");
-  }
-
-  if (actor.role !== "admin" && batch.uploadedById !== actor.id) {
-    throw new ImportConfirmationError(
-      "Import batch does not belong to this uploader.",
-      "forbidden",
-    );
   }
 }
 
@@ -912,6 +903,7 @@ export async function processDialerBatch(input: {
   revalidation?: boolean;
   jobLease?: ImportJobLease;
 }) {
+  assertAdmin(input.actor);
   const [batch] = await getDb()
     .select()
     .from(dialerImportBatches)
@@ -1086,6 +1078,7 @@ export async function createDialerPreviewBatch(input: {
   dialerId?: string | null;
   selectedReportingDate?: string | null;
   }) {
+    assertAdmin(input.actor);
     const queued = await enqueueDialerPreviewBatch(input);
     try {
       const processed = await processDialerBatch({
@@ -1122,9 +1115,7 @@ export async function enqueueDialerPreviewBatch(input: {
   dialerId?: string | null;
   selectedReportingDate?: string | null;
 }) {
-  if (input.actor.role === "agent") {
-    throw new ImportConfirmationError("Agents cannot upload imports.", "forbidden");
-  }
+  assertAdmin(input.actor);
 
   const fileBuffer = Buffer.isBuffer(input.fileContent)
     ? input.fileContent
@@ -1222,6 +1213,7 @@ export async function getStoredImportPreview(input: {
   actor: Actor;
   batchId: string;
 }) {
+  assertAdmin(input.actor);
   const [batch] = await getDb()
     .select({
       id: dialerImportBatches.id,
@@ -1274,6 +1266,7 @@ export async function getImportProcessingStatus(input: {
   actor: Actor;
   batchId: string;
 }) {
+  assertAdmin(input.actor);
   const [row] = await getDb()
     .select({
       batchId: importJobs.batchId,
@@ -1289,9 +1282,6 @@ export async function getImportProcessingStatus(input: {
         eq(importJobs.batchId, input.batchId),
         eq(importJobs.organizationId, actorOrganizationId(input.actor)),
         eq(dialerImportBatches.organizationId, actorOrganizationId(input.actor)),
-        input.actor.role === "admin"
-          ? sql`true`
-          : eq(dialerImportBatches.uploadedById, input.actor.id),
       ),
     )
     .limit(1);
@@ -1324,6 +1314,7 @@ export async function publishDialerImportBatch(input: {
   actor: Actor;
   batchId: string;
 }) {
+  assertAdmin(input.actor);
   await processDialerBatch({
     actor: input.actor,
     batchId: input.batchId,
@@ -1541,6 +1532,7 @@ export async function confirmDialerImportBatch(input: {
   batchId: string;
   allowPartialImport?: boolean;
 }) {
+  assertAdmin(input.actor);
   return publishDialerImportBatch({
     actor: input.actor,
     batchId: input.batchId,
@@ -1552,6 +1544,7 @@ export async function rejectDialerImportBatch(input: {
   batchId: string;
   reason: string;
 }) {
+  assertAdmin(input.actor);
   const reason = validateReason(input.reason, "Rejection reason");
 
   return getDb().transaction(async (tx) => {
@@ -2293,6 +2286,7 @@ export async function getImportDetails(actor: Actor, batchId: string) {
 }
 
 export async function getImportFile(actor: Actor, batchId: string) {
+  assertAdmin(actor);
   const [batch] = await getDb()
     .select({
       id: dialerImportBatches.id,

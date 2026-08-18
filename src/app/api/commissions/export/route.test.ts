@@ -11,16 +11,18 @@ import { GET } from "@/app/api/commissions/export/route";
 import { resolveCommissionMonth } from "@/commissions/month";
 import { buildCommissionReport } from "@/commissions/report";
 
+const admin = { id: "admin", email: "admin@example.com", name: "Admin", role: "admin" as const, teamIds: [], organizationId: "org" };
 const manager = { id: "manager", email: "manager@example.com", name: "Manager", role: "manager" as const, teamIds: ["east"], organizationId: "org" };
 
 function readyReport() {
   return buildCommissionReport({
-    role: "manager",
+    role: "admin",
     month: resolveCommissionMonth("2026-08", new Date("2026-08-15T00:00:00Z"), "Africa/Cairo"),
     timeZone: "Africa/Cairo",
     employees: [{ id: "agent", realName: "Jane Doe", americanName: "Jane", email: "jane@example.com", active: true, team: { id: "east", name: "East Team" } }],
     deals: [],
     teams: [{ id: "east", name: "East Team" }],
+    selectedTeamId: "east",
   });
 }
 
@@ -35,14 +37,20 @@ describe("commission export route", () => {
     expect((await GET(new Request("http://localhost/api/commissions/export"))).status).toBe(401);
   });
 
-  it("returns 403 to agents without calling the report service", async () => {
-    getCurrentUser.mockResolvedValue({ ...manager, id: "agent", role: "agent" });
-    expect((await GET(new Request("http://localhost/api/commissions/export?commissionMonth=2026-08"))).status).toBe(403);
+  it.each([
+    ["manager", manager],
+    ["agent", { ...manager, id: "agent", role: "agent" as const }],
+  ])("returns 403 to a %s before query parameters or the report service can bypass authorization", async (_role, actor) => {
+    getCurrentUser.mockResolvedValue(actor);
+    const response = await GET(
+      new Request("http://localhost/api/commissions/export?commissionMonth=2026-08&team=east"),
+    );
+    expect(response.status).toBe(403);
     expect(getCommissionReport).not.toHaveBeenCalled();
   });
 
   it("returns 503 instead of a misleading header-only CSV on source failure", async () => {
-    getCurrentUser.mockResolvedValue(manager);
+    getCurrentUser.mockResolvedValue(admin);
     getCommissionReport.mockResolvedValue({ status: "source_unavailable", month: resolveCommissionMonth("2026-08"), message: "Unavailable" });
     const response = await GET(new Request("http://localhost/api/commissions/export?commissionMonth=2026-08"));
     expect(response.status).toBe(503);
@@ -50,26 +58,32 @@ describe("commission export route", () => {
   });
 
   it("rejects export when only stale cached Closed data is available", async () => {
-    getCurrentUser.mockResolvedValue(manager);
+    getCurrentUser.mockResolvedValue(admin);
     getCommissionReport.mockResolvedValue({ ...readyReport(), stale: true });
     const response = await GET(new Request("http://localhost/api/commissions/export?commissionMonth=2026-08"));
     expect(response.status).toBe(503);
     expect(response.headers.get("content-type")).not.toContain("text/csv");
   });
 
-  it("exports the exact six-column schema from the shared report", async () => {
-    getCurrentUser.mockResolvedValue(manager);
+  it("exports the admin payroll schema with aligned salary, total compensation, and preserved download behavior", async () => {
+    getCurrentUser.mockResolvedValue(admin);
     getCommissionReport.mockResolvedValue(readyReport());
     const response = await GET(new Request("http://localhost/api/commissions/export?commissionMonth=2026-08"));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toContain("commissions-2026-08-east-team.csv");
-    const lines = (await response.text()).replace(/^\uFEFF/, "").split("\r\n");
-    expect(lines[0]).toBe("Real Name,American Name,Email,Team,Closed Deals,Commission in EGP");
-    expect(lines[1]).toBe("Jane Doe,Jane,jane@example.com,East Team,0,0");
+    expect(response.headers.get("content-type")).toContain("text/csv");
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    const lines = new TextDecoder().decode(bytes.slice(3)).split("\r\n");
+    expect(lines[0]).toBe(
+      "Real Name,American Name,Email,Team,Closed Deals,Commission in EGP,Salary in EGP,Total Compensation in EGP",
+    );
+    expect(lines[1]).toBe("Jane Doe,Jane,jane@example.com,East Team,0,0,14000,14000");
   });
 
   it("maps invalid months to 400 and unauthorized filters to 403", async () => {
-    getCurrentUser.mockResolvedValue(manager);
+    getCurrentUser.mockResolvedValue(admin);
     getCommissionReport.mockRejectedValueOnce(new RangeError("Invalid month"));
     expect((await GET(new Request("http://localhost/api/commissions/export?commissionMonth=nope"))).status).toBe(400);
     getCommissionReport.mockRejectedValueOnce(new Error("Forbidden"));

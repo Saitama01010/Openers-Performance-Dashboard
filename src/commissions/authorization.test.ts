@@ -21,18 +21,21 @@ describe("commission permissions", () => {
     expect(assertPermission).toHaveBeenCalledWith(expect.objectContaining({ role }), permission);
   });
 
-  it("denies agent export before any permission lookup", async () => {
-    await expect(
-      assertCommissionsExportAccess({ id: "agent", role: "agent", teamIds: [] }),
-    ).rejects.toThrow("Forbidden");
-    expect(assertPermission).not.toHaveBeenCalled();
-  });
+  it.each(["manager", "agent"] as const)(
+    "denies %s export before any permission lookup",
+    async (role) => {
+      await expect(
+        assertCommissionsExportAccess({ id: role, role, teamIds: [] }),
+      ).rejects.toThrow("Forbidden");
+      expect(assertPermission).not.toHaveBeenCalled();
+    },
+  );
 
-  it.each([
-    ["admin", "commissions.export_company"],
-    ["manager", "commissions.export_team"],
-  ] as const)("uses the narrow %s export permission", async (role, permission) => {
-    await assertCommissionsExportAccess({ id: "actor", role, teamIds: [] });
-    expect(assertPermission).toHaveBeenCalledWith(expect.objectContaining({ role }), permission);
+  it("uses the company export permission for an administrator", async () => {
+    await assertCommissionsExportAccess({ id: "admin", role: "admin", teamIds: [] });
+    expect(assertPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "admin" }),
+      "commissions.export_company",
+    );
   });
 });

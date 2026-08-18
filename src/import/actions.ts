@@ -36,16 +36,7 @@ function validReason(value: unknown): value is string {
 }
 
 export async function previewImportAction(formData: FormData) {
-  const user = await getCurrentUser();
-
-  if (!user || user.role === "agent") {
-    redirect("/login");
-  }
-
-  await assertPermission(
-    user,
-    user.role === "admin" ? "imports.company" : "imports.team",
-  );
+  const user = await requireAdminMutation();
 
   const file = formData.get("file");
 
@@ -97,16 +88,7 @@ export async function previewImportAction(formData: FormData) {
 }
 
 export async function confirmImportAction(formData: FormData) {
-  const user = await getCurrentUser();
-
-  if (!user || user.role === "agent") {
-    redirect("/login");
-  }
-
-  await assertPermission(
-    user,
-    user.role === "admin" ? "imports.company" : "imports.team",
-  );
+  const user = await requireAdminMutation();
 
   const batchId = formData.get("batchId");
 
@@ -143,16 +125,7 @@ export async function confirmImportAction(formData: FormData) {
 }
 
 export async function rejectImportAction(formData: FormData) {
-  const user = await getCurrentUser();
-
-  if (!user || user.role === "agent") {
-    redirect("/login");
-  }
-
-  await assertPermission(
-    user,
-    user.role === "admin" ? "imports.company" : "imports.team",
-  );
+  const user = await requireAdminMutation();
 
   const batchId = formData.get("batchId");
   const reason = formData.get("reason");

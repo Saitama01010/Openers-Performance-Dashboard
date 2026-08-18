@@ -290,6 +290,7 @@ export const PERMISSION_PRESENTATION: Record<
 export const ADMIN_ONLY_PERMISSIONS = new Set([
   "users.manage_permissions",
   "users.assign_role",
+  "users.create_team_agent",
   "users.deactivate_team_agent",
   "users.terminate_team_agent",
   "integrations.manage",
@@ -336,7 +337,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, string[]> = {
     "shadowing.manage_team",
     "flags.raise_team_case",
     "flags.update_team_case",
-    "users.create_team_agent",
   ],
   agent: [
     "metrics.view_own",

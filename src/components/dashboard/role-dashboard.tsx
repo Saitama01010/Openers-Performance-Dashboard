@@ -18,7 +18,6 @@ import {
   completeShadowingAction,
   createManualFlagAction,
   createShadowingAction,
-  createTeamAgentAction,
   transitionCoachingReportAction,
   updateManualFlagAction,
 } from "@/dashboard/actions";
@@ -182,7 +181,7 @@ export function AgentRoleDashboard({ data, userId }: { data: AgentData; userId: 
         </Section> : null}
       </div>
       <Section title="My commission" description="Calculated by the existing Commission service; the current incomplete month is an estimate." actions={<Link className="ui-link" href="/commissions">Open Commissions</Link>}>
-        {commission ? <div className="role-metric-grid"><Metric label="Closed deals" value={commission.closedDeals} /><Metric label="Tier" value={commission.tierLabel} /><Metric label="Rate per deal" value={money(commission.ratePerDeal)} /><Metric label="Estimated commission" value={money(commission.commissionAmount)} /><Metric label="Base salary" value={money(commission.baseSalary)} /><Metric label="Estimated total" value={money(commission.totalCompensation)} detail={commission.dealsUntilNextTier === null ? "Uncapped 25+ tier" : `${commission.dealsUntilNextTier} deals until next tier`} /></div> : <p className="role-empty">Commission is unavailable because authoritative closed-deal data is unavailable.</p>}
+        {commission ? <div className="role-metric-grid"><Metric label="Closed deals" value={commission.closedDeals} /><Metric label="Tier" value={commission.tierLabel} /><Metric label="Rate per deal" value={money(commission.ratePerDeal)} /><Metric label="Estimated commission" value={money(commission.commissionAmount)} detail={commission.dealsUntilNextTier === null ? "Uncapped 25+ tier" : `${commission.dealsUntilNextTier} deals until next tier`} /></div> : <p className="role-empty">Commission is unavailable because authoritative closed-deal data is unavailable.</p>}
       </Section>
       <div className="role-two-column">
         <Section title="My coaching and QA" description="Only finalized reports published to you appear here.">
@@ -228,11 +227,9 @@ export function PersonalPerformanceSummary({ data }: { data: AgentData }) {
 }
 
 export function ManagerActions({ data }: { data: ManagerData }) {
-  const destinations = data.teamCompetition;
   return (
-    <Section title="Operational actions" description="Every mutation rechecks your current assigned-team scope on the server.">
+    <Section title="Manager actions" description="Schedule coaching follow-up or raise a case for an agent in your assigned teams.">
       <div className="role-action-grid">
-        <details><summary>Add team agent</summary><form action={createTeamAgentAction} className="role-form"><label className="ui-label">Name<input className="ui-input" name="name" required /></label><label className="ui-label">Email<input className="ui-input" name="email" required type="email" /></label><label className="ui-label">Assigned team<select className="ui-select" name="teamId" required>{destinations.filter((team) => data.teamIds.includes(team.teamId)).map((team) => <option key={team.teamId} value={team.teamId}>{team.teamName}</option>)}</select></label><label className="ui-label">Dialer name<input className="ui-input" name="dialerName" required /></label><label className="ui-label">Employment start<input className="ui-input" name="employmentStartDate" type="date" /></label><SubmitButton>Create agent</SubmitButton></form></details>
         <details><summary>Schedule shadowing</summary><form action={createShadowingAction} className="role-form"><AgentSelect name="agentProfileId" rows={data.rows} /><label className="ui-label">Scheduled date<input className="ui-input" name="scheduledDate" required type="date" /></label><label className="ui-label">Objective<textarea className="ui-textarea" name="objective" required /></label><SubmitButton>Schedule</SubmitButton></form></details>
         <details><summary>Raise manual flag</summary><form action={createManualFlagAction} className="role-form"><AgentSelect name="agentProfileId" rows={data.rows} /><label className="ui-label">Category<input className="ui-input" name="category" required /></label><label className="ui-label">Severity<select className="ui-select" name="severity"><option>low</option><option>medium</option><option>high</option><option>critical</option></select></label><label className="ui-label">Reason<textarea className="ui-textarea" name="reason" required /></label><label className="ui-checkbox-label"><input name="publishToAgent" type="checkbox" />Publish agent-facing reason</label><SubmitButton>Raise case</SubmitButton></form></details>
       </div>

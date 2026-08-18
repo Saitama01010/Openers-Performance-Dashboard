@@ -64,7 +64,13 @@ export function navigationForRole(role: Role, userId: string) {
           flagsItem,
           commissionsItem,
         ]
-      : [...primaryItems, coachingItem, flagsItem, commissionsItem, importItem];
+      : [
+          ...primaryItems,
+          coachingItem,
+          flagsItem,
+          commissionsItem,
+          ...(role === "admin" ? [importItem] : []),
+        ];
 
   return [
     { label: "Workspace", items: workspaceItems },

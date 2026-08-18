@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { resolveCommissionMonth } from "@/commissions/month";
 import { buildCommissionReport, type CommissionEmployee } from "@/commissions/report";
 import {
+  buildAdminCommissionAnalytics,
   buildCommissionAnalytics,
+  commissionOnlyRow,
+  commissionOnlySummary,
   paginateCommissionRows,
   parseCommissionTableQuery,
 } from "@/commissions/view-model";
@@ -90,5 +93,65 @@ describe("commission dashboard view model", () => {
   it("does not create a comparison when no previous authoritative month is supplied", () => {
     const august = report("2026-08");
     expect(buildCommissionAnalytics(august, [august]).previousSummary).toBeNull();
+  });
+
+  it("produces salary-free agent and manager contracts while preserving commission", () => {
+    const july = report("2026-07");
+    const august = report("2026-08");
+    const agent = commissionOnlyRow(august.rows[0]);
+    const managerSummary = commissionOnlySummary(august.summary!);
+    const managerAnalytics = buildCommissionAnalytics(august, [july, august]);
+    const serialized = JSON.stringify({
+      agent,
+      managerSummary,
+      managerAnalytics,
+    });
+
+    expect(agent.commissionAmount).toBe(2_000);
+    expect(agent).not.toHaveProperty("baseSalary");
+    expect(agent).not.toHaveProperty("totalCompensation");
+    expect(managerSummary.totalCommission).toBe(6_400);
+    expect(managerSummary).not.toHaveProperty("totalBaseSalaries");
+    expect(managerSummary).not.toHaveProperty("totalCompensation");
+    expect(managerAnalytics.byTeam.map((team) => team.commission)).toEqual([
+      4_400,
+      2_000,
+    ]);
+    expect(serialized).not.toMatch(
+      /baseSalary|baseSalaries|totalBaseSalaries|totalCompensation/,
+    );
+  });
+
+  it("preserves every salary and compensation aggregate in the admin contract", () => {
+    const july = report("2026-07");
+    const august = report("2026-08");
+    const analytics = buildAdminCommissionAnalytics(august, [july, august]);
+
+    expect(august.rows[0]).toMatchObject({
+      baseSalary: 14_000,
+      totalCompensation: 16_000,
+    });
+    expect(august.summary).toMatchObject({
+      totalBaseSalaries: 28_000,
+      totalCompensation: 34_400,
+    });
+    expect(analytics.trend.at(-1)).toMatchObject({
+      baseSalaries: 28_000,
+      totalCompensation: 34_400,
+    });
+    expect(analytics.byTeam.map((team) => team.totalCompensation)).toEqual([
+      18_400,
+      16_000,
+    ]);
+  });
+
+  it("does not accept salary sort keys for a manager contract", () => {
+    expect(parseCommissionTableQuery({ sort: "baseSalary" }).sort).toBe("name");
+    expect(
+      parseCommissionTableQuery(
+        { sort: "baseSalary" },
+        { salaryVisible: true },
+      ).sort,
+    ).toBe("baseSalary");
   });
 });

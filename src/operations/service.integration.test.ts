@@ -287,11 +287,11 @@ describe("team-scoped performance operations", () => {
       email: `stale-agent-${suffix}@example.com`,
       teamId: ids.east,
       dialerName: `Stale Dialer ${suffix}`,
-    })).rejects.toThrow(/assigned teams/);
+    })).rejects.toThrow("Forbidden");
   });
 
-  it("lets a manager create only an agent in an assigned team without custom permissions", async () => {
-    const created = await createTeamAgent(eastManager, {
+  it("reserves agent creation for administrators", async () => {
+    const created = await createTeamAgent(admin, {
       name: "Created Agent",
       email: `created-agent-${suffix}@example.com`,
       teamId: ids.east,
@@ -310,7 +310,7 @@ describe("team-scoped performance operations", () => {
       email: `wrong-team-${suffix}@example.com`,
       teamId: ids.west,
       dialerName: `Wrong Team ${suffix}`,
-    })).rejects.toThrow(/assigned teams/);
+    })).rejects.toThrow("Forbidden");
     await expect(createAdminUser(eastManager, {
       name: "Forbidden Manager",
       email: `forbidden-manager-${suffix}@example.com`,

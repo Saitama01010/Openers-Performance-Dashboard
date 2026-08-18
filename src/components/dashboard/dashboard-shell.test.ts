@@ -23,8 +23,9 @@ describe("dashboard shell navigation by role", () => {
     ]);
   });
 
-  it("shows scoped analysis and imports, but no administration, to managers", () => {
-    expect(destinations("manager")).toEqual([
+  it("shows scoped analysis, but neither imports nor administration, to managers", () => {
+    const managerDestinations = destinations("manager");
+    expect(managerDestinations).toEqual([
       "/dashboard",
       "/performance",
       "/leaderboard",
@@ -33,8 +34,8 @@ describe("dashboard shell navigation by role", () => {
       "/coaching",
       "/flags",
       "/commissions",
-      "/import",
     ]);
+    expect(managerDestinations).not.toContain("/import");
   });
 
   it("shows workspace and administration routes to administrators", () => {

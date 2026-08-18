@@ -1,7 +1,7 @@
 import type { CommissionRow } from "@/commissions/report";
 
 export const COMMISSION_CSV_HEADER =
-  "Real Name,American Name,Email,Team,Closed Deals,Commission in EGP";
+  "Real Name,American Name,Email,Team,Closed Deals,Commission in EGP,Salary in EGP,Total Compensation in EGP";
 
 function neutralizeFormula(value: string) {
   return /^[\s]*[=+\-@]/.test(value) ? `'${value}` : value;
@@ -23,6 +23,8 @@ export function commissionsCsv(rows: readonly CommissionRow[]) {
         row.team?.name ?? "",
         row.closedDeals,
         row.commissionAmount,
+        row.baseSalary,
+        row.totalCompensation,
       ].map(csvCell).join(","),
     ),
   ].join("\r\n");

@@ -56,13 +56,8 @@ export async function assertCommissionsViewAccess(actor: Actor) {
 }
 
 export async function assertCommissionsExportAccess(actor: Actor) {
-  if (actor.role === "agent") throw new Error("Forbidden");
-  await assertPermission(
-    actor,
-    actor.role === "admin"
-      ? "commissions.export_company"
-      : "commissions.export_team",
-  );
+  if (actor.role !== "admin") throw new Error("Forbidden");
+  await assertPermission(actor, "commissions.export_company");
 }
 
 export async function assertRoleDashboardViewAccess(actor: Actor) {

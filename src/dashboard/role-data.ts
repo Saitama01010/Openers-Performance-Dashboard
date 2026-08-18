@@ -7,6 +7,7 @@ import type { Actor } from "@/auth/authorization";
 import { resolveCurrentActor, type CurrentActor } from "@/auth/current-actor";
 import { assertRoleDashboardViewAccess } from "@/auth/feature-access";
 import { getCommissionReport } from "@/commissions/service";
+import { commissionOnlyRow } from "@/commissions/view-model";
 import { getCoachingRoomData } from "@/coaching/data";
 import { listCoachingReportsForCurrentActor } from "@/coaching/reports";
 import { resolveWeekWindow } from "@/coaching/week";
@@ -21,6 +22,10 @@ import {
   employmentTenureDays,
   resolveTenureThreshold,
 } from "@/dashboard/low-performance";
+import {
+  resolveManagerAgentSort,
+  sortManagerAgentRows,
+} from "@/dashboard/manager-agent-sort";
 import {
   loadRoleDashboardOutcomeSource,
   outcomeSnapshot,
@@ -500,7 +505,12 @@ async function agentDashboardData(actor: CurrentActor, now: Date, selectedRange:
       transfers: evaluateTarget(shared.monthly.transferByAgent.get(actor.id) ?? 0, transferTarget?.targetValue ?? null),
       closedDeals: evaluateTarget(shared.monthly.closedByAgent.get(actor.id) ?? 0, closedTarget?.targetValue ?? null),
     },
-    commission: commission.status === "ready" ? commission.rows.find((row) => row.id === actor.id) ?? null : commission,
+    commission: commission.status === "ready"
+      ? (() => {
+          const row = commission.rows.find((item) => item.id === actor.id);
+          return row ? commissionOnlyRow(row) : null;
+        })()
+      : commission,
     coachingReports: shared.coachingReports,
     shadowing: shared.shadowing,
     manualFlags: shared.manualFlags,
@@ -517,7 +527,15 @@ export function scopeManagerTeamCompetition<
   return rows.filter((row) => assigned.has(row.teamId));
 }
 
-async function managerDashboardData(actor: CurrentActor, now: Date, selectedRange: OverviewDateRange, requestedPage = 1, timeZone = "Africa/Cairo") {
+async function managerDashboardData(
+  actor: CurrentActor,
+  now: Date,
+  selectedRange: OverviewDateRange,
+  requestedPage = 1,
+  requestedSort?: string,
+  requestedDirection?: string,
+  timeZone = "Africa/Cairo",
+) {
   const shared = await sharedInputs(actor, now, selectedRange, timeZone);
   const agentIds = shared.scopedAgents.map((agent) => agent.id);
   const employment = await profileEmployment(agentIds);
@@ -612,16 +630,19 @@ async function managerDashboardData(actor: CurrentActor, now: Date, selectedRang
   const readyCoverages = rows.flatMap((row) =>
     row.coverage.status === "ready" ? [row.coverage.percentage] : [],
   );
+  const agentTableSort = resolveManagerAgentSort(requestedSort, requestedDirection);
+  const sortedRows = sortManagerAgentRows(rows, agentTableSort);
   const pageSize = 50;
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const page = Math.min(pageCount, Math.max(1, Math.trunc(requestedPage)));
   return {
     period: selectedRange,
     source: shared.outcomeSource,
     teamIds: actor.teamIds,
     rows,
-    visibleRows: rows.slice((page - 1) * pageSize, page * pageSize),
+    visibleRows: sortedRows.slice((page - 1) * pageSize, page * pageSize),
     pagination: { page, pageSize, pageCount, total: rows.length },
+    agentTableSort,
     totals: {
       activeAgents: rows.length,
       transfers: sourceValue(shared.todaySnapshot.transfers.value ?? undefined, shared.todaySnapshot.transfers.status === "ready"),
@@ -987,14 +1008,32 @@ async function adminDashboardData(actor: CurrentActor, now: Date, selectedRange:
 
 export async function getRoleDashboardData(
   actor: Actor,
-  input: { dateRange: OverviewDateRange; now?: Date; page?: number; timeZone?: string },
+  input: {
+    dateRange: OverviewDateRange;
+    managerDirection?: string;
+    managerSort?: string;
+    now?: Date;
+    page?: number;
+    timeZone?: string;
+  },
 ): Promise<RoleDashboardData> {
   const currentActor = await resolveCurrentActor(actor);
   await assertRoleDashboardViewAccess(currentActor);
   const now = input.now ?? new Date();
   const timeZone = input.timeZone ?? "Africa/Cairo";
   if (currentActor.role === "agent") return { role: "agent", data: await agentDashboardData(currentActor, now, input.dateRange, timeZone) };
-  if (currentActor.role === "manager") return { role: "manager", data: await managerDashboardData(currentActor, now, input.dateRange, input.page, timeZone) };
+  if (currentActor.role === "manager") return {
+    role: "manager",
+    data: await managerDashboardData(
+      currentActor,
+      now,
+      input.dateRange,
+      input.page,
+      input.managerSort,
+      input.managerDirection,
+      timeZone,
+    ),
+  };
   return { role: "admin", data: await adminDashboardData(currentActor, now, input.dateRange, timeZone) };
 }
 

@@ -186,7 +186,7 @@ export default async function ImportPage({
     redirect("/login");
   }
 
-  if (user.role === "agent") {
+  if (user.role !== "admin") {
     redirect("/dashboard");
   }
 

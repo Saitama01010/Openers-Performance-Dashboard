@@ -8,7 +8,7 @@ const client = readFileSync(
 );
 
 describe("commissions UI contract", () => {
-  it("renders the complete authorized manager and admin report", () => {
+  it("retains the complete salary report for administrators", () => {
     for (const header of [
       "Real Name",
       "American Name",
@@ -30,22 +30,42 @@ describe("commissions UI contract", () => {
     ]) {
       expect(client).toContain(section);
     }
+    expect(page).toContain("buildAdminCommissionAnalytics");
+    expect(page).toContain('role: "admin" as const');
   });
 
   it("creates a distinct personal earnings experience without organization controls", () => {
     expect(page).toContain('if (actor.role === "agent")');
     expect(page).toContain('role: "agent"');
-    expect(page).toContain("row: report.rows[0] ?? null");
+    expect(page).toContain("commissionOnlyRow(report.rows[0])");
     expect(client).toContain("My commission progress");
     expect(client).toContain("My commission trend");
     expect(page).toContain("Your commission record");
     expect(client).toContain('data.role === "agent"');
-    expect(client).toContain("exportHref={data.exportHref}");
+    expect(client).toContain('data.role === "admin" ? data.exportHref : undefined');
     expect(client).not.toContain("agentExportHref");
+    const agentDashboard = client.slice(client.indexOf("function AgentDashboard"));
+    expect(agentDashboard).toContain("Commission Earned");
+    expect(agentDashboard).not.toContain("Base Salary");
+    expect(agentDashboard).not.toContain("Total Compensation");
+  });
+
+  it("uses salary-free DTOs for manager props and salary-visible DTOs for admin props", () => {
+    expect(client).toContain("type ManagerCommissionData");
+    expect(client).toContain("summary: CommissionOnlySummary");
+    expect(client).toContain("table: CommissionTablePage<CommissionOnlyRow>");
+    const managerType = client.slice(
+      client.indexOf("export type ManagerCommissionData"),
+      client.indexOf("export type OrganizationCommissionData"),
+    );
+    expect(managerType).not.toContain("exportHref");
+    expect(page).toContain("summary: commissionOnlySummary(summary)");
+    expect(page).toContain("report.rows.map(commissionOnlyRow)");
+    expect(client).toContain('data.role === "admin" && visible("Base Salary")');
   });
 
   it("keeps source failures truthful and the commission month independent", () => {
-    expect(page).toContain("Commission and base-only totals were not calculated");
+    expect(page).toContain("Commission values were not calculated");
     expect(page).toContain("params.commissionMonth");
     expect(page).not.toContain("resolveOverviewDateRange");
     expect(client).toContain('type="month"');

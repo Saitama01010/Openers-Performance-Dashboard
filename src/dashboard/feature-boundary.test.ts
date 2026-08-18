@@ -89,7 +89,7 @@ describe("role dashboard feature boundary", () => {
     expect(component).not.toContain("Deactivate access");
     expect(component).not.toContain("Terminate employment");
     expect(component).not.toContain("employmentAction");
-    expect(component).toContain("Add team agent");
+    expect(component).not.toContain("Add team agent");
     expect(component).toContain("Schedule shadowing");
     expect(component).toContain("Raise manual flag");
   });

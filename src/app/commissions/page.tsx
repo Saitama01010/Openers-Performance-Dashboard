@@ -130,7 +130,6 @@ export default async function CommissionsPage({
     selectedTeamId: report.selectedTeamId,
     showTeamFilter:
       actor.role === "admin" ? report.teams.length > 0 : report.teams.length > 1,
-    exportHref: exportHref(report.month.key, report.selectedTeamId),
   };
   const data: AdminCommissionData | ManagerCommissionData =
     actor.role === "admin"
@@ -142,6 +141,7 @@ export default async function CommissionsPage({
           return {
             ...common,
             role: "admin" as const,
+            exportHref: exportHref(report.month.key, report.selectedTeamId),
             summary,
             previousSummary: analytics.previousSummary,
             analytics,

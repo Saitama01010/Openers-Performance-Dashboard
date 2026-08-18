@@ -59,7 +59,6 @@ export type ManagerCommissionData = SharedData & {
   teams: { id: string; name: string }[];
   selectedTeamId?: string;
   showTeamFilter: boolean;
-  exportHref: string;
   table: CommissionTablePage<CommissionOnlyRow>;
 };
 
@@ -472,7 +471,7 @@ function OrganizationDashboard({ data }: { data: OrganizationCommissionData }) {
       ]
     : commonMetricCards;
   return <>
-    <PageHeader data={data} exportHref={data.exportHref} />
+    <PageHeader data={data} exportHref={data.role === "admin" ? data.exportHref : undefined} />
     <StatusNotice data={data} />
     {data.showTeamFilter ? <div className={styles.scopeToolbar}><label>Team<select aria-label="Filter commission dashboard by team" disabled={pending} onChange={(event) => updateParams({ team: event.target.value || null, page: "1" })} value={data.selectedTeamId ?? ""}><option value="">All authorized teams</option>{data.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>{data.selectedTeamId ? <button onClick={() => updateParams({ team: null, page: "1" })} type="button">Clear team filter</button> : null}</div> : null}
     <div className={styles.metricGrid}>{metricCards.map((card) => <MetricCard details={card.title === "Total commission" ? "Higher achieved tiers apply to every valid deal in the selected month." : undefined} employees={data.summary.totalEmployees} icon={card.icon} key={card.title} month={data.month.label} numericValue={card.numeric} previous={card.previous} source={data.closedGeneratedAt ?? data.sourceFetchedAt} support={card.support} title={card.title} tone={card.tone} value={card.value} />)}</div>

@@ -42,7 +42,7 @@ describe("commissions UI contract", () => {
     expect(client).toContain("My commission trend");
     expect(page).toContain("Your commission record");
     expect(client).toContain('data.role === "agent"');
-    expect(client).toContain("exportHref={data.exportHref}");
+    expect(client).toContain('data.role === "admin" ? data.exportHref : undefined');
     expect(client).not.toContain("agentExportHref");
     const agentDashboard = client.slice(client.indexOf("function AgentDashboard"));
     expect(agentDashboard).toContain("Commission Earned");
@@ -54,6 +54,11 @@ describe("commissions UI contract", () => {
     expect(client).toContain("type ManagerCommissionData");
     expect(client).toContain("summary: CommissionOnlySummary");
     expect(client).toContain("table: CommissionTablePage<CommissionOnlyRow>");
+    const managerType = client.slice(
+      client.indexOf("export type ManagerCommissionData"),
+      client.indexOf("export type OrganizationCommissionData"),
+    );
+    expect(managerType).not.toContain("exportHref");
     expect(page).toContain("summary: commissionOnlySummary(summary)");
     expect(page).toContain("report.rows.map(commissionOnlyRow)");
     expect(client).toContain('data.role === "admin" && visible("Base Salary")');

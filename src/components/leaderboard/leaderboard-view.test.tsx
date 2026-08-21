@@ -82,9 +82,11 @@ describe("LeaderBoard view", () => {
       />,
     );
 
-    expect(markup).toContain("Total Transfers");
-    expect(markup).toContain("Closed Deals");
-    expect(markup).toContain("Conversion Rate %");
+    expect(markup).toContain("Active Agent Performance");
+    expect(markup).toContain("Active Agents Transfers");
+    expect(markup).toContain("Active Agents Closed Deals");
+    expect(markup).toContain("Active Agents Conversion Rate");
+    expect(markup).not.toContain("Overall Reported Performance");
     expect(markup).toContain("Top performer");
     expect(markup).toContain("Gia Monroe");
     expect(markup).toContain("Amira Ayman");
@@ -92,6 +94,63 @@ describe("LeaderBoard view", () => {
     expect(markup).toContain("Jul 1, 2026: 1");
     expect(markup).toContain('aria-sort="descending"');
     expect(markup).toContain("/api/leaderboard/export?range=this-month");
+  });
+
+  it("renders six grouped cards only when the server contract includes overall totals", () => {
+    const markup = renderToStaticMarkup(
+      <LeaderboardView
+        data={{
+          ...readyData,
+          overall: {
+            transfers: 9,
+            closedDeals: 6,
+            conversion: 66.666,
+            comparison: {
+              transfers: 8,
+              closedDeals: 4,
+              conversion: 50,
+            },
+          },
+        }}
+        dateRange={dateRange}
+        initialView={DEFAULT_LEADERBOARD_VIEW}
+      />,
+    );
+
+    expect(markup).toContain("Active Agent Performance");
+    expect(markup).toContain("Overall Reported Performance");
+    expect(markup).toContain("Overall Transfers");
+    expect(markup).toContain("Overall Closed Deals");
+    expect(markup).toContain("Overall Conversion Rate");
+    expect(markup.match(/metric-color-card/g)).toHaveLength(6);
+  });
+
+  it("keeps overall totals present when active-agent filters remove every row", () => {
+    const markup = renderToStaticMarkup(
+      <LeaderboardView
+        data={{
+          ...readyData,
+          overall: {
+            transfers: 99,
+            closedDeals: 33,
+            conversion: 33.333,
+            comparison: null,
+          },
+        }}
+        dateRange={dateRange}
+        initialView={{
+          ...DEFAULT_LEADERBOARD_VIEW,
+          query: "missing",
+          teamId: "another-team",
+          sortBy: "conversion",
+          topOnly: true,
+        }}
+      />,
+    );
+
+    expect(markup).toContain("No ranking data found");
+    expect(markup).toContain("Overall Reported Performance");
+    expect(markup).toContain('metric-card-value">99</strong>');
   });
 
   it("applies the initial metric and filters to podium and table output", () => {

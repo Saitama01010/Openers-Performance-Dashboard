@@ -139,6 +139,12 @@ describe("LeaderBoard transfer-source errors", () => {
       closedDiagnosticCount: 0,
       latestSynchronization: "2026-07-30T10:00:00.000Z",
       stale: false,
+      overall: {
+        transfers: 0,
+        closedDeals: null,
+        conversion: null,
+        comparison: null,
+      },
       closedErrorDiagnostics: {
         connectionStatus: "configuration_error",
         worksheet: "Closed",
@@ -170,6 +176,82 @@ describe("LeaderBoard transfer-source errors", () => {
     expect(
       result.status === "ready" && result.closedErrorDiagnostics,
     ).toBeUndefined();
+    expect(result.status === "ready" && result.overall).toBeUndefined();
+  });
+
+  it.each([
+    { role: "admin" as const, receivesOverall: true },
+    { role: "manager" as const, receivesOverall: true },
+    { role: "agent" as const, receivesOverall: false },
+  ])("applies the $role overall-total data contract", async ({ role, receivesOverall }) => {
+    mocks.ingestAndMatchLeaderboardSources.mockResolvedValueOnce({
+      status: "ready",
+      timeZone: "Africa/Cairo",
+      users: [],
+      transferRecords: [
+        {
+          sourceRowId: "Xfers:2",
+          rawTimestamp: "2026-08-05T08:00:00.000Z",
+          occurredAt: new Date("2026-08-05T08:00:00.000Z"),
+          sheetRealName: "Former Employee",
+          sheetAmericanName: "Former Agent",
+          customerName: "Private Customer",
+          phoneNumber: "1",
+        },
+      ],
+      transferMatches: [],
+      transferDiagnostics: [{ code: "unmatched_opener" }],
+      closedRecords: [
+        {
+          sourceRowNumber: 2,
+          timestamp: new Date("2026-08-05T08:00:00.000Z"),
+          timestampIso: "2026-08-05T08:00:00.000Z",
+          closer: "Private Closer",
+          customerName: "Private Customer",
+          fileNumber: "Private File",
+          debtAmount: "Private Debt",
+          readyForSubmission: "",
+          sheetOpener: "Former Agent",
+          extractedAmericanName: "Former Agent",
+          normalizedAmericanName: "former agent",
+          matchedUserId: null,
+          matchStatus: "unmatched",
+          validationErrors: [],
+        },
+      ],
+      closedDiagnostics: [{ code: "unmatched_opener" }],
+      closedGeneratedAt: "2026-08-10T10:00:00.000Z",
+      totalNonEmptyClosedRows: 1,
+      duplicateAmericanNames: [],
+      stale: false,
+      fetchedAt: "2026-08-10T10:00:01.000Z",
+    });
+
+    const result = await getLeaderboardData(
+      {
+        id: `${role}-1`,
+        role,
+        teamIds: role === "manager" ? ["team-1"] : [],
+      },
+      { from: "2026-08-01", to: "2026-08-31" },
+    );
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") return;
+    expect(result.rows).toEqual([]);
+    expect(result.overall).toEqual(
+      receivesOverall
+        ? {
+            transfers: 1,
+            closedDeals: 1,
+            conversion: 100,
+            comparison: null,
+          }
+        : undefined,
+    );
+    if (!receivesOverall) {
+      expect(JSON.stringify(result)).not.toContain('"overall"');
+    }
   });
 
   it("does not represent an entirely unattributable Closed worksheet as zero deals", async () => {

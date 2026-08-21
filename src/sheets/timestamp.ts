@@ -6,9 +6,12 @@ const LOCAL_DATE_TIME =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/;
 const ISO_UTC =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/i;
+const formattersByTimeZone = new Map<string, Intl.DateTimeFormat>();
 
-function partsInTimezone(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+function formatterForTimeZone(timeZone: string) {
+  const existing = formattersByTimeZone.get(timeZone);
+  if (existing) return existing;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -17,7 +20,13 @@ function partsInTimezone(date: Date, timeZone: string) {
     minute: "2-digit",
     second: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(date);
+  });
+  formattersByTimeZone.set(timeZone, formatter);
+  return formatter;
+}
+
+function partsInTimezone(date: Date, timeZone: string) {
+  const parts = formatterForTimeZone(timeZone).formatToParts(date);
   const value = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((part) => part.type === type)?.value);
   return {

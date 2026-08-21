@@ -3,15 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
+  buildOverallLeaderboardTotals,
   buildClosedDealLeaderboardRows,
   buildLeaderboardAnalyticsRows,
   countScopedTransfers,
 } from "@/leaderboard/data";
+import type { LeaderboardFilters } from "@/leaderboard/data";
 import type {
   MatchableUser,
   MatchedTransfer,
 } from "@/leaderboard/matching";
-import type { NormalizedClosedDeal } from "@/sheets/contracts";
+import { parseClosedRows, REQUIRED_CLOSED_HEADERS } from "@/sheets/closed-deals";
+import type { NormalizedClosedDeal, TransferRecord } from "@/sheets/contracts";
+import { parseTransferRows } from "@/sheets/transfers";
 
 const users = {
   gia: {
@@ -78,6 +82,22 @@ function matchedTransfer(
       customerName: `Customer ${row}`,
       phoneNumber: String(row),
     },
+  };
+}
+
+function sourceTransfer(
+  occurredAt: Date | null,
+  row: number,
+  americanName = "Former Agent",
+): TransferRecord {
+  return {
+    sourceRowId: `Xfers:${row}`,
+    rawTimestamp: occurredAt?.toISOString() ?? "invalid",
+    occurredAt,
+    sheetRealName: "Former Employee",
+    sheetAmericanName: americanName,
+    customerName: `Customer ${row}`,
+    phoneNumber: String(row),
   };
 }
 
@@ -252,6 +272,152 @@ describe("Overview Xfers aggregation", () => {
         window,
         "Africa/Cairo",
       ),
+    ).toBe(1);
+  });
+});
+
+describe("overall reported LeaderBoard aggregation", () => {
+  it("counts valid source rows without restoring former agents to active rankings", () => {
+    const activeRows = buildClosedDealLeaderboardRows(
+      [users.gia],
+      [
+        closedDeal("gia", new Date("2026-08-05T08:00:00.000Z")),
+        closedDeal(null, new Date("2026-08-06T08:00:00.000Z"), {
+          sheetOpener: "Former Agent",
+          extractedAmericanName: "Former Agent",
+          normalizedAmericanName: "former agent",
+        }),
+      ],
+      { from: "2026-08-01", to: "2026-08-31" },
+      "Africa/Cairo",
+      [matchedTransfer(users.gia, new Date("2026-08-05T08:00:00.000Z"), 2)],
+    );
+    const overall = buildOverallLeaderboardTotals(
+      [
+        sourceTransfer(new Date("2026-08-05T08:00:00.000Z"), 2, "Gia Monroe"),
+        sourceTransfer(new Date("2026-08-06T08:00:00.000Z"), 3),
+      ],
+      [
+        closedDeal("gia", new Date("2026-08-05T08:00:00.000Z")),
+        closedDeal(null, new Date("2026-08-06T08:00:00.000Z")),
+      ],
+      { from: "2026-08-01", to: "2026-08-31" },
+      "Africa/Cairo",
+    );
+
+    expect(activeRows).toHaveLength(1);
+    expect(activeRows[0]).toMatchObject({
+      profileId: "gia",
+      transferCount: 1,
+      closedDeals: 1,
+    });
+    expect(overall).toMatchObject({
+      transfers: 2,
+      closedDeals: 2,
+      conversion: 100,
+    });
+  });
+
+  it("uses only date windows and computes equivalent-period comparisons", () => {
+    const filters: LeaderboardFilters = {
+      from: "2026-08-01",
+      to: "2026-08-31",
+      query: "no active agent matches",
+      teamId: "unrelated-team",
+    };
+    const totals = buildOverallLeaderboardTotals(
+      [
+        sourceTransfer(new Date("2026-08-05T08:00:00.000Z"), 2),
+        sourceTransfer(new Date("2026-08-06T08:00:00.000Z"), 3),
+        sourceTransfer(new Date("2026-07-05T08:00:00.000Z"), 4),
+      ],
+      [
+        closedDeal(null, new Date("2026-08-05T08:00:00.000Z")),
+        closedDeal(null, new Date("2026-07-05T08:00:00.000Z")),
+      ],
+      filters,
+      "Africa/Cairo",
+      { from: "2026-07-01", to: "2026-07-31" },
+    );
+
+    expect(totals).toEqual({
+      transfers: 2,
+      closedDeals: 1,
+      conversion: 50,
+      comparison: { transfers: 1, closedDeals: 1, conversion: 100 },
+    });
+  });
+
+  it("excludes invalid Closed rows and returns null conversion for zero transfers", () => {
+    const closed = parseClosedRows(
+      REQUIRED_CLOSED_HEADERS,
+      [
+        ["bad", "Closer", "Customer", "F-1", "100", "", "Former Agent"],
+        ["2026-08-05T08:00:00.000Z", "Closer", "Customer", "F-2", "100", "", ""],
+        ["2026-08-05T08:00:00.000Z", "Closer", "Customer", "F-3", "100", "", { unsupported: true }],
+        ["2026-08-05T08:00:00.000Z", "Closer", "Customer", "F-4", "100", "", "Former Agent"],
+      ],
+      { timeZone: "Africa/Cairo" },
+    );
+    const totals = buildOverallLeaderboardTotals(
+      [],
+      closed.records,
+      { from: "2026-08-01", to: "2026-08-31" },
+      "Africa/Cairo",
+    );
+
+    expect(totals).toEqual({
+      transfers: 0,
+      closedDeals: 1,
+      conversion: null,
+      comparison: null,
+    });
+    expect(Number.isFinite(totals.conversion ?? 0)).toBe(true);
+  });
+
+  it("counts only parser-accepted, dated, deduplicated transfer records", () => {
+    const parsed = parseTransferRows(
+      [
+        {
+          Timestamp: "2026-08-05T08:00:00.000Z",
+          Opener: "Former Employee-Former Agent",
+          "Customer Name": "Customer One",
+          "Phone Number": "1",
+        },
+        {
+          Timestamp: "2026-08-05T08:00:00.000Z",
+          Opener: "Former Employee-Former Agent",
+          "Customer Name": "Customer One",
+          "Phone Number": "1",
+        },
+        {
+          Timestamp: "2026-08-06T08:00:00.000Z",
+          Opener: "Malformed",
+          "Customer Name": "Customer Two",
+          "Phone Number": "2",
+        },
+        {
+          Timestamp: "bad",
+          Opener: "Former Employee-Former Agent",
+          "Customer Name": "Customer Three",
+          "Phone Number": "3",
+        },
+      ],
+      { timeZone: "Africa/Cairo" },
+    );
+
+    expect(parsed.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "duplicate",
+      "malformed_opener",
+      "invalid_timestamp",
+    ]);
+    expect(
+      buildOverallLeaderboardTotals(
+        parsed.records,
+        [],
+        { from: "2026-08-01", to: "2026-08-31" },
+        "Africa/Cairo",
+      ).transfers,
     ).toBe(1);
   });
 });

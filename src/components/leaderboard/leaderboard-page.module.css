@@ -76,6 +76,21 @@
   min-width: 0;
 }
 
+.summaryGroup {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.summaryGroup > h2 {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.075em;
+  line-height: 1.2;
+  padding-left: 0.1rem;
+  text-transform: uppercase;
+}
+
 .kpiGrid {
   display: grid;
   gap: 0.9rem;

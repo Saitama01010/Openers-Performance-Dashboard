@@ -14,6 +14,7 @@ import {
   teamMemberships,
   teams,
 } from "@/db/schema";
+import { calculateLeaderboardConversion } from "@/leaderboard/analytics";
 import type {
   MatchableUser,
   MatchedTransfer,
@@ -27,7 +28,10 @@ import {
   ingestAndMatchTransfers,
   transferSheetConfigFromEnv,
 } from "@/leaderboard/transfers";
-import type { NormalizedClosedDeal } from "@/sheets/contracts";
+import type {
+  NormalizedClosedDeal,
+  TransferRecord,
+} from "@/sheets/contracts";
 import { dateKeyInTimeZone } from "@/sheets/timestamp";
 import {
   normalizeAmericanName,
@@ -72,6 +76,17 @@ type LeaderboardBase = {
   filters: LeaderboardFilters;
 };
 
+export type LeaderboardOverallTotals = {
+  transfers: number;
+  closedDeals: number | null;
+  conversion: number | null;
+  comparison: {
+    transfers: number;
+    closedDeals: number | null;
+    conversion: number | null;
+  } | null;
+};
+
 export type LeaderboardData =
   | (LeaderboardBase & {
       status: "unconfigured";
@@ -93,6 +108,7 @@ export type LeaderboardData =
       stale: boolean;
       closedDiagnostics?: SafeClosedDiagnostics;
       closedErrorDiagnostics?: SafeClosedErrorDiagnostics;
+      overall?: LeaderboardOverallTotals;
     })
   | (LeaderboardBase & {
       status: "source_error";
@@ -275,6 +291,72 @@ function closedDealMatchesDateFilters(
   if (filters.from && closedDate < filters.from) return false;
   if (filters.to && closedDate > filters.to) return false;
   return true;
+}
+
+type SourceDateFilters = Pick<LeaderboardFilters, "from" | "to">;
+
+function sourceDateMatchesFilters(
+  date: string,
+  filters: SourceDateFilters,
+) {
+  if (filters.from && date < filters.from) return false;
+  if (filters.to && date > filters.to) return false;
+  return true;
+}
+
+function overallPeriodTotals(
+  counts: { transfers: number; closedDeals: number },
+  closedMetricsAvailable: boolean,
+) {
+  const closedDealCount = closedMetricsAvailable ? counts.closedDeals : null;
+  return {
+    transfers: counts.transfers,
+    closedDeals: closedDealCount,
+    conversion:
+      closedDealCount === null
+        ? null
+        : calculateLeaderboardConversion(closedDealCount, counts.transfers),
+  };
+}
+
+export function buildOverallLeaderboardTotals(
+  transfers: readonly TransferRecord[],
+  closedDeals: readonly NormalizedClosedDeal[] | null,
+  filters: SourceDateFilters,
+  timeZone: string,
+  comparison?: DashboardDateWindow,
+): LeaderboardOverallTotals {
+  const currentCounts = { transfers: 0, closedDeals: 0 };
+  const comparisonCounts = { transfers: 0, closedDeals: 0 };
+
+  function countTimestamp(
+    timestamp: Date | null,
+    metric: keyof typeof currentCounts,
+  ) {
+    if (!timestamp) return;
+    const date = dateKeyInTimeZone(timestamp, timeZone);
+    if (sourceDateMatchesFilters(date, filters)) currentCounts[metric] += 1;
+    if (comparison && sourceDateMatchesFilters(date, comparison)) {
+      comparisonCounts[metric] += 1;
+    }
+  }
+
+  for (const transfer of transfers) {
+    countTimestamp(transfer.occurredAt, "transfers");
+  }
+  for (const closedDeal of closedDeals ?? []) {
+    if (closedDeal.matchStatus !== "invalid") {
+      countTimestamp(closedDeal.timestamp, "closedDeals");
+    }
+  }
+
+  const closedMetricsAvailable = closedDeals !== null;
+  return {
+    ...overallPeriodTotals(currentCounts, closedMetricsAvailable),
+    comparison: comparison
+      ? overallPeriodTotals(comparisonCounts, closedMetricsAvailable)
+      : null,
+  };
 }
 
 export function buildClosedDealLeaderboardRows(
@@ -555,6 +637,17 @@ export async function getLeaderboardData(
       closedDiagnosticCount: 0,
       latestSynchronization: ingestion.fetchedAt,
       stale: ingestion.stale,
+      ...(actor.role === "agent"
+        ? {}
+        : {
+            overall: buildOverallLeaderboardTotals(
+              ingestion.transferRecords,
+              null,
+              filters,
+              ingestion.timeZone,
+              comparison,
+            ),
+          }),
       closedErrorDiagnostics:
         actor.role === "admin"
           ? {
@@ -606,6 +699,17 @@ export async function getLeaderboardData(
     closedDiagnosticCount: ingestion.closedDiagnostics.length,
     latestSynchronization: ingestion.closedGeneratedAt ?? ingestion.fetchedAt,
     stale: ingestion.stale,
+    ...(actor.role === "agent"
+      ? {}
+      : {
+          overall: buildOverallLeaderboardTotals(
+            ingestion.transferRecords,
+            ingestion.closedRecords,
+            filters,
+            ingestion.timeZone,
+            comparison,
+          ),
+        }),
     closedDiagnostics:
       actor.role === "admin"
         ? safeClosedDiagnostics(

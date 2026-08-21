@@ -5,11 +5,21 @@ import { resolveOverviewDateRange } from "@/dashboard/date-range";
 const NOW = new Date("2026-08-04T12:00:00.000Z");
 
 describe("dashboard date ranges", () => {
-  it("resolves Today in the configured application timezone", () => {
+  it("keeps Today on the active operating date before 06:00 Cairo", () => {
     expect(
       resolveOverviewDateRange(
         { range: "today" },
         new Date("2026-08-03T22:30:00.000Z"),
+        "Africa/Cairo",
+      ),
+    ).toMatchObject({ from: "2026-08-03", to: "2026-08-03" });
+  });
+
+  it("rolls Today forward at the 06:00 Cairo operating boundary", () => {
+    expect(
+      resolveOverviewDateRange(
+        { range: "today" },
+        new Date("2026-08-04T03:00:00.000Z"),
         "Africa/Cairo",
       ),
     ).toMatchObject({ from: "2026-08-04", to: "2026-08-04" });

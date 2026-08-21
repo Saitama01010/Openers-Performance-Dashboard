@@ -1,3 +1,7 @@
+import {
+  hourInTimeZone,
+  OPERATING_SHIFT_END_HOUR,
+} from "@/dashboard/shift-coverage";
 import { dateKeyInTimeZone } from "@/sheets/timestamp";
 
 export const DEFAULT_DASHBOARD_TIME_ZONE = "Africa/Cairo";
@@ -25,6 +29,16 @@ export type OverviewDateFilterParams = {
   range?: string | string[];
   to?: string | string[];
 };
+
+function reportingDate(now: Date, timeZone: string) {
+  const calendarDate = parseIsoDate(dateKeyInTimeZone(now, timeZone));
+  if (!calendarDate) {
+    throw new RangeError("Unable to resolve today's calendar date.");
+  }
+  return hourInTimeZone(now, timeZone) < OPERATING_SHIFT_END_HOUR
+    ? addUtcDays(calendarDate, -1)
+    : calendarDate;
+}
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -158,9 +172,7 @@ export function resolveOverviewDateRange(
   now = new Date(),
   timeZone = DEFAULT_DASHBOARD_TIME_ZONE,
 ) {
-  const todayKey = dateKeyInTimeZone(now, timeZone);
-  const today = parseIsoDate(todayKey);
-  if (!today) throw new RangeError("Unable to resolve today's calendar date.");
+  const today = reportingDate(now, timeZone);
   const requestedRange = firstValue(params.range);
 
   if (requestedRange === "today") return todayRange(today);

@@ -103,8 +103,10 @@ function Sparkline({
 }
 
 function KpiCard({
+  cardId,
   current,
   dateRange,
+  label,
   latestSync,
   metric,
   onActive,
@@ -113,38 +115,40 @@ function KpiCard({
   sourceStatus,
   trend,
 }: {
+  cardId: string;
   current: number | null;
   dateRange: OverviewDateRange;
+  label: string;
   latestSync: string | null;
   metric: LeaderboardMetric;
-  onActive: (metric: LeaderboardMetric | null) => void;
+  onActive: (cardId: string | null) => void;
   open: boolean;
   previous: number | null;
   sourceStatus: "healthy" | "partial" | "unavailable";
   trend: LeaderboardTrendPoint[];
 }) {
   const details = {
-    transfers: { color: "#1765ff", icon: "import" as const, label: "Total Transfers" },
-    "closed-deals": { color: "#16a765", icon: "leaderboard" as const, label: "Closed Deals" },
-    conversion: { color: "#7b42ff", icon: "performance" as const, label: "Conversion Rate %" },
+    transfers: { color: "#1765ff", icon: "import" as const },
+    "closed-deals": { color: "#16a765", icon: "leaderboard" as const },
+    conversion: { color: "#7b42ff", icon: "performance" as const },
   }[metric];
-  const tooltipId = `leaderboard-kpi-${metric}-details`;
+  const tooltipId = `leaderboard-kpi-${cardId}-details`;
   const delta = calculateLeaderboardDelta(current, previous);
   const deltaTone = (delta.absolute ?? 0) > 0 ? "up" : (delta.absolute ?? 0) < 0 ? "down" : "neutral";
 
   return (
     <article
-      aria-label={`${details.label} details`}
+      aria-label={`${label} details`}
       aria-describedby={open ? tooltipId : undefined}
       className={`${styles.kpiCard} metric-color-card`}
       data-open={open ? "" : undefined}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) onActive(null); }}
-      onClick={() => onActive(metric)}
-      onFocus={() => onActive(metric)}
+      onClick={() => onActive(cardId)}
+      onFocus={() => onActive(cardId)}
       onKeyDown={(event) => {
         if (event.key === "Escape") onActive(null);
       }}
-      onMouseEnter={() => onActive(metric)}
+      onMouseEnter={() => onActive(cardId)}
       onMouseLeave={(event) => {
         if (!event.currentTarget.contains(document.activeElement)) onActive(null);
       }}
@@ -155,7 +159,7 @@ function KpiCard({
       <div className={styles.kpiIdentity}>
         <span className={`${styles.kpiIcon} metric-card-icon`}><DashboardIcon name={details.icon} /></span>
         <div>
-          <p className="metric-card-label">{details.label}</p>
+          <p className="metric-card-label">{label}</p>
           <strong className="metric-card-value">{formatMetric(current, metric)}</strong>
           <span className={`${styles.kpiDelta} metric-card-comparison`} data-tone={deltaTone}>
             {previous === null || delta.absolute === null
@@ -164,10 +168,10 @@ function KpiCard({
           </span>
         </div>
       </div>
-      <span className="metric-card-trend"><Sparkline color={metricCardForeground(details.color)} label={details.label} metric={metric} points={trend} /></span>
+      <span className="metric-card-trend"><Sparkline color={metricCardForeground(details.color)} label={label} metric={metric} points={trend} /></span>
       {open ? (
         <div className={styles.detailPopover} id={tooltipId} role="tooltip">
-          <strong>{details.label}</strong>
+          <strong>{label}</strong>
           <span>{dateRange.label} · {formatRange(dateRange)}</span>
           <dl>
             <div><dt>Current</dt><dd>{formatMetric(current, metric)}</dd></div>
@@ -316,7 +320,7 @@ export function LeaderboardView({
   const previousConversion = closedMetricsAvailable && totals.comparison
     ? calculateLeaderboardConversion(totals.comparison.closedDeals, totals.comparison.transferCount)
     : null;
-  const [activeKpi, setActiveKpi] = useState<LeaderboardMetric | null>(null);
+  const [activeKpi, setActiveKpi] = useState<string | null>(null);
   const [activePodium, setActivePodium] = useState<string | null>(null);
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -363,6 +367,12 @@ export function LeaderboardView({
   const conversionStatus = transferStatus === "unavailable" || closedStatus === "unavailable"
     ? "unavailable" as const
     : transferStatus === "partial" || closedStatus === "partial" ? "partial" as const : "healthy" as const;
+  const overallClosedStatus = data.status !== "ready" || !data.overall || data.overall.closedDeals === null
+    ? "unavailable" as const
+    : data.stale || data.closedDiagnosticCount > 0 ? "partial" as const : "healthy" as const;
+  const overallConversionStatus = transferStatus === "unavailable" || overallClosedStatus === "unavailable"
+    ? "unavailable" as const
+    : transferStatus === "partial" || overallClosedStatus === "partial" ? "partial" as const : "healthy" as const;
   const latestSync = data.status === "ready" ? data.latestSynchronization : null;
   const sourceNote = `Transfers: ${sourceTone(transferStatus)} · Closed Deals: ${sourceTone(closedStatus)}`;
 
@@ -385,41 +395,105 @@ export function LeaderboardView({
 
   return (
     <div className={styles.content}>
-      <section aria-label="Leaderboard summary" className={styles.kpiGrid}>
-        <KpiCard
-          current={data.status === "ready" ? totals.current.transferCount : null}
-          dateRange={dateRange}
-          latestSync={latestSync}
-          metric="transfers"
-          onActive={setActiveKpi}
-          open={activeKpi === "transfers"}
-          previous={totals.comparison?.transferCount ?? null}
-          sourceStatus={transferStatus}
-          trend={trend}
-        />
-        <KpiCard
-          current={closedMetricsAvailable ? totals.current.closedDeals : null}
-          dateRange={dateRange}
-          latestSync={latestSync}
-          metric="closed-deals"
-          onActive={setActiveKpi}
-          open={activeKpi === "closed-deals"}
-          previous={closedMetricsAvailable ? totals.comparison?.closedDeals ?? null : null}
-          sourceStatus={closedStatus}
-          trend={closedMetricsAvailable ? trend : []}
-        />
-        <KpiCard
-          current={data.status === "ready" ? currentConversion : null}
-          dateRange={dateRange}
-          latestSync={latestSync}
-          metric="conversion"
-          onActive={setActiveKpi}
-          open={activeKpi === "conversion"}
-          previous={previousConversion}
-          sourceStatus={conversionStatus}
-          trend={closedMetricsAvailable ? trend : []}
-        />
+      <section
+        aria-labelledby="active-agent-performance-title"
+        className={styles.summaryGroup}
+        data-overlay-open={activeKpi?.startsWith("active-") ? "" : undefined}
+      >
+        <h2 id="active-agent-performance-title">Active Agent Performance</h2>
+        <div className={styles.kpiGrid}>
+          <KpiCard
+            cardId="active-transfers"
+            current={data.status === "ready" ? totals.current.transferCount : null}
+            dateRange={dateRange}
+            label="Active Agents Transfers"
+            latestSync={latestSync}
+            metric="transfers"
+            onActive={setActiveKpi}
+            open={activeKpi === "active-transfers"}
+            previous={totals.comparison?.transferCount ?? null}
+            sourceStatus={transferStatus}
+            trend={trend}
+          />
+          <KpiCard
+            cardId="active-closed-deals"
+            current={closedMetricsAvailable ? totals.current.closedDeals : null}
+            dateRange={dateRange}
+            label="Active Agents Closed Deals"
+            latestSync={latestSync}
+            metric="closed-deals"
+            onActive={setActiveKpi}
+            open={activeKpi === "active-closed-deals"}
+            previous={closedMetricsAvailable ? totals.comparison?.closedDeals ?? null : null}
+            sourceStatus={closedStatus}
+            trend={closedMetricsAvailable ? trend : []}
+          />
+          <KpiCard
+            cardId="active-conversion"
+            current={data.status === "ready" ? currentConversion : null}
+            dateRange={dateRange}
+            label="Active Agents Conversion Rate"
+            latestSync={latestSync}
+            metric="conversion"
+            onActive={setActiveKpi}
+            open={activeKpi === "active-conversion"}
+            previous={previousConversion}
+            sourceStatus={conversionStatus}
+            trend={closedMetricsAvailable ? trend : []}
+          />
+        </div>
       </section>
+
+      {data.status === "ready" && data.overall ? (
+        <section
+          aria-labelledby="overall-reported-performance-title"
+          className={styles.summaryGroup}
+          data-overlay-open={activeKpi?.startsWith("overall-") ? "" : undefined}
+        >
+          <h2 id="overall-reported-performance-title">Overall Reported Performance</h2>
+          <div className={styles.kpiGrid}>
+            <KpiCard
+              cardId="overall-transfers"
+              current={data.overall.transfers}
+              dateRange={dateRange}
+              label="Overall Transfers"
+              latestSync={latestSync}
+              metric="transfers"
+              onActive={setActiveKpi}
+              open={activeKpi === "overall-transfers"}
+              previous={data.overall.comparison?.transfers ?? null}
+              sourceStatus={transferStatus}
+              trend={data.overall.trend}
+            />
+            <KpiCard
+              cardId="overall-closed-deals"
+              current={data.overall.closedDeals}
+              dateRange={dateRange}
+              label="Overall Closed Deals"
+              latestSync={latestSync}
+              metric="closed-deals"
+              onActive={setActiveKpi}
+              open={activeKpi === "overall-closed-deals"}
+              previous={data.overall.comparison?.closedDeals ?? null}
+              sourceStatus={overallClosedStatus}
+              trend={data.overall.closedDeals === null ? [] : data.overall.trend}
+            />
+            <KpiCard
+              cardId="overall-conversion"
+              current={data.overall.conversion}
+              dateRange={dateRange}
+              label="Overall Conversion Rate"
+              latestSync={latestSync}
+              metric="conversion"
+              onActive={setActiveKpi}
+              open={activeKpi === "overall-conversion"}
+              previous={data.overall.comparison?.conversion ?? null}
+              sourceStatus={overallConversionStatus}
+              trend={data.overall.closedDeals === null ? [] : data.overall.trend}
+            />
+          </div>
+        </section>
+      ) : null}
 
       {data.status === "ready" && (data.stale || transferStatus === "partial" || closedStatus !== "healthy") ? (
         <section className={styles.sourceBanner} role="status">

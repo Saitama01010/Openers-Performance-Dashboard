@@ -52,7 +52,14 @@ function isExpired(expiresAt: Date, now = new Date()) {
 
 export async function authenticateCredentials(email: string, password: string) {
   const rows = await getDb()
-    .select()
+    .select({
+      id: profiles.id,
+      role: profiles.role,
+      passwordHash: profiles.passwordHash,
+      active: profiles.active,
+      accountStatus: profiles.accountStatus,
+      mustResetPassword: profiles.mustResetPassword,
+    })
     .from(profiles)
     .where(eq(profiles.email, normalizeEmail(email)))
     .limit(1);

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
 import { createSession, destroySession } from "@/auth/session";
-import { consumeRateLimit } from "@/auth/rate-limit";
+import { consumeRateLimit, consumeRateLimits } from "@/auth/rate-limit";
 import {
   acceptInvitation,
   authenticateCredentials,
@@ -26,10 +26,10 @@ async function authenticationLimits(input: {
   const fingerprint = await requestFingerprint();
   const limits =
     input.operation === "login"
-      ? await Promise.all([
-          consumeRateLimit({ scope: "login-account-15m", identifier: input.identifier, limit: 5, windowMs: 15 * 60 * 1000 }),
-          consumeRateLimit({ scope: "login-account-1h", identifier: input.identifier, limit: 20, windowMs: 60 * 60 * 1000 }),
-          consumeRateLimit({ scope: "login-client-15m", identifier: fingerprint, limit: 30, windowMs: 15 * 60 * 1000 }),
+      ? await consumeRateLimits([
+          { scope: "login-account-15m", identifier: input.identifier, limit: 5, windowMs: 15 * 60 * 1000 },
+          { scope: "login-account-1h", identifier: input.identifier, limit: 20, windowMs: 60 * 60 * 1000 },
+          { scope: "login-client-15m", identifier: fingerprint, limit: 30, windowMs: 15 * 60 * 1000 },
         ])
       : await Promise.all([
           consumeRateLimit({ scope: `${input.operation}-token-15m`, identifier: input.identifier, limit: 8, windowMs: 15 * 60 * 1000 }),
@@ -55,7 +55,7 @@ export async function loginAction(formData: FormData) {
     redirect(`/reset-password?required=1&token=${encodeURIComponent(token)}`);
   }
 
-  await createSession(result.profile.id);
+  await createSession(result.profile);
   redirect("/dashboard");
 }
 

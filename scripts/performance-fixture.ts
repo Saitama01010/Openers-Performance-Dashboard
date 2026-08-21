@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 import { createHash } from "node:crypto";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { sql } from "drizzle-orm";
 
 import { closeDatabasePool, getDb } from "../src/db";

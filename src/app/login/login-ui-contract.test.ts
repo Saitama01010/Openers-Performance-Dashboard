@@ -16,7 +16,7 @@ describe("login redesign interface contract", () => {
     expect(page).toContain('redirect("/dashboard")');
     expect(page).toContain("action={loginAction}");
     expect(action).toContain("authenticateCredentials(email, password)");
-    expect(action).toContain("createSession(result.profile.id)");
+    expect(action).toContain("createSession(result.profile)");
   });
 
   it("uses the supplied logo and the approved operational copy", () => {

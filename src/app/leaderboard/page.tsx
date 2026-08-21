@@ -5,6 +5,7 @@ import { DashboardDateFilter } from "@/components/dashboard/overview-date-filter
 import { DashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { LeaderboardRefreshControls } from "@/components/leaderboard/leaderboard-refresh-controls";
 import { LeaderboardView } from "@/components/leaderboard/leaderboard-view";
+import { formatCompactLeaderboardRange } from "@/components/leaderboard/leaderboard-date-label";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import styles from "@/components/leaderboard/leaderboard-page.module.css";
 import { resolveOverviewDateRange } from "@/dashboard/date-range";
@@ -13,15 +14,6 @@ import { resolveLeaderboardView } from "@/leaderboard/analytics";
 import { getLeaderboardData } from "@/leaderboard/data";
 
 export const dynamic = "force-dynamic";
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}T00:00:00Z`));
-}
 
 export default async function LeaderboardPage({
   searchParams,
@@ -69,7 +61,7 @@ export default async function LeaderboardPage({
               <span>{dateRange.label}:</span>
               <strong>
                 {dateRange.from && dateRange.to
-                  ? `${formatDate(dateRange.from)} – ${formatDate(dateRange.to)}`
+                  ? formatCompactLeaderboardRange(dateRange.from, dateRange.to)
                   : "All available history"}
               </strong>
             </p>

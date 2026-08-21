@@ -79,7 +79,11 @@
 .summaryGroup {
   display: grid;
   gap: 0.5rem;
+  position: relative;
+  z-index: 1;
 }
+
+.summaryGroup[data-overlay-open] { z-index: 40; }
 
 .summaryGroup > h2 {
   color: var(--muted);

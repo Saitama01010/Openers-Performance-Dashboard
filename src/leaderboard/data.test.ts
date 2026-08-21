@@ -315,6 +315,10 @@ describe("overall reported LeaderBoard aggregation", () => {
       transfers: 2,
       closedDeals: 2,
       conversion: 100,
+      trend: [
+        { date: "2026-08-05", transferCount: 1, closedDeals: 1 },
+        { date: "2026-08-06", transferCount: 1, closedDeals: 1 },
+      ],
     });
   });
 
@@ -344,6 +348,10 @@ describe("overall reported LeaderBoard aggregation", () => {
       transfers: 2,
       closedDeals: 1,
       conversion: 50,
+      trend: [
+        { date: "2026-08-05", transferCount: 1, closedDeals: 1 },
+        { date: "2026-08-06", transferCount: 1, closedDeals: 0 },
+      ],
       comparison: { transfers: 1, closedDeals: 1, conversion: 100 },
     });
   });
@@ -370,6 +378,9 @@ describe("overall reported LeaderBoard aggregation", () => {
       transfers: 0,
       closedDeals: 1,
       conversion: null,
+      trend: [
+        { date: "2026-08-05", transferCount: 0, closedDeals: 1 },
+      ],
       comparison: null,
     });
     expect(Number.isFinite(totals.conversion ?? 0)).toBe(true);

@@ -105,6 +105,10 @@ describe("LeaderBoard view", () => {
             transfers: 9,
             closedDeals: 6,
             conversion: 66.666,
+            trend: [
+              { date: "2026-07-01", transferCount: 5, closedDeals: 3 },
+              { date: "2026-07-02", transferCount: 4, closedDeals: 3 },
+            ],
             comparison: {
               transfers: 8,
               closedDeals: 4,
@@ -122,6 +126,9 @@ describe("LeaderBoard view", () => {
     expect(markup).toContain("Overall Transfers");
     expect(markup).toContain("Overall Closed Deals");
     expect(markup).toContain("Overall Conversion Rate");
+    expect(markup).toContain("Overall Transfers dated trend");
+    expect(markup).toContain("Overall Closed Deals dated trend");
+    expect(markup).toContain("Overall Conversion Rate dated trend");
     expect(markup.match(/metric-color-card/g)).toHaveLength(6);
   });
 
@@ -134,6 +141,10 @@ describe("LeaderBoard view", () => {
             transfers: 99,
             closedDeals: 33,
             conversion: 33.333,
+            trend: [
+              { date: "2026-07-01", transferCount: 50, closedDeals: 17 },
+              { date: "2026-07-02", transferCount: 49, closedDeals: 16 },
+            ],
             comparison: null,
           },
         }}

@@ -395,7 +395,11 @@ export function LeaderboardView({
 
   return (
     <div className={styles.content}>
-      <section aria-labelledby="active-agent-performance-title" className={styles.summaryGroup}>
+      <section
+        aria-labelledby="active-agent-performance-title"
+        className={styles.summaryGroup}
+        data-overlay-open={activeKpi?.startsWith("active-") ? "" : undefined}
+      >
         <h2 id="active-agent-performance-title">Active Agent Performance</h2>
         <div className={styles.kpiGrid}>
           <KpiCard
@@ -441,7 +445,11 @@ export function LeaderboardView({
       </section>
 
       {data.status === "ready" && data.overall ? (
-        <section aria-labelledby="overall-reported-performance-title" className={styles.summaryGroup}>
+        <section
+          aria-labelledby="overall-reported-performance-title"
+          className={styles.summaryGroup}
+          data-overlay-open={activeKpi?.startsWith("overall-") ? "" : undefined}
+        >
           <h2 id="overall-reported-performance-title">Overall Reported Performance</h2>
           <div className={styles.kpiGrid}>
             <KpiCard
@@ -455,7 +463,7 @@ export function LeaderboardView({
               open={activeKpi === "overall-transfers"}
               previous={data.overall.comparison?.transfers ?? null}
               sourceStatus={transferStatus}
-              trend={[]}
+              trend={data.overall.trend}
             />
             <KpiCard
               cardId="overall-closed-deals"
@@ -468,7 +476,7 @@ export function LeaderboardView({
               open={activeKpi === "overall-closed-deals"}
               previous={data.overall.comparison?.closedDeals ?? null}
               sourceStatus={overallClosedStatus}
-              trend={[]}
+              trend={data.overall.closedDeals === null ? [] : data.overall.trend}
             />
             <KpiCard
               cardId="overall-conversion"
@@ -481,7 +489,7 @@ export function LeaderboardView({
               open={activeKpi === "overall-conversion"}
               previous={data.overall.comparison?.conversion ?? null}
               sourceStatus={overallConversionStatus}
-              trend={[]}
+              trend={data.overall.closedDeals === null ? [] : data.overall.trend}
             />
           </div>
         </section>

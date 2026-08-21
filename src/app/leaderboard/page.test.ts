@@ -48,11 +48,18 @@ describe("LeaderBoard route contract", () => {
     expect(controls).not.toContain("fetch(");
   });
 
-  it("keeps KPI detail popovers above the podium section", () => {
+  it("raises the KPI group with an open detail popover above following cards", () => {
     const styles = readFileSync(
       resolve(
         process.cwd(),
         "src/components/leaderboard/leaderboard-page.module.css",
+      ),
+      "utf8",
+    );
+    const view = readFileSync(
+      resolve(
+        process.cwd(),
+        "src/components/leaderboard/leaderboard-view.tsx",
       ),
       "utf8",
     );
@@ -64,5 +71,7 @@ describe("LeaderBoard route contract", () => {
     expect(kpiGrid).toContain("position: relative");
     expect(kpiGrid).toContain("z-index: 2");
     expect(styles).toContain("z-index: 30");
+    expect(styles).toContain(".summaryGroup[data-overlay-open] { z-index: 40; }");
+    expect(view.match(/data-overlay-open=/g)).toHaveLength(2);
   });
 });

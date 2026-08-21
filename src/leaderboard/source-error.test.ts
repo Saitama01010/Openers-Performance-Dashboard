@@ -143,6 +143,7 @@ describe("LeaderBoard transfer-source errors", () => {
         transfers: 0,
         closedDeals: null,
         conversion: null,
+        trend: [],
         comparison: null,
       },
       closedErrorDiagnostics: {
@@ -245,6 +246,9 @@ describe("LeaderBoard transfer-source errors", () => {
             transfers: 1,
             closedDeals: 1,
             conversion: 100,
+            trend: [
+              { date: "2026-08-05", transferCount: 1, closedDeals: 1 },
+            ],
             comparison: null,
           }
         : undefined,

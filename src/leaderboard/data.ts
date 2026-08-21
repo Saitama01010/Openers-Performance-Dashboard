@@ -22,6 +22,7 @@ import type {
 import {
   rankLeaderboardRows,
   type LeaderboardRow,
+  type LeaderboardTrendPoint,
 } from "@/leaderboard/ranking";
 import {
   ingestAndMatchLeaderboardSources,
@@ -80,6 +81,7 @@ export type LeaderboardOverallTotals = {
   transfers: number;
   closedDeals: number | null;
   conversion: number | null;
+  trend: LeaderboardTrendPoint[];
   comparison: {
     transfers: number;
     closedDeals: number | null;
@@ -328,6 +330,7 @@ export function buildOverallLeaderboardTotals(
 ): LeaderboardOverallTotals {
   const currentCounts = { transfers: 0, closedDeals: 0 };
   const comparisonCounts = { transfers: 0, closedDeals: 0 };
+  const currentTrend = new Map<string, LeaderboardTrendPoint>();
 
   function countTimestamp(
     timestamp: Date | null,
@@ -335,7 +338,17 @@ export function buildOverallLeaderboardTotals(
   ) {
     if (!timestamp) return;
     const date = dateKeyInTimeZone(timestamp, timeZone);
-    if (sourceDateMatchesFilters(date, filters)) currentCounts[metric] += 1;
+    if (sourceDateMatchesFilters(date, filters)) {
+      currentCounts[metric] += 1;
+      const point = currentTrend.get(date) ?? {
+        date,
+        transferCount: 0,
+        closedDeals: 0,
+      };
+      if (metric === "transfers") point.transferCount += 1;
+      else point.closedDeals += 1;
+      currentTrend.set(date, point);
+    }
     if (comparison && sourceDateMatchesFilters(date, comparison)) {
       comparisonCounts[metric] += 1;
     }
@@ -353,6 +366,9 @@ export function buildOverallLeaderboardTotals(
   const closedMetricsAvailable = closedDeals !== null;
   return {
     ...overallPeriodTotals(currentCounts, closedMetricsAvailable),
+    trend: [...currentTrend.values()].sort((left, right) =>
+      left.date.localeCompare(right.date),
+    ),
     comparison: comparison
       ? overallPeriodTotals(comparisonCounts, closedMetricsAvailable)
       : null,

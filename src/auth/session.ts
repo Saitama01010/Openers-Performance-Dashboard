@@ -42,14 +42,10 @@ export function isSessionUsableAt(
   );
 }
 
-export async function createSession(profileId: string) {
+type SessionProfile = Pick<typeof profiles.$inferSelect, "id" | "role">;
+
+export async function createSessionRecord(profile: SessionProfile) {
   const token = createSessionToken();
-  const [profile] = await getDb()
-    .select({ role: profiles.role })
-    .from(profiles)
-    .where(eq(profiles.id, profileId))
-    .limit(1);
-  if (!profile) throw new Error("Authenticated profile is unavailable.");
   const env = getEnv();
   const lifetimeHours =
     profile.role === "admin"
@@ -59,11 +55,18 @@ export async function createSession(profileId: string) {
 
   await getDb().insert(sessions).values({
     id: sessionIdFromToken(token),
-    profileId,
+    profileId: profile.id,
     expiresAt,
   });
 
-  const cookieStore = await cookies();
+  return { token, expiresAt };
+}
+
+export async function createSession(profile: SessionProfile) {
+  const cookieStorePromise = cookies();
+  const { token, expiresAt } = await createSessionRecord(profile);
+
+  const cookieStore = await cookieStorePromise;
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -98,24 +101,47 @@ export async function getCurrentSessionId() {
   return token ? sessionIdFromToken(token) : null;
 }
 
-async function getCurrentUserUncached() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-
-  if (!token) {
-    return null;
-  }
-
+export async function getSessionUser(token: string) {
   const sessionRows = await getDb()
-    .select()
+    .select({
+      sessionId: sessions.id,
+      expiresAt: sessions.expiresAt,
+      lastSeenAt: sessions.lastSeenAt,
+      userId: profiles.id,
+      email: profiles.email,
+      name: profiles.name,
+      role: profiles.role,
+      active: profiles.active,
+      accountStatus: profiles.accountStatus,
+      organizationId: profiles.organizationId,
+      teamId: teams.id,
+    })
     .from(sessions)
+    .innerJoin(profiles, eq(profiles.id, sessions.profileId))
+    .leftJoin(
+      teamMemberships,
+      and(
+        eq(teamMemberships.profileId, profiles.id),
+        eq(teamMemberships.active, true),
+        isNull(teamMemberships.endedAt),
+      ),
+    )
+    .leftJoin(
+      teams,
+      and(
+        eq(teams.id, teamMemberships.teamId),
+        eq(teams.active, true),
+        isNull(teams.archivedAt),
+        isNull(teams.deletedAt),
+        eq(teams.organizationId, profiles.organizationId),
+      ),
+    )
     .where(
       and(
         eq(sessions.id, sessionIdFromToken(token)),
         isNull(sessions.revokedAt),
       ),
-    )
-    .limit(1);
+    );
   const session = sessionRows[0];
 
   const now = Date.now();
@@ -127,7 +153,7 @@ async function getCurrentUserUncached() {
       await getDb()
         .update(sessions)
         .set({ revokedAt: new Date() })
-        .where(and(eq(sessions.id, session.id), isNull(sessions.revokedAt)));
+        .where(and(eq(sessions.id, session.sessionId), isNull(sessions.revokedAt)));
     }
     return null;
   }
@@ -138,56 +164,32 @@ async function getCurrentUserUncached() {
       .set({ lastSeenAt: new Date(now) })
       .where(
         and(
-          eq(sessions.id, session.id),
+          eq(sessions.id, session.sessionId),
           isNull(sessions.revokedAt),
           lt(sessions.lastSeenAt, new Date(now - 5 * 60 * 1000)),
         ),
       );
   }
 
-  const userRows = await getDb()
-    .select({
-      id: profiles.id,
-      email: profiles.email,
-      name: profiles.name,
-      role: profiles.role,
-      active: profiles.active,
-      accountStatus: profiles.accountStatus,
-      organizationId: profiles.organizationId,
-    })
-    .from(profiles)
-    .where(eq(profiles.id, session.profileId))
-    .limit(1);
-  const user = userRows[0];
-
-  if (!user || !user.email || !user.active || user.accountStatus !== "active") {
+  if (!session.email || !session.active || session.accountStatus !== "active") {
     return null;
   }
 
-  const memberships = await getDb()
-    .select({ teamId: teamMemberships.teamId })
-    .from(teamMemberships)
-    .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
-    .where(
-      and(
-        eq(teamMemberships.profileId, user.id),
-        eq(teamMemberships.active, true),
-        isNull(teamMemberships.endedAt),
-        eq(teams.active, true),
-        isNull(teams.archivedAt),
-        isNull(teams.deletedAt),
-        eq(teams.organizationId, user.organizationId),
-      ),
-    );
-
   return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    teamIds: memberships.map((membership) => membership.teamId),
-    organizationId: user.organizationId,
+    id: session.userId,
+    email: session.email,
+    name: session.name,
+    role: session.role,
+    teamIds: sessionRows.flatMap((row) => (row.teamId ? [row.teamId] : [])),
+    organizationId: session.organizationId,
   };
+}
+
+async function getCurrentUserUncached() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+
+  return token ? getSessionUser(token) : null;
 }
 
 export const getCurrentUser = cache(getCurrentUserUncached);

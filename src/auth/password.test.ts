@@ -11,4 +11,13 @@ describe("password hashing boundaries", () => {
     await expect(hashPassword("x".repeat(257))).rejects.toThrow("Password input is too long");
     await expect(verifyPassword("x".repeat(257), DUMMY_PASSWORD_HASH)).rejects.toThrow("Password input is too long");
   });
+
+  it("keeps bcrypt cost 12 and verifies newly generated hashes", async () => {
+    const password = "Native-Bcrypt-Compatibility-123!";
+    const hash = await hashPassword(password);
+
+    expect(hash).toMatch(/^\$2[aby]\$12\$/);
+    await expect(verifyPassword(password, hash)).resolves.toBe(true);
+    await expect(verifyPassword(`${password}x`, hash)).resolves.toBe(false);
+  });
 });
